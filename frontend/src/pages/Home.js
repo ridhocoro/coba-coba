@@ -6,17 +6,23 @@ import {
     FaStethoscope, 
     FaPills, 
     FaCalendarAlt, 
-    FaFileMedical,
+    FaEye,
     FaUserMd,
     FaClock,
     FaHospital,
     FaArrowRight,
     FaCheckCircle,
     FaStar,
-    FaShieldAlt
+    FaShieldAlt,
+    FaChild,
+    FaFemale,
+    FaHeadSideMask,
+    FaTooth,
+    FaBrain
 } from 'react-icons/fa';
 
 const Home = () => {
+    // Layanan - SURAT SAKIT DIHAPUS
     const services = [
         {
             icon: <FaHeartbeat size={40} />,
@@ -35,14 +41,6 @@ const Home = () => {
             features: ['Chat Real-time', 'Resep Digital', 'Rekam Medis']
         },
         {
-            icon: <FaFileMedical size={40} />,
-            title: 'Surat Sakit Online',
-            description: 'Permintaan surat sakit resmi dari dokter',
-            link: '/sick-letters',
-            color: 'warning',
-            features: ['PDF Resmi', 'Tanda Tangan Digital', 'Verifikasi Cepat']
-        },
-        {
             icon: <FaPills size={40} />,
             title: 'Farmasi Online',
             description: 'Beli obat dengan sistem delivery ke rumah Anda',
@@ -58,6 +56,16 @@ const Home = () => {
             color: 'info',
             features: ['Pilih Dokter', 'Pilih Jadwal', 'No. Antrian']
         }
+    ];
+
+    // Spesialisasi untuk bagian "Konsultasi Spesialis Tepercaya"
+    const specializations = [
+        { icon: <FaEye size={32} />, name: 'Sp. Mata', color: 'primary' },
+        { icon: <FaHeartbeat size={32} />, name: 'Sp. Kulit', color: 'success' },
+        { icon: <FaFemale size={32} />, name: 'Sp. Kandungan', color: 'danger' },
+        { icon: <FaHeadSideMask size={32} />, name: 'Sp. THT', color: 'warning' },
+        { icon: <FaChild size={32} />, name: 'Sp. Anak', color: 'info' },
+        { icon: <FaBrain size={32} />, name: 'Sp. Penyakit Dalam', color: 'secondary' }
     ];
 
     const doctors = [
@@ -108,7 +116,7 @@ const Home = () => {
         {
             name: 'Dewi Lestari',
             role: 'Pasien BPJS',
-            content: 'Sistemnya mudah digunakan, pembayaran online juga praktis. Surat sakit langsung dapat PDF.',
+            content: 'Sistemnya mudah digunakan, pembayaran online juga praktis.',
             rating: 4,
             date: '1 minggu lalu'
         }
@@ -190,7 +198,6 @@ const Home = () => {
                 </Container>
             </section>
 
-            {/* Services Section */}
             <section className="services-section py-5">
                 <Container>
                     <Row className="mb-5 text-center">
@@ -204,39 +211,45 @@ const Home = () => {
 
                     <Row className="g-4">
                         {services.map((service, index) => (
-                            <Col lg={4} md={6} key={index}>
-                                <Card className="h-100 shadow-sm border-0 hover-card">
-                                    <Card.Body className="p-4">
-                                        <div className={`feature-icon-wrapper bg-${service.color} bg-opacity-10 rounded-circle mb-4`}>
+                            <Col lg={3} md={6} key={index}>
+                                <Card className="h-100 shadow-sm border-0 hover-card d-flex flex-column">
+                                    <Card.Body className="p-4 d-flex flex-column">
+                                        <div className={`feature-icon-wrapper bg-${service.color} bg-opacity-10 rounded-circle mb-4 mx-auto`}>
                                             <div className={`text-${service.color}`}>
                                                 {service.icon}
                                             </div>
                                         </div>
-                                        <Card.Title as="h4" className="fw-bold mb-3">
+                                        
+                                        <Card.Title as="h5" className="fw-bold mb-3 text-center">
                                             {service.title}
                                         </Card.Title>
-                                        <Card.Text className="text-muted mb-4">
+                                        
+                                        <Card.Text className="text-muted mb-4 text-center">
                                             {service.description}
                                         </Card.Text>
                                         
-                                        <div className="feature-list mb-4">
+                                        {/* Feature list with fixed height */}
+                                        <div className="feature-list mb-4" style={{ minHeight: '100px' }}>
                                             {service.features.map((feature, idx) => (
-                                                <div key={idx} className="d-flex align-items-center mb-2">
+                                                <div key={idx} className="d-flex align-items-center mb-2 justify-content-center">
                                                     <FaCheckCircle className={`text-${service.color} me-2`} size={14} />
                                                     <small>{feature}</small>
                                                 </div>
                                             ))}
                                         </div>
 
-                                        <Button 
-                                            as={Link} 
-                                            to={service.link} 
-                                            variant={`outline-${service.color}`}
-                                            className="w-100 rounded-pill"
-                                        >
-                                            Mulai Sekarang
-                                            <FaArrowRight className="ms-2" size={14} />
-                                        </Button>
+                                        {/* Button always at bottom */}
+                                        <div className="mt-auto">
+                                            <Button 
+                                                as={Link} 
+                                                to={service.link} 
+                                                variant={`outline-${service.color}`}
+                                                className="w-100 rounded-pill"
+                                            >
+                                                Mulai Sekarang
+                                                <FaArrowRight className="ms-2" size={14} />
+                                            </Button>
+                                        </div>
                                     </Card.Body>
                                 </Card>
                             </Col>
@@ -245,12 +258,60 @@ const Home = () => {
                 </Container>
             </section>
 
-            {/* Doctors Section */}
-            <section className="doctors-section py-5 bg-light">
+            {/* Konsultasi Spesialis Tepercaya - NEW SECTION */}
+            <section className="specialists-section py-5 bg-light">
                 <Container>
                     <Row className="mb-5 text-center">
                         <Col>
-                            <h2 className="display-6 fw-bold mb-3">Dokter Spesialis Kami</h2>
+                            <h2 className="display-6 fw-bold mb-3">Konsultasi Spesialis Tepercaya</h2>
+                            <p className="lead text-muted">
+                                Konsultasi dengan dokter spesialis berpengalaman di bidangnya
+                            </p>
+                        </Col>
+                    </Row>
+
+                    <Row className="g-4 mb-4">
+                        {specializations.map((spec, index) => (
+                            <Col lg={2} md={4} sm={6} key={index}>
+                                <Card 
+                                    as={Link}
+                                    to={`/consultations?specialty=${spec.name}`}
+                                    className="text-decoration-none h-100 border-0 shadow-sm hover-card text-center p-3"
+                                >
+                                    <Card.Body>
+                                        <div className={`text-${spec.color} mb-3`} style={{ fontSize: '2.5rem' }}>
+                                            {spec.icon}
+                                        </div>
+                                        <h6 className="fw-bold mb-0">{spec.name}</h6>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+                        ))}
+                    </Row>
+
+                    <Row>
+                        <Col className="text-center">
+                            <Button 
+                                as={Link}
+                                to="/consultations"
+                                variant="outline-primary"
+                                size="lg"
+                                className="rounded-pill px-5"
+                            >
+                                Lihat Semua Spesialis
+                                <FaArrowRight className="ms-2" />
+                            </Button>
+                        </Col>
+                    </Row>
+                </Container>
+            </section>
+
+            {/* Featured Doctors Section */}
+            <section className="doctors-section py-5">
+                <Container>
+                    <Row className="mb-5 text-center">
+                        <Col>
+                            <h2 className="display-6 fw-bold mb-3">Dokter Spesialis Pilihan</h2>
                             <p className="lead text-muted">
                                 Ditangani oleh tim dokter yang berpengalaman di bidangnya
                             </p>
@@ -310,7 +371,7 @@ const Home = () => {
             </section>
 
             {/* Testimonials Section */}
-            <section className="testimonials-section py-5">
+            <section className="testimonials-section py-5 bg-light">
                 <Container>
                     <Row className="mb-5 text-center">
                         <Col>
@@ -356,38 +417,6 @@ const Home = () => {
                 </Container>
             </section>
 
-            {/* CTA Section */}
-            <section className="cta-section py-5 bg-primary text-white">
-                <Container className="text-center py-4">
-                    <h2 className="display-6 fw-bold mb-4">
-                        Siap untuk memulai hidup sehat?
-                    </h2>
-                    <p className="lead mb-4">
-                        Daftar sekarang dan dapatkan akses ke semua layanan kami
-                    </p>
-                    <div className="d-flex gap-3 justify-content-center">
-                        <Button 
-                            as={Link}
-                            to="/register"
-                            variant="light" 
-                            size="lg"
-                            className="rounded-pill px-5"
-                        >
-                            Daftar Sekarang
-                        </Button>
-                        <Button 
-                            as={Link}
-                            to="/health-check"
-                            variant="outline-light" 
-                            size="lg"
-                            className="rounded-pill px-5"
-                        >
-                            Cek Kesehatan
-                        </Button>
-                    </div>
-                </Container>
-            </section>
-
             {/* FAQ Section */}
             <section className="faq-section py-5 bg-light">
                 <Container>
@@ -407,7 +436,7 @@ const Home = () => {
                                     <h5 className="fw-bold mb-3">❓ Apakah perlu daftar untuk konsultasi?</h5>
                                     <p className="text-muted mb-0">
                                         Ya, Anda perlu mendaftar akun terlebih dahulu untuk menggunakan 
-                                        fitur konsultasi online, surat sakit, dan janji temu.
+                                        fitur konsultasi online dan janji temu.
                                     </p>
                                 </Card.Body>
                             </Card>

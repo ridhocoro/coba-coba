@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Container, Row, Col, Card, Form, Button, Alert, Badge } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Button, Alert, Badge, Modal } from 'react-bootstrap';
 import { useAuth } from '../../context/AuthContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import io from 'socket.io-client';
-import { FaUserMd, FaUser, FaPaperPlane, FaClock, FaCheckCircle, FaStethoscope } from 'react-icons/fa';
+import { 
+    FaUserMd, FaUser, FaPaperPlane, FaClock, 
+    FaCheckCircle, FaStethoscope, FaFileMedical,
+    FaDownload, FaFilePdf, FaPlus
+} from 'react-icons/fa';
 
 const ConsultationChat = () => {
     const { id } = useParams();
@@ -16,6 +20,14 @@ const ConsultationChat = () => {
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(true);
     const [socket, setSocket] = useState(null);
+    const [showSickLetterForm, setShowSickLetterForm] = useState(false);
+    const [sickLetterData, setSickLetterData] = useState({
+        diagnosis: '',
+        restDays: 3,
+        notes: ''
+    });
+    const [submitting, setSubmitting] = useState(false);
+    const [sickLetter, setSickLetter] = useState(null);
     const messagesEndRef = useRef(null);
     const chatContainerRef = useRef(null);
 
@@ -27,7 +39,6 @@ const ConsultationChat = () => {
 
         fetchConsultation();
         
-        // Initialize socket connection
         const newSocket = io('http://localhost:5000');
         setSocket(newSocket);
 
@@ -62,27 +73,28 @@ const ConsultationChat = () => {
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get(
-                `http://localhost:5000/api/consultations/my-consultations`,
+                `http://localhost:5000/api/consultations/${id}`,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             
-            const cons = response.data.find(c => c._id === id);
-            if (cons) {
-                setConsultation(cons);
-                setMessages(cons.messages || []);
+            setConsultation(response.data);
+            setMessages(response.data.messages || []);
+            setSickLetter(response.data.sickLetter || null);
+            
+            // Update status jika paid
+            if (response.data.status === 'paid') {
+                await axios.put(
+                    `http://localhost:5000/api/consultations/${id}/start`,
+                    {},
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
                 
-                // Update status to ongoing if paid and not already ongoing/completed
-                if (cons.status === 'paid') {
-                    await axios.put(
-                        `http://localhost:5000/api/consultations/${id}/start`,
-                        {},
-                        { headers: { Authorization: `Bearer ${token}` } }
-                    );
-                    cons.status = 'ongoing';
-                }
-            } else {
-                toast.error('Konsultasi tidak ditemukan');
-                navigate('/consultations');
+                // Refresh data
+                const updated = await axios.get(
+                    `http://localhost:5000/api/consultations/${id}`,
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                setConsultation(updated.data);
             }
         } catch (error) {
             toast.error('Gagal memuat konsultasi');
@@ -99,14 +111,13 @@ const ConsultationChat = () => {
         const messageData = {
             consultationId: id,
             senderId: user.id,
+            senderName: user.role === 'doctor' ? `dr. ${user.name}` : user.name,
             message: newMessage,
             timestamp: new Date()
         };
 
-        // Emit via socket
         socket.emit('send-message', messageData);
 
-        // Save to database
         try {
             const token = localStorage.getItem('token');
             await axios.post(
@@ -121,30 +132,84 @@ const ConsultationChat = () => {
         setNewMessage('');
     };
 
-    const endConsultation = async () => {
-        if (window.confirm('Apakah Anda yakin ingin mengakhiri konsultasi?')) {
-            try {
-                const token = localStorage.getItem('token');
-                await axios.put(
-                    `http://localhost:5000/api/consultations/${id}/end`,
-                    {},
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                toast.success('Konsultasi selesai');
-                navigate('/consultations');
-            } catch (error) {
-                toast.error('Gagal mengakhiri konsultasi');
-            }
+    const handleCreateSickLetter = async (e) => {
+        e.preventDefault();
+        setSubmitting(true);
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post(
+                `http://localhost:5000/api/consultations/${id}/sick-letter`,
+                sickLetterData,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            toast.success('Surat sakit berhasil dibuat');
+            setSickLetter(response.data.sickLetter);
+            setShowSickLetterForm(false);
+            
+            // Refresh konsultasi
+            fetchConsultation();
+
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Gagal membuat surat sakit');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleIssueSickLetter = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.put(
+                `http://localhost:5000/api/consultations/${id}/sick-letter/issue`,
+                {},
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            toast.success('Surat sakit berhasil diterbitkan');
+            setSickLetter(response.data.sickLetter);
+            fetchConsultation();
+
+        } catch (error) {
+            toast.error('Gagal menerbitkan surat sakit');
+        }
+    };
+
+    const downloadPDF = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get(
+                `http://localhost:5000/api/consultations/${id}/sick-letter/pdf`,
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    responseType: 'blob'
+                }
+            );
+            
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `surat-sakit-${id}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            
+            toast.success('Surat sakit berhasil diunduh');
+        } catch (error) {
+            toast.error('Gagal mengunduh surat sakit');
         }
     };
 
     const formatTime = (timestamp) => {
-        const date = new Date(timestamp);
-        return date.toLocaleTimeString('id-ID', {
+        return new Date(timestamp).toLocaleTimeString('id-ID', {
             hour: '2-digit',
             minute: '2-digit'
         });
     };
+
+    const isDoctor = user?.role === 'doctor';
+    const isUser = user?.role === 'user';
 
     if (loading) {
         return (
@@ -189,14 +254,11 @@ const ConsultationChat = () => {
                                 } className="me-2">
                                     {consultation.status}
                                 </Badge>
-                                {consultation.status === 'ongoing' && (
-                                    <Button 
-                                        variant="light" 
-                                        size="sm"
-                                        onClick={endConsultation}
-                                    >
-                                        Akhiri Konsultasi
-                                    </Button>
+                                {sickLetter && (
+                                    <Badge bg="warning" className="me-2">
+                                        <FaFileMedical className="me-1" />
+                                        Surat Sakit
+                                    </Badge>
                                 )}
                             </div>
                         </Card.Header>
@@ -207,23 +269,6 @@ const ConsultationChat = () => {
                             className="overflow-auto"
                             style={{ flex: 1, maxHeight: 'calc(100vh - 250px)' }}
                         >
-                            {/* Doctor Info Card */}
-                            <Card className="bg-light mb-4">
-                                <Card.Body className="p-3">
-                                    <Row className="align-items-center">
-                                        <Col md={1} className="text-center">
-                                            <FaStethoscope size={30} className="text-primary" />
-                                        </Col>
-                                        <Col md={11}>
-                                            <h6>dr. {consultation.doctorId?.name}</h6>
-                                            <p className="text-muted small mb-0">
-                                                {consultation.doctorId?.bio || 'Dokter spesialis siap membantu keluhan Anda'}
-                                            </p>
-                                        </Col>
-                                    </Row>
-                                </Card.Body>
-                            </Card>
-
                             {/* Initial Symptoms */}
                             <Card className="mb-4 border-info">
                                 <Card.Body className="p-3">
@@ -231,6 +276,43 @@ const ConsultationChat = () => {
                                     <p className="mb-0">{consultation.symptoms}</p>
                                 </Card.Body>
                             </Card>
+
+                            {/* Sick Letter Info (if exists) */}
+                            {sickLetter && (
+                                <Card className="mb-4 border-success">
+                                    <Card.Body>
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 className="text-success">
+                                                    <FaFileMedical className="me-2" />
+                                                    Surat Sakit {sickLetter.status === 'issued' ? '(Telah Terbit)' : '(Draft)'}
+                                                </h6>
+                                                <p className="mb-1">
+                                                    <strong>Diagnosis:</strong> {sickLetter.diagnosis}
+                                                </p>
+                                                <p className="mb-1">
+                                                    <strong>Istirahat:</strong> {Math.ceil((new Date(sickLetter.endDate) - new Date(sickLetter.startDate)) / (1000 * 60 * 60 * 24)) + 1} hari
+                                                </p>
+                                                {sickLetter.notes && (
+                                                    <p className="mb-1">
+                                                        <strong>Catatan:</strong> {sickLetter.notes}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            {sickLetter.status === 'issued' && (
+                                                <Button 
+                                                    variant="success"
+                                                    size="sm"
+                                                    onClick={downloadPDF}
+                                                >
+                                                    <FaDownload className="me-1" />
+                                                    Download PDF
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </Card.Body>
+                                </Card>
+                            )}
 
                             {/* Messages */}
                             {messages.map((msg, index) => (
@@ -251,7 +333,7 @@ const ConsultationChat = () => {
                                                 <FaUserMd className="me-1" size={12} />
                                             )}
                                             <small className={msg.senderId === user.id ? 'text-white-50' : 'text-muted'}>
-                                                {msg.senderId === user.id ? 'Anda' : 'Dokter'}
+                                                {msg.senderName}
                                             </small>
                                         </div>
                                         <div className="mb-1">{msg.message}</div>
@@ -297,13 +379,6 @@ const ConsultationChat = () => {
                                 </Form>
                             </Card.Footer>
                         )}
-
-                        {consultation.status === 'completed' && (
-                            <Card.Footer className="bg-light text-center">
-                                <FaCheckCircle className="text-success me-2" />
-                                Konsultasi telah selesai
-                            </Card.Footer>
-                        )}
                     </Card>
                 </Col>
 
@@ -314,9 +389,7 @@ const ConsultationChat = () => {
                             <h6 className="mb-0">Informasi Konsultasi</h6>
                         </Card.Header>
                         <Card.Body>
-                            <p className="mb-1">
-                                <strong>Tanggal:</strong>
-                            </p>
+                            <p className="mb-1"><strong>Tanggal:</strong></p>
                             <p className="text-muted">
                                 {new Date(consultation.createdAt).toLocaleDateString('id-ID', {
                                     weekday: 'long',
@@ -328,46 +401,79 @@ const ConsultationChat = () => {
                                 })}
                             </p>
                             
-                            <p className="mb-1">
-                                <strong>Dokter:</strong>
-                            </p>
+                            <p className="mb-1"><strong>Dokter:</strong></p>
                             <p className="text-muted">
                                 dr. {consultation.doctorId?.name}
                                 <br />
                                 <small>{consultation.doctorId?.specialization}</small>
                             </p>
-                            
-                            {consultation.diagnosis && (
-                                <>
-                                    <p className="mb-1">
-                                        <strong>Diagnosis:</strong>
-                                    </p>
-                                    <p className="text-success">
-                                        {consultation.diagnosis}
-                                    </p>
-                                </>
-                            )}
-                            
-                            {consultation.prescription && (
-                                <>
-                                    <p className="mb-1">
-                                        <strong>Resep Obat:</strong>
-                                    </p>
-                                    <p className="text-muted">
-                                        {consultation.prescription}
-                                    </p>
-                                    <Button 
-                                        variant="outline-primary" 
-                                        size="sm" 
-                                        className="w-100"
-                                        href="/pharmacy"
-                                    >
-                                        Beli Obat
-                                    </Button>
-                                </>
-                            )}
                         </Card.Body>
                     </Card>
+
+                    {/* Doctor Actions */}
+                    {isDoctor && consultation.status === 'ongoing' && !sickLetter && (
+                        <Card className="shadow-sm mb-3 border-success">
+                            <Card.Header className="bg-success text-white">
+                                <h6 className="mb-0">Tindakan Medis</h6>
+                            </Card.Header>
+                            <Card.Body>
+                                <Button
+                                    variant="success"
+                                    className="w-100 mb-2"
+                                    onClick={() => setShowSickLetterForm(true)}
+                                >
+                                    <FaFileMedical className="me-2" />
+                                    Buat Surat Sakit
+                                </Button>
+                                <Button
+                                    variant="outline-primary"
+                                    className="w-100"
+                                >
+                                    <FaStethoscope className="me-2" />
+                                    Resep Obat
+                                </Button>
+                            </Card.Body>
+                        </Card>
+                    )}
+
+                    {/* Doctor Actions - Issue Sick Letter */}
+                    {isDoctor && sickLetter && sickLetter.status === 'draft' && (
+                        <Card className="shadow-sm mb-3 border-warning">
+                            <Card.Header className="bg-warning text-white">
+                                <h6 className="mb-0">Surat Sakit Draft</h6>
+                            </Card.Header>
+                            <Card.Body>
+                                <p className="small">Surat sakit sudah dibuat, perlu diterbitkan.</p>
+                                <Button
+                                    variant="warning"
+                                    className="w-100"
+                                    onClick={handleIssueSickLetter}
+                                >
+                                    <FaCheckCircle className="me-2" />
+                                    Terbitkan Surat
+                                </Button>
+                            </Card.Body>
+                        </Card>
+                    )}
+
+                    {/* User Actions */}
+                    {isUser && sickLetter && sickLetter.status === 'issued' && (
+                        <Card className="shadow-sm mb-3 border-success">
+                            <Card.Header className="bg-success text-white">
+                                <h6 className="mb-0">Surat Sakit</h6>
+                            </Card.Header>
+                            <Card.Body>
+                                <Button
+                                    variant="success"
+                                    className="w-100"
+                                    onClick={downloadPDF}
+                                >
+                                    <FaDownload className="me-2" />
+                                    Download PDF
+                                </Button>
+                            </Card.Body>
+                        </Card>
+                    )}
 
                     <Card className="shadow-sm">
                         <Card.Header className="bg-warning">
@@ -375,23 +481,82 @@ const ConsultationChat = () => {
                         </Card.Header>
                         <Card.Body>
                             <ul className="small mb-0 ps-3">
-                                <li className="mb-2">
-                                    Jelaskan keluhan secara detail dan jujur
-                                </li>
-                                <li className="mb-2">
-                                    Sampaikan riwayat penyakit jika ada
-                                </li>
-                                <li className="mb-2">
-                                    Tanyakan hal yang tidak dimengerti
-                                </li>
-                                <li className="mb-2">
-                                    Ikuti saran dan resep dari dokter
-                                </li>
+                                <li className="mb-2">Jelaskan keluhan secara detail</li>
+                                <li className="mb-2">Sampaikan riwayat penyakit</li>
+                                <li className="mb-2">Tanyakan hal yang tidak dimengerti</li>
+                                <li className="mb-2">Ikuti saran dan resep dokter</li>
                             </ul>
                         </Card.Body>
                     </Card>
                 </Col>
             </Row>
+
+            {/* Modal Form Surat Sakit */}
+            <Modal show={showSickLetterForm} onHide={() => setShowSickLetterForm(false)}>
+                <Modal.Header closeButton>
+                    <Modal.Title>
+                        <FaFileMedical className="me-2 text-primary" />
+                        Buat Surat Sakit
+                    </Modal.Title>
+                </Modal.Header>
+                <Form onSubmit={handleCreateSickLetter}>
+                    <Modal.Body>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Diagnosis</Form.Label>
+                            <Form.Control
+                                as="textarea"
+                                rows={3}
+                                value={sickLetterData.diagnosis}
+                                onChange={(e) => setSickLetterData({
+                                    ...sickLetterData,
+                                    diagnosis: e.target.value
+                                })}
+                                placeholder="Contoh: Demam akut, ISPA, dll"
+                                required
+                            />
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Jumlah Hari Istirahat</Form.Label>
+                            <Form.Control
+                                type="number"
+                                min="1"
+                                max="30"
+                                value={sickLetterData.restDays}
+                                onChange={(e) => setSickLetterData({
+                                    ...sickLetterData,
+                                    restDays: parseInt(e.target.value)
+                                })}
+                                required
+                            />
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Catatan Tambahan</Form.Label>
+                            <Form.Control
+                                as="textarea"
+                                rows={2}
+                                value={sickLetterData.notes}
+                                onChange={(e) => setSickLetterData({
+                                    ...sickLetterData,
+                                    notes: e.target.value
+                                })}
+                                placeholder="Contoh: Tidak boleh bekerja berat, dll"
+                            />
+                        </Form.Group>
+                    </Modal.Body>
+                    <Modal.Footer>
+                        <Button variant="secondary" onClick={() => setShowSickLetterForm(false)}>
+                            Batal
+                        </Button>
+                        <Button 
+                            type="submit" 
+                            variant="primary"
+                            disabled={submitting}
+                        >
+                            {submitting ? 'Menyimpan...' : 'Buat Surat Sakit'}
+                        </Button>
+                    </Modal.Footer>
+                </Form>
+            </Modal>
         </Container>
     );
 };

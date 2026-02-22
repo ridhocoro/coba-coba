@@ -13,17 +13,17 @@ const manualPaymentSchema = new mongoose.Schema({
     bankName: { type: String, required: true },
     accountNumber: { type: String, required: true },
     accountName: { type: String, required: true },
-    transferDate: { type: Date },
-    transferProof: { type: String }, // URL gambar bukti transfer
+    transferDate: Date,
+    transferProof: String,
     status: { 
         type: String, 
         enum: ['pending', 'verified', 'rejected'],
         default: 'pending'
     },
-    adminNotes: { type: String },
-    verifiedAt: { type: Date },
+    adminNotes: String,
+    verifiedAt: Date,
     verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('ManualPayment', manualPaymentSchema);  
+module.exports = mongoose.model('ManualPayment', manualPaymentSchema);

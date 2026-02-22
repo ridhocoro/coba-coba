@@ -1,39 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { 
     Container, Row, Col, Card, Form, Button, 
-    Modal, Alert, Table, Badge, ListGroup 
+    Modal, Alert, Table, Badge, Spinner 
 } from 'react-bootstrap';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { 
-    FaMoneyBillWave, 
-    FaQrcode, 
-    FaBank, 
-    FaUpload, 
-    FaCheckCircle,
-    FaClock,
-    FaExclamationTriangle,
-    FaCopy,
-    FaDownload
+    FaMoneyBillWave, FaCheckCircle, FaClock, FaCopy,
+    FaComment, FaUserMd, FaHistory, FaQrcode,
+    FaFileMedical, FaDownload, FaTimesCircle
 } from 'react-icons/fa';
 
 // ========== MANUAL PAYMENT FORM ==========
 const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
-    const [step, setStep] = useState(1); // 1: pilih bank, 2: instruksi, 3: upload bukti
+    const [step, setStep] = useState(1);
     const [banks, setBanks] = useState([]);
     const [qris, setQris] = useState(null);
     const [selectedBank, setSelectedBank] = useState(null);
     const [transaction, setTransaction] = useState(null);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
-    const [transferData, setTransferData] = useState({
-        transferDate: '',
-        bankName: '',
-        accountNumber: '',
-        accountName: ''
-    });
+    const [transferDate, setTransferDate] = useState('');
     const [file, setFile] = useState(null);
     const { user } = useAuth();
 
@@ -70,7 +59,17 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
             );
 
             setTransaction(response.data.transaction);
-            setSelectedBank(banks.find(b => b.id === bankId));
+            
+            if (response.data.transaction.isQRIS) {
+                setSelectedBank({
+                    bankName: 'QRIS',
+                    accountName: 'Klinik Pratama IPB',
+                    isQRIS: true
+                });
+            } else {
+                setSelectedBank(banks.find(b => b.id === bankId));
+            }
+            
             setStep(2);
             
         } catch (error) {
@@ -97,7 +96,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
             return;
         }
 
-        if (!transferData.transferDate) {
+        if (!transferDate) {
             toast.error('Pilih tanggal transfer');
             return;
         }
@@ -106,10 +105,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
 
         const formData = new FormData();
         formData.append('proof', file);
-        formData.append('transferDate', transferData.transferDate);
-        formData.append('bankName', transferData.bankName || selectedBank.bankName);
-        formData.append('accountNumber', transferData.accountNumber || selectedBank.accountNumber);
-        formData.append('accountName', transferData.accountName || selectedBank.accountName);
+        formData.append('transferDate', transferDate);
 
         try {
             const token = localStorage.getItem('token');
@@ -126,11 +122,29 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
 
             toast.success('Bukti transfer berhasil diupload! Menunggu verifikasi admin.');
             setStep(3);
+            onSuccess();
             
         } catch (error) {
             toast.error('Gagal upload bukti transfer');
         } finally {
             setUploading(false);
+        }
+    };
+
+    // ✅ FUNGSI BARU: Hapus konsultasi saat batal
+    const handleCancel = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await axios.delete(
+                `http://localhost:5000/api/consultations/${consultation._id}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            toast.info('Konsultasi dibatalkan');
+        } catch (error) {
+            console.error('Error deleting consultation:', error);
+            toast.error('Gagal membatalkan konsultasi');
+        } finally {
+            onClose();
         }
     };
 
@@ -149,7 +163,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
         });
     };
 
-    // STEP 1: Pilih Bank
+    // STEP 1: Pilih Bank atau QRIS
     if (step === 1) {
         return (
             <div className="p-4">
@@ -161,11 +175,12 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                         {banks.map(bank => (
                             <Col md={6} key={bank.id}>
                                 <Card 
-                                    className={`bank-card cursor-pointer ${selectedBank?.id === bank.id ? 'border-primary' : ''}`}
-                                    onClick={() => setSelectedBank(bank)}
+                                    className={`bank-card ${selectedBank?.id === bank.id && !selectedBank?.isQRIS ? 'border-primary' : ''}`}
+                                    onClick={() => setSelectedBank({...bank, isQRIS: false})}
+                                    style={{ cursor: 'pointer' }}
                                 >
                                     <Card.Body className="d-flex align-items-center">
-                                        <div className="bank-icon me-3">
+                                        <div className="bank-icon me-3" style={{ fontSize: '2rem' }}>
                                             {bank.bankName === 'Bank BCA' && '🏦'}
                                             {bank.bankName === 'Bank Mandiri' && '🏛️'}
                                             {bank.bankName === 'Bank BRI' && '🌾'}
@@ -174,9 +189,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                                         <div>
                                             <strong>{bank.bankName}</strong>
                                             <br />
-                                            <small className="text-muted">
-                                                a.n. {bank.accountName}
-                                            </small>
+                                            <small className="text-muted">a.n. {bank.accountName}</small>
                                         </div>
                                     </Card.Body>
                                 </Card>
@@ -188,12 +201,28 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                 {qris && (
                     <div className="mb-4">
                         <h6 className="mb-3">📱 QRIS (Semua E-Wallet)</h6>
-                        <Card className="text-center p-3">
-                            <img 
-                                src={qris.qrCode} 
-                                alt="QRIS"
-                                style={{ width: '200px', height: '200px', margin: '0 auto' }}
-                            />
+                        <Card 
+                            className={`text-center p-3 bank-card ${selectedBank?.isQRIS ? 'border-primary' : ''}`}
+                            onClick={() => setSelectedBank({
+                                id: 999,
+                                bankName: 'QRIS',
+                                accountName: qris.merchantName,
+                                isQRIS: true,
+                                qrCode: qris.qrCode
+                            })}
+                            style={{ cursor: 'pointer' }}
+                        >
+                            <div style={{ width: '200px', height: '200px', margin: '0 auto' }}>
+                                <img 
+                                    src={qris.qrCode || '/images/qris-klinik.png'} 
+                                    alt="QRIS"
+                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                    onError={(e) => {
+                                        e.target.onerror = null;
+                                        e.target.src = 'https://via.placeholder.com/200x200?text=QRIS';
+                                    }}
+                                />
+                            </div>
                             <p className="mt-2 mb-0">
                                 <strong>{qris.merchantName}</strong>
                             </p>
@@ -213,7 +242,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                     >
                         {loading ? 'Memproses...' : 'Lanjutkan'}
                     </Button>
-                    <Button variant="outline-secondary" onClick={onClose}>
+                    <Button variant="outline-secondary" onClick={handleCancel}>
                         Batal
                     </Button>
                 </div>
@@ -221,7 +250,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
         );
     }
 
-    // STEP 2: Instruksi Pembayaran
+    // STEP 2: Instruksi Pembayaran & Upload Bukti
     if (step === 2) {
         return (
             <div className="p-4">
@@ -229,6 +258,15 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                     <FaClock className="me-2" />
                     <strong>Batas pembayaran:</strong> {formatDate(transaction.expiresAt)}
                 </Alert>
+
+                {transaction?.isQRIS && (
+                    <Alert variant="success" className="mb-4">
+                        <FaQrcode size={24} className="me-2" />
+                        <strong>Scan QRIS</strong> menggunakan e-wallet Anda.
+                        <br />
+                        <small>Setelah scan, upload bukti pembayaran.</small>
+                    </Alert>
+                )}
 
                 <Card className="mb-4 border-success">
                     <Card.Header className="bg-success text-white">
@@ -251,37 +289,33 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td className="text-muted">Bank Tujuan:</td>
-                                    <td>
-                                        <strong>{selectedBank.bankName}</strong>
-                                    </td>
+                                    <td className="text-muted">Metode:</td>
+                                    <td><strong>{transaction.bank.bankName}</strong></td>
                                 </tr>
-                                <tr>
-                                    <td className="text-muted">Nomor Rekening:</td>
-                                    <td>
-                                        <strong>{selectedBank.accountNumber}</strong>
-                                        <Button 
-                                            variant="link" 
-                                            className="p-0 ms-2"
-                                            onClick={() => copyToClipboard(selectedBank.accountNumber)}
-                                        >
-                                            <FaCopy size={12} />
-                                        </Button>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td className="text-muted">Atas Nama:</td>
-                                    <td>
-                                        <strong>{selectedBank.accountName}</strong>
-                                    </td>
-                                </tr>
+                                {!transaction?.isQRIS && (
+                                    <>
+                                        <tr>
+                                            <td className="text-muted">Nomor Rekening:</td>
+                                            <td>
+                                                <strong>{transaction.bank.accountNumber}</strong>
+                                                <Button 
+                                                    variant="link" 
+                                                    className="p-0 ms-2"
+                                                    onClick={() => copyToClipboard(transaction.bank.accountNumber)}
+                                                >
+                                                    <FaCopy size={12} />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td className="text-muted">Atas Nama:</td>
+                                            <td><strong>{transaction.bank.accountName}</strong></td>
+                                        </tr>
+                                    </>
+                                )}
                                 <tr>
                                     <td className="text-muted">Total Transfer:</td>
-                                    <td>
-                                        <h5 className="text-primary mb-0">
-                                            Rp {amount.toLocaleString()}
-                                        </h5>
-                                    </td>
+                                    <td><h5 className="text-primary mb-0">Rp {amount.toLocaleString()}</h5></td>
                                 </tr>
                             </tbody>
                         </Table>
@@ -297,12 +331,10 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                             <Form.Label>Tanggal Transfer</Form.Label>
                             <Form.Control
                                 type="date"
-                                value={transferData.transferDate}
-                                onChange={(e) => setTransferData({
-                                    ...transferData,
-                                    transferDate: e.target.value
-                                })}
+                                value={transferDate}
+                                onChange={(e) => setTransferDate(e.target.value)}
                                 max={new Date().toISOString().split('T')[0]}
+                                required
                             />
                         </Form.Group>
 
@@ -312,6 +344,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                                 type="file"
                                 accept="image/*,.pdf"
                                 onChange={handleFileChange}
+                                required
                             />
                             <Form.Text className="text-muted">
                                 Format: JPG, PNG, PDF (maks 5MB)
@@ -332,7 +365,7 @@ const ManualPaymentForm = ({ consultation, amount, onSuccess, onClose }) => {
                         variant="success"
                         size="lg"
                         onClick={uploadProof}
-                        disabled={!file || !transferData.transferDate || uploading}
+                        disabled={!file || !transferDate || uploading}
                     >
                         {uploading ? 'Mengupload...' : 'Upload & Konfirmasi'}
                     </Button>
@@ -385,10 +418,14 @@ const Consultations = () => {
     const [loadingConsultations, setLoadingConsultations] = useState(true);
 
     useEffect(() => {
-        if (user) {
-            fetchDoctors();
-            fetchMyConsultations();
+        if (!user) {
+            toast.error('Silakan login terlebih dahulu');
+            navigate('/login');
+            return;
         }
+        
+        fetchDoctors();
+        fetchMyConsultations();
     }, [user]);
 
     const fetchDoctors = async () => {
@@ -418,9 +455,13 @@ const Consultations = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         
-        if (!user) {
-            toast.error('Silakan login terlebih dahulu');
-            navigate('/login');
+        if (!selectedDoctor) {
+            toast.error('Pilih dokter terlebih dahulu');
+            return;
+        }
+
+        if (!symptoms) {
+            toast.error('Isi keluhan Anda');
             return;
         }
 
@@ -452,24 +493,54 @@ const Consultations = () => {
         navigate(`/consultations/${consultationId}`);
     };
 
+    const downloadPDF = async (consultation) => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get(
+                `http://localhost:5000/api/consultations/${consultation._id}/sick-letter/pdf`,
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    responseType: 'blob'
+                }
+            );
+            
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `surat-sakit-${consultation._id}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            
+            toast.success('Surat sakit berhasil diunduh');
+        } catch (error) {
+            toast.error('Gagal mengunduh surat sakit');
+        }
+    };
+
+    // ✅ STATUS BADGE YANG DIPERBAIKI
     const getStatusBadge = (status) => {
         const variants = {
+            pending: 'secondary',
             waiting_payment: 'warning',
-            pending: 'warning',
             paid: 'info',
             ongoing: 'primary',
             completed: 'success',
+            verified: 'success',
             cancelled: 'danger'
         };
+        
         const labels = {
+            pending: 'Menunggu',
             waiting_payment: 'Menunggu Pembayaran',
-            pending: 'Menunggu Verifikasi',
-            paid: 'Lunas',
+            paid: 'Menunggu Verifikasi',
             ongoing: 'Sedang Berlangsung',
             completed: 'Selesai',
+            verified: 'Lunas / Terverifikasi',
             cancelled: 'Dibatalkan'
         };
-        return <Badge bg={variants[status]}>{labels[status] || status}</Badge>;
+        
+        return <Badge bg={variants[status] || 'secondary'}>{labels[status] || status}</Badge>;
     };
 
     return (
@@ -478,16 +549,12 @@ const Consultations = () => {
                 <Col lg={5} className="mb-4">
                     <Card className="shadow-sm border-0">
                         <Card.Header className="bg-primary text-white py-3">
-                            <h4 className="mb-0">
-                                Konsultasi Online Baru
-                            </h4>
+                            <h4 className="mb-0">Konsultasi Online Baru</h4>
                         </Card.Header>
                         <Card.Body className="p-4">
                             <Form onSubmit={handleSubmit}>
                                 <Form.Group className="mb-3">
-                                    <Form.Label className="fw-bold">
-                                        Pilih Dokter
-                                    </Form.Label>
+                                    <Form.Label className="fw-bold">Pilih Dokter</Form.Label>
                                     <Form.Select
                                         value={selectedDoctor}
                                         onChange={(e) => setSelectedDoctor(e.target.value)}
@@ -537,64 +604,101 @@ const Consultations = () => {
                         <Card.Body>
                             {loadingConsultations ? (
                                 <div className="text-center py-5">
-                                    <div className="spinner-border text-primary" role="status" />
+                                    <Spinner animation="border" variant="primary" />
                                 </div>
                             ) : consultations.length === 0 ? (
                                 <div className="text-center py-5">
+                                    <FaHistory size={50} className="text-muted mb-3" />
                                     <h5>Belum Ada Konsultasi</h5>
                                     <p className="text-muted">Mulai konsultasi online pertama Anda</p>
                                 </div>
                             ) : (
                                 consultations.map(cons => (
-                                    <Card key={cons._id} className="mb-3 border-0 bg-light">
-                                        <Card.Body>
-                                            <Row>
-                                                <Col md={8}>
-                                                    <div className="d-flex align-items-center mb-2">
-                                                        <h6 className="mb-0">dr. {cons.doctorId?.name}</h6>
-                                                    </div>
-                                                    <div className="text-muted small mb-2">
-                                                        {new Date(cons.createdAt).toLocaleDateString('id-ID')}
-                                                    </div>
-                                                    <p className="mb-0">
-                                                        <strong>Keluhan:</strong> {cons.symptoms}
-                                                    </p>
-                                                </Col>
-                                                <Col md={4} className="text-end">
-                                                    <div className="mb-2">{getStatusBadge(cons.status)}</div>
-                                                    {cons.status === 'paid' && (
-                                                        <Button 
-                                                            variant="primary" 
-                                                            size="sm"
-                                                            onClick={() => startChat(cons._id)}
-                                                        >
-                                                            Mulai Chat
-                                                        </Button>
-                                                    )}
-                                                    {cons.status === 'ongoing' && (
-                                                        <Button 
-                                                            variant="success" 
-                                                            size="sm"
-                                                            onClick={() => startChat(cons._id)}
-                                                        >
-                                                            Lanjutkan Chat
-                                                        </Button>
-                                                    )}
-                                                    {cons.status === 'waiting_payment' && (
-                                                        <Button 
-                                                            variant="warning" 
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                // Open payment modal again
-                                                            }}
-                                                        >
-                                                            Bayar Sekarang
-                                                        </Button>
-                                                    )}
-                                                </Col>
-                                            </Row>
-                                        </Card.Body>
-                                    </Card>
+                                    // Filter: jangan tampilkan yang status cancelled
+                                    cons.status !== 'cancelled' && (
+                                        <Card key={cons._id} className="mb-3 border-0 bg-light">
+                                            <Card.Body>
+                                                <Row>
+                                                    <Col md={8}>
+                                                        <div className="d-flex align-items-center mb-2">
+                                                            <FaUserMd className="text-primary me-2" />
+                                                            <h6 className="mb-0">{cons.doctorId?.name}</h6>
+                                                            {cons.sickLetter && (
+                                                                <Badge bg="warning" className="ms-2">
+                                                                    <FaFileMedical className="me-1" />
+                                                                    Surat Sakit
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-muted small mb-2">
+                                                            <FaClock className="me-1" />
+                                                            {new Date(cons.createdAt).toLocaleDateString('id-ID')}
+                                                        </div>
+                                                        <p className="mb-0">
+                                                            <strong>Keluhan:</strong> {cons.symptoms}
+                                                        </p>
+                                                    </Col>
+                                                    <Col md={4} className="text-end">
+                                                        <div className="mb-2">{getStatusBadge(cons.status)}</div>
+                                                        
+                                                        {cons.status === 'paid' && (
+                                                            <Badge bg="info" className="p-2 w-100">
+                                                                Menunggu Verifikasi Admin
+                                                            </Badge>
+                                                        )}
+                                                        
+                                                        {cons.status === 'verified' && (
+                                                            <Button 
+                                                                variant="success" 
+                                                                size="sm"
+                                                                className="mb-2 w-100"
+                                                                onClick={() => startChat(cons._id)}
+                                                            >
+                                                                <FaComment className="me-1" /> Mulai Chat
+                                                            </Button>
+                                                        )}
+                                                        
+                                                        {cons.status === 'ongoing' && (
+                                                            <Button 
+                                                                variant="primary" 
+                                                                size="sm"
+                                                                className="mb-2 w-100"
+                                                                onClick={() => startChat(cons._id)}
+                                                            >
+                                                                <FaComment className="me-1" /> Lanjutkan
+                                                            </Button>
+                                                        )}
+                                                        
+                                                        {cons.status === 'waiting_payment' && (
+                                                            <Button 
+                                                                variant="warning" 
+                                                                size="sm"
+                                                                className="mb-2 w-100"
+                                                                onClick={() => {
+                                                                    setCurrentConsultation(cons);
+                                                                    setPaymentAmount(cons.doctorId?.consultationFee || 0);
+                                                                    setShowPaymentModal(true);
+                                                                }}
+                                                            >
+                                                                Bayar Sekarang
+                                                            </Button>
+                                                        )}
+                                                        
+                                                        {cons.sickLetter && cons.sickLetter.status === 'issued' && (
+                                                            <Button 
+                                                                variant="success" 
+                                                                size="sm"
+                                                                className="w-100"
+                                                                onClick={() => downloadPDF(cons)}
+                                                            >
+                                                                <FaDownload className="me-1" /> Unduh Surat
+                                                            </Button>
+                                                        )}
+                                                    </Col>
+                                                </Row>
+                                            </Card.Body>
+                                        </Card>
+                                    )
                                 ))
                             )}
                         </Card.Body>
@@ -634,9 +738,6 @@ const Consultations = () => {
                 .bank-card:hover {
                     transform: translateY(-5px);
                     box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-                }
-                .bank-icon {
-                    font-size: 2rem;
                 }
             `}</style>
         </Container>

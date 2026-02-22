@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
     Container, Row, Col, Card, Form, Button, 
     InputGroup, Badge, Modal, Table, Alert,
-    Pagination
+    Pagination, Spinner
 } from 'react-bootstrap';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useCart } from '../context/CartContext';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { 
@@ -22,29 +23,42 @@ import {
     FaFilter,
     FaStar,
     FaFire,
-    FaInfoCircle
+    FaInfoCircle,
+    FaMoneyBillWave,
+    FaQrcode,
+    FaCopy,
+    FaHistory
 } from 'react-icons/fa';
 
 const Pharmacy = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { cart, addToCart, removeFromCart, updateQuantity, clearCart, getCartTotal } = useCart();
+    
     const [medicines, setMedicines] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
-    const [cart, setCart] = useState([]);
     const [showCart, setShowCart] = useState(false);
     const [showCheckout, setShowCheckout] = useState(false);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [address, setAddress] = useState('');
     const [paymentAmount, setPaymentAmount] = useState(0);
     const [selectedMedicine, setSelectedMedicine] = useState(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [orders, setOrders] = useState([]);
     const [activeTab, setActiveTab] = useState('shop');
-    const [recommendations, setRecommendations] = useState([]);
-    const [processing, setProcessing] = useState(false);
+    const [currentOrder, setCurrentOrder] = useState(null);
+    const [step, setStep] = useState(1);
+    const [banks, setBanks] = useState([]);
+    const [qris, setQris] = useState(null);
+    const [selectedBank, setSelectedBank] = useState(null);
+    const [transaction, setTransaction] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [transferDate, setTransferDate] = useState('');
+    const [file, setFile] = useState(null);
 
     const categories = [
         { value: '', label: 'Semua Kategori' },
@@ -55,17 +69,17 @@ const Pharmacy = () => {
     ];
 
     useEffect(() => {
-        fetchMedicines();
-        if (user) {
-            fetchOrders();
+        // Redirect if not logged in
+        if (!user) {
+            toast.error('Silakan login untuk mengakses farmasi');
+            navigate('/login');
+            return;
         }
-        loadCart();
-        generateRecommendations();
-    }, [currentPage, searchTerm, selectedCategory]);
-
-    useEffect(() => {
-        saveCart();
-    }, [cart]);
+        
+        fetchMedicines();
+        fetchOrders();
+        fetchBankAccounts();
+    }, [currentPage, searchTerm, selectedCategory, user]);
 
     const fetchMedicines = async () => {
         try {
@@ -80,7 +94,7 @@ const Pharmacy = () => {
                 `http://localhost:5000/api/pharmacy/medicines?${params}`
             );
             
-            setMedicines(response.data.medicines || response.data);
+            setMedicines(response.data.medicines || []);
             setTotalPages(response.data.totalPages || 1);
         } catch (error) {
             toast.error('Gagal memuat data obat');
@@ -102,84 +116,19 @@ const Pharmacy = () => {
         }
     };
 
-    const loadCart = () => {
-        const savedCart = localStorage.getItem('pharmacy_cart');
-        if (savedCart) {
-            setCart(JSON.parse(savedCart));
+    const fetchBankAccounts = async () => {
+        try {
+            const response = await axios.get(
+                'http://localhost:5000/api/manual-payment/bank-accounts'
+            );
+            setBanks(response.data.banks);
+            setQris(response.data.qris[0]);
+        } catch (error) {
+            console.error('Gagal memuat data bank');
         }
-    };
-
-    const saveCart = () => {
-        localStorage.setItem('pharmacy_cart', JSON.stringify(cart));
-    };
-
-    const generateRecommendations = () => {
-        const recs = [
-            { name: 'Paracetamol', usage: 'Pereda demam & nyeri', icon: FaFire },
-            { name: 'Vitamin C', usage: 'Meningkatkan imunitas', icon: FaStar },
-            { name: 'Antasida', usage: 'Mengatasi maag', icon: FaPrescriptionBottle }
-        ];
-        setRecommendations(recs);
-    };
-
-    const addToCart = (medicine) => {
-        setCart(prevCart => {
-            const existingItem = prevCart.find(item => item._id === medicine._id);
-            
-            if (existingItem) {
-                if (existingItem.quantity >= medicine.stock) {
-                    toast.error(`Stok ${medicine.name} hanya tersedia ${medicine.stock}`);
-                    return prevCart;
-                }
-                return prevCart.map(item =>
-                    item._id === medicine._id
-                        ? { ...item, quantity: item.quantity + 1 }
-                        : item
-                );
-            }
-            
-            return [...prevCart, { ...medicine, quantity: 1 }];
-        });
-        
-        toast.success(`${medicine.name} ditambahkan ke keranjang`);
-    };
-
-    const removeFromCart = (medicineId) => {
-        setCart(prevCart => prevCart.filter(item => item._id !== medicineId));
-        toast.info('Item dihapus dari keranjang');
-    };
-
-    const updateQuantity = (medicineId, newQuantity) => {
-        if (newQuantity < 1) {
-            removeFromCart(medicineId);
-            return;
-        }
-
-        setCart(prevCart =>
-            prevCart.map(item => {
-                if (item._id === medicineId) {
-                    if (newQuantity > item.stock) {
-                        toast.error(`Stok ${item.name} hanya tersedia ${item.stock}`);
-                        return item;
-                    }
-                    return { ...item, quantity: newQuantity };
-                }
-                return item;
-            })
-        );
-    };
-
-    const getCartTotal = () => {
-        return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
     };
 
     const handleCheckout = () => {
-        if (!user) {
-            toast.error('Silakan login terlebih dahulu');
-            navigate('/login');
-            return;
-        }
-
         if (cart.length === 0) {
             toast.error('Keranjang belanja kosong');
             return;
@@ -195,54 +144,136 @@ const Pharmacy = () => {
         setPaymentAmount(getCartTotal());
     };
 
-    const clearCart = () => {
-        if (window.confirm('Hapus semua item dari keranjang?')) {
-            setCart([]);
-            toast.info('Keranjang belanja dikosongkan');
-        }
-    };
-
-    const handleMockPayment = async () => {
-        setProcessing(true);
-        
+    const createOrder = async () => {
         try {
             const token = localStorage.getItem('token');
-            
-            // Create mock payment
-            const paymentResponse = await axios.post(
-                'http://localhost:5000/api/payments/create-payment-intent',
-                {
-                    amount: paymentAmount,
-                    paymentType: 'medicine',
-                    referenceId: 'cart-' + Date.now()
-                },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
-            // Create order
-            await axios.post(
+            const response = await axios.post(
                 'http://localhost:5000/api/pharmacy/orders',
                 {
                     items: cart,
                     address,
-                    paymentId: paymentResponse.data.paymentId,
-                    total: paymentAmount
+                    total: getCartTotal()
                 },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            toast.success('✅ Pembayaran berhasil! Obat akan segera diproses.');
-            setCart([]);
+            setCurrentOrder(response.data.order);
             setShowCheckout(false);
-            setAddress('');
-            fetchOrders();
-            setActiveTab('orders');
+            setShowPaymentModal(true);
+            setStep(1);
+
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Gagal membuat pesanan');
+        }
+    };
+
+    const createTransaction = async (bankId) => {
+        setStep(2);
+        
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post(
+                'http://localhost:5000/api/manual-payment/create',
+                {
+                    amount: paymentAmount,
+                    paymentType: 'medicine',
+                    referenceId: currentOrder._id,
+                    bankId
+                },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            setTransaction(response.data.transaction);
+            
+            if (response.data.transaction.isQRIS) {
+                setSelectedBank({
+                    bankName: 'QRIS',
+                    accountName: 'Klinik Pratama IPB',
+                    isQRIS: true
+                });
+            } else {
+                setSelectedBank(banks.find(b => b.id === bankId));
+            }
+            
+            setStep(3);
             
         } catch (error) {
-            toast.error('Pembayaran gagal');
-        } finally {
-            setProcessing(false);
+            toast.error('Gagal membuat transaksi');
         }
+    };
+
+    const handleFileChange = (e) => {
+        const selectedFile = e.target.files[0];
+        if (selectedFile) {
+            if (selectedFile.size > 5 * 1024 * 1024) {
+                toast.error('File maksimal 5MB');
+                return;
+            }
+            setFile(selectedFile);
+        }
+    };
+
+    const uploadProof = async () => {
+        if (!file) {
+            toast.error('Pilih file bukti transfer');
+            return;
+        }
+
+        if (!transferDate) {
+            toast.error('Pilih tanggal transfer');
+            return;
+        }
+
+        setUploading(true);
+
+        const formData = new FormData();
+        formData.append('proof', file);
+        formData.append('transferDate', transferDate);
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post(
+                `http://localhost:5000/api/manual-payment/upload-proof/${transaction.id}`,
+                formData,
+                {
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'multipart/form-data'
+                    }
+                }
+            );
+
+            toast.success('Bukti transfer berhasil diupload! Menunggu verifikasi admin.');
+            
+            // Update order status
+            setStep(4);
+            clearCart();
+            fetchOrders();
+            
+        } catch (error) {
+            toast.error('Gagal upload bukti transfer');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        toast.success('Teks berhasil disalin');
+    };
+
+    const formatDate = (date) => {
+        return new Date(date).toLocaleDateString('id-ID', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    const formatCurrency = (amount) => {
+        return `Rp ${amount?.toLocaleString() || 0}`;
     };
 
     const getStatusBadge = (status) => {
@@ -255,8 +286,8 @@ const Pharmacy = () => {
             cancelled: 'danger'
         };
         const labels = {
-            pending: 'Menunggu',
-            paid: 'Dibayar',
+            pending: 'Menunggu Pembayaran',
+            paid: 'Menunggu Verifikasi',
             processing: 'Diproses',
             shipped: 'Dikirim',
             delivered: 'Terkirim',
@@ -265,88 +296,8 @@ const Pharmacy = () => {
         return <Badge bg={variants[status]}>{labels[status] || status}</Badge>;
     };
 
-    const formatCurrency = (amount) => {
-        return `Rp ${amount?.toLocaleString() || 0}`;
-    };
-
-    const formatDate = (date) => {
-        return new Date(date).toLocaleDateString('id-ID', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
-        });
-    };
-
-    const MockCheckoutForm = () => {
-        return (
-            <div className="p-3">
-                <Alert variant="warning" className="mb-4">
-                    <div className="d-flex align-items-center">
-                        <span className="badge bg-dark me-3">🔧 DEV MODE</span>
-                        <div>
-                            <strong className="d-block">Stripe Nonaktif</strong>
-                            <small>Testing pembayaran tanpa kartu kredit</small>
-                        </div>
-                    </div>
-                </Alert>
-
-                <div className="bg-light p-3 rounded mb-4">
-                    <h6 className="mb-3">📦 Ringkasan Pesanan</h6>
-                    {cart.map(item => (
-                        <div key={item._id} className="d-flex justify-content-between mb-2">
-                            <span>
-                                {item.name} x {item.quantity}
-                            </span>
-                            <span className="fw-bold">
-                                {formatCurrency(item.price * item.quantity)}
-                            </span>
-                        </div>
-                    ))}
-                    <hr />
-                    <div className="d-flex justify-content-between">
-                        <span className="fw-bold">Total:</span>
-                        <span className="fw-bold text-primary h5">
-                            {formatCurrency(paymentAmount)}
-                        </span>
-                    </div>
-                </div>
-
-                <div className="d-grid gap-2">
-                    <Button
-                        variant="success"
-                        size="lg"
-                        onClick={handleMockPayment}
-                        disabled={processing}
-                    >
-                        {processing ? (
-                            <>
-                                <span className="spinner-border spinner-border-sm me-2" />
-                                Memproses...
-                            </>
-                        ) : (
-                            '✅ Bayar Sekarang (Test)'
-                        )}
-                    </Button>
-                    
-                    <Button
-                        variant="outline-secondary"
-                        onClick={() => setShowCheckout(false)}
-                        disabled={processing}
-                    >
-                        Batal
-                    </Button>
-                </div>
-
-                <p className="text-muted small text-center mt-3 mb-0">
-                    ⏱️ Estimasi pengiriman: 1-3 hari kerja
-                </p>
-            </div>
-        );
-    };
-
     return (
         <Container className="py-5">
-            {/* Header */}
             <Row className="mb-4">
                 <Col>
                     <h2 className="mb-0">
@@ -370,15 +321,13 @@ const Pharmacy = () => {
                             <FaSearch className="me-2" />
                             Belanja
                         </Button>
-                        {user && (
-                            <Button
-                                variant={activeTab === 'orders' ? 'primary' : 'light'}
-                                onClick={() => setActiveTab('orders')}
-                            >
-                                <FaBox className="me-2" />
-                                Pesanan Saya
-                            </Button>
-                        )}
+                        <Button
+                            variant={activeTab === 'orders' ? 'primary' : 'light'}
+                            onClick={() => setActiveTab('orders')}
+                        >
+                            <FaHistory className="me-2" />
+                            Pesanan Saya
+                        </Button>
                     </div>
                 </Card.Body>
             </Card>
@@ -443,39 +392,10 @@ const Pharmacy = () => {
                         </Col>
                     </Row>
 
-                    {/* Recommendations */}
-                    {!searchTerm && !selectedCategory && medicines.length > 0 && (
-                        <Row className="mb-4">
-                            <Col>
-                                <Card className="border-0 bg-gradient-primary text-white">
-                                    <Card.Body>
-                                        <h5 className="mb-3">🔥 Rekomendasi Hari Ini</h5>
-                                        <Row>
-                                            {recommendations.map((rec, idx) => (
-                                                <Col md={4} key={idx}>
-                                                    <div className="d-flex align-items-center">
-                                                        <rec.icon size={24} className="me-2" />
-                                                        <div>
-                                                            <strong>{rec.name}</strong>
-                                                            <br />
-                                                            <small>{rec.usage}</small>
-                                                        </div>
-                                                    </div>
-                                                </Col>
-                                            ))}
-                                        </Row>
-                                    </Card.Body>
-                                </Card>
-                            </Col>
-                        </Row>
-                    )}
-
                     {/* Medicine Grid */}
                     {loading ? (
                         <div className="text-center py-5">
-                            <div className="spinner-border text-primary" role="status">
-                                <span className="visually-hidden">Loading...</span>
-                            </div>
+                            <Spinner animation="border" variant="primary" />
                         </div>
                     ) : medicines.length === 0 ? (
                         <div className="text-center py-5">
@@ -605,7 +525,7 @@ const Pharmacy = () => {
                                             <Col md={8}>
                                                 <div className="d-flex align-items-center mb-2">
                                                     <Badge bg="primary" className="me-2">
-                                                        {formatDate(order.createdAt)}
+                                                        {order.orderNumber}
                                                     </Badge>
                                                     {getStatusBadge(order.status)}
                                                 </div>
@@ -613,20 +533,20 @@ const Pharmacy = () => {
                                                     {order.items?.map((item, idx) => (
                                                         <div key={idx} className="d-flex justify-content-between mb-1">
                                                             <span>
-                                                                {item.medicineId?.name || 'Produk'}
+                                                                {item.name}
                                                                 <small className="text-muted ms-2">
                                                                     x{item.quantity}
                                                                 </small>
                                                             </span>
                                                             <span className="fw-bold">
-                                                                {formatCurrency(item.price * item.quantity)}
+                                                                {formatCurrency(item.subtotal)}
                                                             </span>
                                                         </div>
                                                     ))}
                                                 </div>
                                                 <div className="mt-2 text-muted small">
                                                     <FaTruck className="me-1" />
-                                                    Pengiriman ke: {order.shippingAddress}
+                                                    Pengiriman ke: {order.shippingAddress?.street}, {order.shippingAddress?.city}
                                                 </div>
                                                 {order.estimatedDelivery && (
                                                     <div className="mt-1 text-success small">
@@ -645,6 +565,21 @@ const Pharmacy = () => {
                                                     <Badge bg="info">
                                                         No. Resi: {order.trackingNumber}
                                                     </Badge>
+                                                )}
+                                                {order.status === 'pending' && (
+                                                    <Button 
+                                                        variant="warning" 
+                                                        size="sm"
+                                                        className="mt-2"
+                                                        onClick={() => {
+                                                            setCurrentOrder(order);
+                                                            setPaymentAmount(order.totalAmount);
+                                                            setShowPaymentModal(true);
+                                                            setStep(1);
+                                                        }}
+                                                    >
+                                                        Bayar Sekarang
+                                                    </Button>
                                                 )}
                                             </Col>
                                         </Row>
@@ -755,10 +690,6 @@ const Pharmacy = () => {
                             <Alert variant="info" className="mb-0">
                                 <FaClock className="me-2" />
                                 Estimasi waktu pengiriman: 1-3 hari kerja
-                                <br />
-                                <small className="text-muted">
-                                    *Gratis ongkir untuk pembelian di atas Rp 100.000
-                                </small>
                             </Alert>
                         </>
                     )}
@@ -783,6 +714,245 @@ const Pharmacy = () => {
                         </>
                     )}
                 </Modal.Footer>
+            </Modal>
+
+            {/* Checkout Confirmation Modal */}
+            <Modal show={showCheckout} onHide={() => setShowCheckout(false)}>
+                <Modal.Header closeButton>
+                    <Modal.Title>Konfirmasi Pesanan</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <h6>Ringkasan Pesanan:</h6>
+                    {cart.map(item => (
+                        <div key={item._id} className="d-flex justify-content-between mb-2">
+                            <span>{item.name} x {item.quantity}</span>
+                            <span>{formatCurrency(item.price * item.quantity)}</span>
+                        </div>
+                    ))}
+                    <hr />
+                    <div className="d-flex justify-content-between fw-bold">
+                        <span>Total</span>
+                        <span className="text-primary">{formatCurrency(getCartTotal())}</span>
+                    </div>
+                    <hr />
+                    <p><strong>Alamat Pengiriman:</strong> {address}</p>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowCheckout(false)}>
+                        Batal
+                    </Button>
+                    <Button variant="primary" onClick={createOrder}>
+                        Lanjutkan ke Pembayaran
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Payment Modal */}
+            <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)} size="lg">
+                <Modal.Header closeButton>
+                    <Modal.Title>
+                        <FaMoneyBillWave className="me-2 text-primary" />
+                        Pembayaran
+                    </Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {step === 1 && (
+                        <div className="p-4">
+                            <h5 className="mb-4">Pilih Metode Pembayaran</h5>
+                            
+                            <div className="mb-4">
+                                <h6 className="mb-3">🏦 Transfer Bank</h6>
+                                <Row className="g-3">
+                                    {banks.map(bank => (
+                                        <Col md={6} key={bank.id}>
+                                            <Card 
+                                                className={`bank-card ${selectedBank?.id === bank.id ? 'border-primary' : ''}`}
+                                                onClick={() => setSelectedBank(bank)}
+                                                style={{ cursor: 'pointer' }}
+                                            >
+                                                <Card.Body className="d-flex align-items-center">
+                                                    <div className="me-3" style={{ fontSize: '2rem' }}>
+                                                        🏦
+                                                    </div>
+                                                    <div>
+                                                        <strong>{bank.bankName}</strong>
+                                                        <br />
+                                                        <small className="text-muted">a.n. {bank.accountName}</small>
+                                                    </div>
+                                                </Card.Body>
+                                            </Card>
+                                        </Col>
+                                    ))}
+                                </Row>
+                            </div>
+
+                            {qris && (
+                                <div className="mb-4">
+                                    <h6 className="mb-3">📱 QRIS</h6>
+                                    <Card 
+                                        className={`text-center p-3 bank-card ${selectedBank?.id === 999 ? 'border-primary' : ''}`}
+                                        onClick={() => setSelectedBank({ id: 999, bankName: 'QRIS', isQRIS: true })}
+                                        style={{ cursor: 'pointer' }}
+                                    >
+                                        <div style={{ width: '150px', height: '150px', margin: '0 auto' }}>
+                                            <img 
+                                                src={qris.qrCode || '/images/qris-klinik.png'} 
+                                                alt="QRIS"
+                                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                            />
+                                        </div>
+                                        <p className="mt-2 mb-0">
+                                            <strong>{qris.merchantName}</strong>
+                                        </p>
+                                    </Card>
+                                </div>
+                            )}
+
+                            <div className="d-grid gap-2 mt-4">
+                                <Button
+                                    variant="primary"
+                                    size="lg"
+                                    onClick={() => createTransaction(selectedBank.id)}
+                                    disabled={!selectedBank}
+                                >
+                                    Lanjutkan
+                                </Button>
+                                <Button variant="outline-secondary" onClick={() => setShowPaymentModal(false)}>
+                                    Batal
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 2 && (
+                        <div className="text-center py-5">
+                            <Spinner animation="border" variant="primary" />
+                            <p className="mt-3">Membuat transaksi...</p>
+                        </div>
+                    )}
+
+                    {step === 3 && transaction && (
+                        <div className="p-4">
+                            <Alert variant="info" className="mb-4">
+                                <FaClock className="me-2" />
+                                <strong>Batas pembayaran:</strong> {formatDate(transaction.expiresAt)}
+                            </Alert>
+
+                            <Card className="mb-4 border-success">
+                                <Card.Header className="bg-success text-white">
+                                    <h6 className="mb-0">💰 Detail Pembayaran</h6>
+                                </Card.Header>
+                                <Card.Body>
+                                    <Table borderless size="sm">
+                                        <tbody>
+                                            <tr>
+                                                <td className="text-muted">ID Transaksi:</td>
+                                                <td>
+                                                    <code>{transaction.id}</code>
+                                                    <Button 
+                                                        variant="link" 
+                                                        className="p-0 ms-2"
+                                                        onClick={() => copyToClipboard(transaction.id)}
+                                                    >
+                                                        <FaCopy size={12} />
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td className="text-muted">Metode:</td>
+                                                <td><strong>{transaction.bank.bankName}</strong></td>
+                                            </tr>
+                                            {!transaction.isQRIS && (
+                                                <>
+                                                    <tr>
+                                                        <td className="text-muted">Nomor Rekening:</td>
+                                                        <td>
+                                                            <strong>{transaction.bank.accountNumber}</strong>
+                                                            <Button 
+                                                                variant="link" 
+                                                                className="p-0 ms-2"
+                                                                onClick={() => copyToClipboard(transaction.bank.accountNumber)}
+                                                            >
+                                                                <FaCopy size={12} />
+                                                            </Button>
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="text-muted">Atas Nama:</td>
+                                                        <td><strong>{transaction.bank.accountName}</strong></td>
+                                                    </tr>
+                                                </>
+                                            )}
+                                            <tr>
+                                                <td className="text-muted">Total Transfer:</td>
+                                                <td><h5 className="text-primary mb-0">{formatCurrency(paymentAmount)}</h5></td>
+                                            </tr>
+                                        </tbody>
+                                    </Table>
+                                </Card.Body>
+                            </Card>
+
+                            <Card className="mb-4">
+                                <Card.Header>
+                                    <h6 className="mb-0">📤 Upload Bukti Transfer</h6>
+                                </Card.Header>
+                                <Card.Body>
+                                    <Form.Group className="mb-3">
+                                        <Form.Label>Tanggal Transfer</Form.Label>
+                                        <Form.Control
+                                            type="date"
+                                            value={transferDate}
+                                            onChange={(e) => setTransferDate(e.target.value)}
+                                            max={new Date().toISOString().split('T')[0]}
+                                            required
+                                        />
+                                    </Form.Group>
+
+                                    <Form.Group className="mb-3">
+                                        <Form.Label>File Bukti Transfer</Form.Label>
+                                        <Form.Control
+                                            type="file"
+                                            accept="image/*,.pdf"
+                                            onChange={handleFileChange}
+                                            required
+                                        />
+                                    </Form.Group>
+                                </Card.Body>
+                            </Card>
+
+                            <div className="d-grid gap-2">
+                                <Button
+                                    variant="success"
+                                    size="lg"
+                                    onClick={uploadProof}
+                                    disabled={!file || !transferDate || uploading}
+                                >
+                                    {uploading ? 'Mengupload...' : 'Upload & Konfirmasi'}
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 4 && (
+                        <div className="text-center py-5">
+                            <FaCheckCircle size={64} className="text-success mb-3" />
+                            <h5>Bukti Transfer Terkirim!</h5>
+                            <p className="text-muted">
+                                Terima kasih, bukti transfer Anda sedang diverifikasi oleh admin.
+                            </p>
+                            <Button 
+                                variant="primary" 
+                                className="mt-3"
+                                onClick={() => {
+                                    setShowPaymentModal(false);
+                                    setActiveTab('orders');
+                                }}
+                            >
+                                Lihat Pesanan Saya
+                            </Button>
+                        </div>
+                    )}
+                </Modal.Body>
             </Modal>
 
             {/* Medicine Detail Modal */}
@@ -857,10 +1027,8 @@ const Pharmacy = () => {
                     <Button 
                         variant="primary" 
                         onClick={() => {
-                            if (selectedMedicine) {
-                                addToCart(selectedMedicine);
-                                setShowDetailModal(false);
-                            }
+                            addToCart(selectedMedicine);
+                            setShowDetailModal(false);
                         }}
                         disabled={selectedMedicine?.stock === 0}
                     >
@@ -869,30 +1037,6 @@ const Pharmacy = () => {
                     </Button>
                 </Modal.Footer>
             </Modal>
-
-            {/* Checkout Modal */}
-            <Modal show={showCheckout} onHide={() => setShowCheckout(false)} size="md">
-                <Modal.Header closeButton>
-                    <Modal.Title>Pembayaran</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    <MockCheckoutForm />
-                </Modal.Body>
-            </Modal>
-
-            <style jsx="true">{`
-                .bg-gradient-primary {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                }
-                .hover-card {
-                    transition: all 0.3s ease;
-                    cursor: pointer;
-                }
-                .hover-card:hover {
-                    transform: translateY(-5px);
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.1) !important;
-                }
-            `}</style>
         </Container>
     );
 };

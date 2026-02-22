@@ -2,15 +2,12 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const ManualPayment = require('../models/ManualPayment');
 const Consultation = require('../models/Consultation');
-const Appointment = require('../models/Appointment');
-const SickLetter = require('../models/SickLetter');
-const Order = require('../models/Order');
 const auth = require('../middleware/auth');
-//const adminAuth = require('../middleware/adminAuth');
 
-// ========== DATA BANK STATIS (TANPA DATABASE) ==========
+// Bank accounts data
 const bankAccounts = [
     {
         id: 1,
@@ -46,9 +43,10 @@ const bankAccounts = [
     }
 ];
 
+// QRIS Account
 const qrisAccounts = [
     {
-        id: 1,
+        id: 999,
         name: 'QRIS Klinik Pratama IPB',
         qrCode: '/images/qris-klinik.png',
         merchantName: 'Klinik Pratama IPB',
@@ -56,15 +54,14 @@ const qrisAccounts = [
     }
 ];
 
-// ========== KONFIGURASI UPLOAD ==========
+// Upload configuration
+const uploadDir = path.join(__dirname, '../uploads/proofs');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        const uploadDir = path.join(__dirname, '../uploads/proofs');
-        // Buat folder jika belum ada
-        const fs = require('fs');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
         cb(null, uploadDir);
     },
     filename: function (req, file, cb) {
@@ -75,7 +72,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
     storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowedTypes = /jpeg|jpg|png|gif|pdf/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -89,13 +86,8 @@ const upload = multer({
     }
 });
 
-// ========== ROUTES ==========
-
-// GET daftar rekening tujuan (PUBLIC - TIDAK PERLU AUTH)
+// GET bank accounts (public)
 router.get('/bank-accounts', (req, res) => {
-    console.log('📊 Bank accounts requested at:', new Date().toISOString());
-    console.log('Sending banks:', bankAccounts.length);
-    
     res.json({
         success: true,
         banks: bankAccounts.filter(b => b.isActive),
@@ -103,51 +95,51 @@ router.get('/bank-accounts', (req, res) => {
     });
 });
 
-// Test endpoint (PUBLIC)
-router.get('/test', (req, res) => {
-    res.json({ 
-        success: true, 
-        message: 'Manual payment route is working!',
-        time: new Date().toISOString()
-    });
-});
-
-// CREATE manual payment request (PERLU AUTH)
+// CREATE payment transaction (protected)
 router.post('/create', auth, async (req, res) => {
     try {
         const { amount, paymentType, referenceId, bankId } = req.body;
         
-        console.log('Creating transaction:', { amount, paymentType, referenceId, bankId, userId: req.userId });
-        
-        // Generate transaction ID
         const transactionId = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
         
-        // Cari bank tujuan
-        const selectedBank = bankAccounts.find(b => b.id === parseInt(bankId));
+        let selectedBank;
+        let isQRIS = false;
+        
+        // Cek apakah QRIS (ID 999)
+        if (parseInt(bankId) === 999) {
+            isQRIS = true;
+            selectedBank = {
+                bankName: 'QRIS',
+                accountNumber: 'QRIS',
+                accountName: 'Klinik Pratama IPB'
+            };
+        } else {
+            selectedBank = bankAccounts.find(b => b.id === parseInt(bankId));
+        }
         
         if (!selectedBank) {
             return res.status(400).json({ error: 'Bank tidak ditemukan' });
         }
 
-        // Buat record manual payment (jika model sudah ada)
-        let manualPayment = null;
-        try {
-            const ManualPaymentModel = require('../models/ManualPayment');
-            manualPayment = new ManualPaymentModel({
-                userId: req.userId,
-                transactionId,
-                amount,
-                paymentType,
-                referenceId,
-                bankName: selectedBank.bankName,
-                accountNumber: selectedBank.accountNumber,
-                accountName: selectedBank.accountName,
-                status: 'pending'
+        const manualPayment = new ManualPayment({
+            userId: req.userId,
+            transactionId,
+            amount,
+            paymentType,
+            referenceId,
+            bankName: selectedBank.bankName,
+            accountNumber: selectedBank.accountNumber,
+            accountName: selectedBank.accountName,
+            status: 'pending'
+        });
+        
+        await manualPayment.save();
+
+        if (paymentType === 'consultation') {
+            await Consultation.findByIdAndUpdate(referenceId, { 
+                status: 'waiting_payment',
+                paymentId: manualPayment._id
             });
-            await manualPayment.save();
-        } catch (dbError) {
-            console.log('Database error (maybe model not ready):', dbError.message);
-            // Lanjutkan tanpa database
         }
 
         res.json({
@@ -156,7 +148,8 @@ router.post('/create', auth, async (req, res) => {
                 id: transactionId,
                 bank: selectedBank,
                 amount,
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 jam
+                isQRIS,
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
             }
         });
 
@@ -166,7 +159,7 @@ router.post('/create', auth, async (req, res) => {
     }
 });
 
-// UPLOAD bukti transfer (PERLU AUTH)
+// UPLOAD payment proof (protected)
 router.post('/upload-proof/:transactionId', 
     auth, 
     upload.single('proof'), 
@@ -175,12 +168,21 @@ router.post('/upload-proof/:transactionId',
             const { transactionId } = req.params;
             const { transferDate } = req.body;
             
-            console.log('Upload proof for transaction:', transactionId);
-            console.log('File:', req.file);
-
-            if (!req.file) {
-                return res.status(400).json({ error: 'File tidak ditemukan' });
+            const manualPayment = await ManualPayment.findOne({ transactionId });
+            
+            if (!manualPayment) {
+                return res.status(404).json({ error: 'Transaksi tidak ditemukan' });
             }
+
+            if (manualPayment.userId.toString() !== req.userId) {
+                return res.status(403).json({ error: 'Unauthorized' });
+            }
+
+            manualPayment.transferProof = `/uploads/proofs/${req.file.filename}`;
+            manualPayment.transferDate = transferDate || new Date();
+            manualPayment.status = 'pending';
+            
+            await manualPayment.save();
 
             res.json({
                 success: true,

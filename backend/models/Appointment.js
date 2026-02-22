@@ -8,12 +8,15 @@ const appointmentSchema = new mongoose.Schema({
   appointmentTime: { type: String, required: true },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'completed', 'cancelled'],
+    enum: ['pending', 'confirmed', 'rejected', 'completed', 'cancelled'], // ✅ tambah 'rejected'
     default: 'pending'
   },
   complaint: String,
   queueNumber: Number,
   notes: String,
+  doctorNotes: String, // catatan dari dokter (alasan reject dll)
+  rejectionReason: String, // alasan penolakan
+  completedAt: Date,
   createdAt: { type: Date, default: Date.now }
 });
 

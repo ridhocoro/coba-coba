@@ -3,7 +3,8 @@ import { Container, Row, Col, Nav, Table, Badge, Button, Form, Card, Modal } fro
 import { 
     FaUsers, FaUserMd, FaCalendarCheck, FaPrescription,
     FaMoneyBillWave, FaFileMedical, FaChartLine, FaPills,
-    FaCheckCircle, FaTimesCircle, FaEye, FaDownload, FaEdit
+    FaCheckCircle, FaTimesCircle, FaEye, FaDownload, FaEdit,
+    FaClock, FaQrcode, FaUniversity, FaHistory
 } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import axios from 'axios';
@@ -44,17 +45,26 @@ const AdminDashboard = () => {
     const [medicines, setMedicines] = useState([]);
     const [users, setUsers] = useState([]);
     const [transactions, setTransactions] = useState([]);
+    const [pendingPayments, setPendingPayments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showDoctorModal, setShowDoctorModal] = useState(false);
     const [showScheduleModal, setShowScheduleModal] = useState(false);
     const [showMedicineModal, setShowMedicineModal] = useState(false);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [selectedPayment, setSelectedPayment] = useState(null);
+    const [rejectNotes, setRejectNotes] = useState('');
+    const [showRejectModal, setShowRejectModal] = useState(false);
     const [selectedDoctor, setSelectedDoctor] = useState(null);
     const [selectedMedicine, setSelectedMedicine] = useState(null);
     const { user } = useAuth();
 
     useEffect(() => {
         fetchDashboardData();
-        const interval = setInterval(fetchDashboardData, 30000);
+        fetchPendingPayments();
+        const interval = setInterval(() => {
+            fetchDashboardData();
+            fetchPendingPayments();
+        }, 30000);
         return () => clearInterval(interval);
     }, []);
 
@@ -73,7 +83,7 @@ const AdminDashboard = () => {
                 usersRes,
                 transactionsRes
             ] = await Promise.all([
-                axios.get('http://localhost:5000/api/admin/stats', { headers }),
+                axios.get('http://localhost:5000/api/admin/payments/stats', { headers }),
                 axios.get('http://localhost:5000/api/admin/doctors', { headers }),
                 axios.get('http://localhost:5000/api/admin/consultations', { headers }),
                 axios.get('http://localhost:5000/api/admin/sick-letters', { headers }),
@@ -93,8 +103,50 @@ const AdminDashboard = () => {
             setTransactions(transactionsRes.data);
         } catch (error) {
             toast.error('Gagal memuat data dashboard');
+        }
+    };
+
+    const fetchPendingPayments = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get(
+                'http://localhost:5000/api/admin/payments/pending',
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            setPendingPayments(response.data.payments);
+        } catch (error) {
+            console.error('Gagal memuat pembayaran pending:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const verifyPayment = async (paymentId, status) => {
+        if (status === 'rejected' && !rejectNotes) {
+            toast.error('Isi alasan penolakan');
+            return;
+        }
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.put(
+                `http://localhost:5000/api/admin/payments/${paymentId}/verify`,
+                { 
+                    status, 
+                    notes: status === 'rejected' ? rejectNotes : 'Pembayaran valid' 
+                },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            toast.success(`Pembayaran ${status === 'verified' ? 'diverifikasi' : 'ditolak'}`);
+            setShowPaymentModal(false);
+            setShowRejectModal(false);
+            setRejectNotes('');
+            fetchPendingPayments();
+            fetchDashboardData();
+            
+        } catch (error) {
+            toast.error('Gagal memproses verifikasi');
         }
     };
 
@@ -229,6 +281,20 @@ const AdminDashboard = () => {
         }
     };
 
+    const formatCurrency = (amount) => {
+        return `Rp ${amount?.toLocaleString() || 0}`;
+    };
+
+    const formatDate = (date) => {
+        return new Date(date).toLocaleDateString('id-ID', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
     // Chart Data
     const revenueChartData = {
         labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
@@ -287,6 +353,18 @@ const AdminDashboard = () => {
                         >
                             <FaChartLine className="me-2" /> Dashboard
                         </Nav.Link>
+                        
+                        <Nav.Link 
+                            className={activeTab === 'payments' ? 'active bg-primary text-white' : ''}
+                            onClick={() => setActiveTab('payments')}
+                        >
+                            <FaMoneyBillWave className="me-2" /> 
+                            Verifikasi Pembayaran
+                            {pendingPayments.length > 0 && (
+                                <Badge bg="danger" className="ms-2">{pendingPayments.length}</Badge>
+                            )}
+                        </Nav.Link>
+                        
                         <Nav.Link 
                             className={activeTab === 'doctors' ? 'active bg-primary text-white' : ''}
                             onClick={() => setActiveTab('doctors')}
@@ -409,20 +487,20 @@ const AdminDashboard = () => {
                                 <Col md={4}>
                                     <Card>
                                         <Card.Header>
-                                            <h5 className="mb-0">Status Surat Sakit</h5>
+                                            <h5 className="mb-0">Status Pembayaran</h5>
                                         </Card.Header>
                                         <Card.Body>
                                             <div className="text-center">
                                                 <h1 className="display-3 text-warning">
-                                                    {stats.pendingSickLetters || 0}
+                                                    {pendingPayments.length}
                                                 </h1>
-                                                <p className="text-muted">Menunggu Persetujuan</p>
+                                                <p className="text-muted">Pembayaran Menunggu Verifikasi</p>
                                                 <Button 
                                                     variant="primary" 
                                                     size="sm"
-                                                    onClick={() => setActiveTab('sickLetters')}
+                                                    onClick={() => setActiveTab('payments')}
                                                 >
-                                                    Proses Sekarang
+                                                    Verifikasi Sekarang
                                                 </Button>
                                             </div>
                                         </Card.Body>
@@ -442,6 +520,80 @@ const AdminDashboard = () => {
                                     </Card>
                                 </Col>
                             </Row>
+                        </div>
+                    )}
+
+                    {/* PAYMENTS TAB */}
+                    {activeTab === 'payments' && (
+                        <div>
+                            <h3 className="mb-4">Verifikasi Pembayaran Manual</h3>
+                            
+                            {pendingPayments.length === 0 ? (
+                                <Card className="text-center p-5">
+                                    <FaCheckCircle size={50} className="text-success mb-3" />
+                                    <h5>Tidak Ada Pembayaran Menunggu Verifikasi</h5>
+                                    <p className="text-muted">Semua pembayaran sudah diverifikasi.</p>
+                                </Card>
+                            ) : (
+                                <Table striped bordered hover responsive>
+                                    <thead>
+                                        <tr>
+                                            <th>ID Transaksi</th>
+                                            <th>User</th>
+                                            <th>Tanggal</th>
+                                            <th>Layanan</th>
+                                            <th>Jumlah</th>
+                                            <th>Metode</th>
+                                            <th>Status</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {pendingPayments.map(payment => (
+                                            <tr key={payment._id}>
+                                                <td>
+                                                    <code>{payment.transactionId}</code>
+                                                </td>
+                                                <td>
+                                                    <strong>{payment.userId?.name}</strong>
+                                                    <br />
+                                                    <small className="text-muted">{payment.userId?.email}</small>
+                                                </td>
+                                                <td>{formatDate(payment.createdAt)}</td>
+                                                <td>
+                                                    <Badge bg="info">
+                                                        {payment.paymentType === 'consultation' ? 'Konsultasi' : payment.paymentType}
+                                                    </Badge>
+                                                </td>
+                                                <td className="fw-bold">{formatCurrency(payment.amount)}</td>
+                                                <td>
+                                                    {payment.bankName === 'QRIS' ? (
+                                                        <><FaQrcode className="me-1 text-success" /> QRIS</>
+                                                    ) : (
+                                                        <><FaUniversity className="me-1 text-primary" /> {payment.bankName}</>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    <Badge bg="warning">Menunggu</Badge>
+                                                </td>
+                                                <td>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="info"
+                                                        onClick={() => {
+                                                            setSelectedPayment(payment);
+                                                            setShowPaymentModal(true);
+                                                        }}
+                                                    >
+                                                        <FaEye className="me-1" />
+                                                        Lihat
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </Table>
+                            )}
                         </div>
                     )}
 
@@ -1012,11 +1164,9 @@ const AdminDashboard = () => {
                     <Form onSubmit={(e) => {
                         e.preventDefault();
                         if (selectedMedicine) {
-                            // Update stock
                             const stock = parseInt(e.target.stock.value);
                             updateStock(selectedMedicine._id, stock);
                         } else {
-                            // Add new medicine
                             const medicineData = {
                                 name: e.target.name.value,
                                 genericName: e.target.genericName.value,
@@ -1113,6 +1263,159 @@ const AdminDashboard = () => {
                         </Button>
                     </Form>
                 </Modal.Body>
+            </Modal>
+
+            {/* Modal Detail Pembayaran */}
+            <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)} size="lg">
+                <Modal.Header closeButton>
+                    <Modal.Title>
+                        <FaMoneyBillWave className="me-2 text-primary" />
+                        Detail Pembayaran
+                    </Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {selectedPayment && (
+                        <>
+                            <Row className="mb-4">
+                                <Col md={6}>
+                                    <Card className="bg-light border-0">
+                                        <Card.Body>
+                                            <h6 className="mb-3">📋 Informasi Transaksi</h6>
+                                            <p className="mb-1">
+                                                <strong>ID:</strong> {selectedPayment.transactionId}
+                                            </p>
+                                            <p className="mb-1">
+                                                <strong>Tanggal:</strong> {formatDate(selectedPayment.createdAt)}
+                                            </p>
+                                            <p className="mb-1">
+                                                <strong>Layanan:</strong> {selectedPayment.paymentType}
+                                            </p>
+                                            <p className="mb-1">
+                                                <strong>Jumlah:</strong> {formatCurrency(selectedPayment.amount)}
+                                            </p>
+                                            <p className="mb-1">
+                                                <strong>Metode:</strong> {selectedPayment.bankName}
+                                            </p>
+                                            {selectedPayment.transferDate && (
+                                                <p className="mb-1">
+                                                    <strong>Tgl Transfer:</strong> {new Date(selectedPayment.transferDate).toLocaleDateString('id-ID')}
+                                                </p>
+                                            )}
+                                        </Card.Body>
+                                    </Card>
+                                </Col>
+                                <Col md={6}>
+                                    <Card className="bg-light border-0">
+                                        <Card.Body>
+                                            <h6 className="mb-3">👤 Informasi User</h6>
+                                            <p className="mb-1">
+                                                <strong>Nama:</strong> {selectedPayment.userId?.name}
+                                            </p>
+                                            <p className="mb-1">
+                                                <strong>Email:</strong> {selectedPayment.userId?.email}
+                                            </p>
+                                            <p className="mb-1">
+                                                <strong>Telepon:</strong> {selectedPayment.userId?.phone}
+                                            </p>
+                                        </Card.Body>
+                                    </Card>
+                                </Col>
+                            </Row>
+
+                            {selectedPayment.paymentType === 'consultation' && selectedPayment.referenceId && (
+                                <Card className="bg-light border-0 mb-4">
+                                    <Card.Body>
+                                        <h6 className="mb-3">🩺 Detail Konsultasi</h6>
+                                        <p className="mb-1">
+                                            <strong>Dokter:</strong> dr. {selectedPayment.referenceId?.doctorId?.name}
+                                        </p>
+                                        <p className="mb-1">
+                                            <strong>Keluhan:</strong> {selectedPayment.referenceId?.symptoms}
+                                        </p>
+                                    </Card.Body>
+                                </Card>
+                            )}
+
+                            <h6 className="mb-3">📎 Bukti Transfer</h6>
+                            {selectedPayment.transferProof ? (
+                                <div className="text-center border p-3 rounded bg-light">
+                                    <img 
+                                        src={`http://localhost:5000${selectedPayment.transferProof}`}
+                                        alt="Bukti Transfer"
+                                        style={{ maxHeight: '300px', maxWidth: '100%' }}
+                                    />
+                                    <div className="mt-3">
+                                        <Button 
+                                            variant="outline-primary"
+                                            size="sm"
+                                            href={`http://localhost:5000${selectedPayment.transferProof}`}
+                                            target="_blank"
+                                        >
+                                            <FaDownload className="me-1" />
+                                            Download Bukti
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <Alert variant="warning">
+                                    Belum ada bukti transfer yang diupload
+                                </Alert>
+                            )}
+                        </>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowPaymentModal(false)}>
+                        Tutup
+                    </Button>
+                    <Button 
+                        variant="danger"
+                        onClick={() => {
+                            setShowPaymentModal(false);
+                            setShowRejectModal(true);
+                        }}
+                    >
+                        <FaTimesCircle className="me-1" />
+                        Tolak
+                    </Button>
+                    <Button 
+                        variant="success"
+                        onClick={() => verifyPayment(selectedPayment._id, 'verified')}
+                    >
+                        <FaCheckCircle className="me-1" />
+                        Verifikasi
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Modal Alasan Penolakan */}
+            <Modal show={showRejectModal} onHide={() => setShowRejectModal(false)}>
+                <Modal.Header closeButton>
+                    <Modal.Title>Alasan Penolakan</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Form.Group>
+                        <Form.Label>Catatan untuk user</Form.Label>
+                        <Form.Control
+                            as="textarea"
+                            rows={3}
+                            value={rejectNotes}
+                            onChange={(e) => setRejectNotes(e.target.value)}
+                            placeholder="Contoh: Bukti tidak jelas, jumlah tidak sesuai, dll"
+                        />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowRejectModal(false)}>
+                        Batal
+                    </Button>
+                    <Button 
+                        variant="danger"
+                        onClick={() => verifyPayment(selectedPayment._id, 'rejected')}
+                    >
+                        Tolak Pembayaran
+                    </Button>
+                </Modal.Footer>
             </Modal>
         </Container>
     );
