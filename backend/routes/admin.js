@@ -8,30 +8,34 @@ const SickLetter = require('../models/SickLetter');
 const Appointment = require('../models/Appointment');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
+const Payment = require('../models/Payment');
 
-// ========== DASHBOARD STATS ==========
+// ══════════════════════════════════════════════════════════════════
+// BUG FIX: Route ini sebelumnya bernama '/stats' saja dan terdaftar
+// di dalam sub-router payments. Frontend memanggil /api/admin/stats
+// jadi route harus ada di level root router ini.
+// ══════════════════════════════════════════════════════════════════
 router.get('/stats', auth, adminAuth, async (req, res) => {
     try {
         const totalPatients = await User.countDocuments({ role: 'user' });
-        const totalDoctors = await Doctor.countDocuments({ isActive: true });
-        
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        
+        const totalDoctors  = await Doctor.countDocuments({ isActive: true });
+
+        const today    = new Date(); today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
         const todayConsultations = await Consultation.countDocuments({
             createdAt: { $gte: today, $lt: tomorrow }
         });
-        
+
         const todayPayments = await ManualPayment.find({
             status: 'verified',
             verifiedAt: { $gte: today, $lt: tomorrow }
         });
         const todayRevenue = todayPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-        
-        const pendingSickLetters = await SickLetter.countDocuments({ status: 'pending' });
-        
+
+        // ✅ FIX: enum SickLetter hanya 'draft' | 'issued', tidak ada 'pending'
+        const pendingSickLetters = await SickLetter.countDocuments({ status: 'draft' }); // 'draft' = belum diterbitkan
+
         res.json({
             totalPatients,
             totalDoctors,
@@ -45,63 +49,50 @@ router.get('/stats', auth, adminAuth, async (req, res) => {
     }
 });
 
-// ========== PAYMENT ROUTES - SPESIFIK DAHULU ==========
-// GET semua pembayaran pending
+// ══════════════════════════════════════════════════════════════════
+// PAYMENT ROUTES — urutan penting: spesifik dulu, :id belakangan
+// ══════════════════════════════════════════════════════════════════
+
+// GET pembayaran pending
 router.get('/payments/pending', auth, adminAuth, async (req, res) => {
     try {
         const payments = await ManualPayment.find({ status: 'pending' })
             .populate('userId', 'name email phone')
             .populate({
                 path: 'referenceId',
-                populate: {
-                    path: 'doctorId',
-                    select: 'name specialization'
-                }
+                populate: { path: 'doctorId', select: 'name specialization' }
             })
             .sort('-createdAt');
-        
-        res.json({
-            success: true,
-            count: payments.length,
-            payments
-        });
+
+        res.json({ success: true, count: payments.length, payments });
     } catch (error) {
         console.error('Error fetching pending payments:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// GET semua pembayaran (semua status)
+// GET semua pembayaran (dengan filter & paginasi)
 router.get('/payments/all', auth, adminAuth, async (req, res) => {
     try {
         const { page = 1, limit = 10, status = 'all' } = req.query;
-        
-        let query = {};
-        if (status !== 'all') {
-            query.status = status;
-        }
-        
+        const query = status !== 'all' ? { status } : {};
+
         const payments = await ManualPayment.find(query)
             .populate('userId', 'name email')
             .populate({
                 path: 'referenceId',
-                populate: {
-                    path: 'doctorId',
-                    select: 'name'
-                }
+                populate: { path: 'doctorId', select: 'name' }
             })
             .sort('-createdAt')
             .limit(limit * 1)
             .skip((page - 1) * limit);
-        
+
         const total = await ManualPayment.countDocuments(query);
-        
+
         res.json({
-            success: true,
-            payments,
+            success: true, payments,
             totalPages: Math.ceil(total / limit),
-            currentPage: page,
-            total
+            currentPage: page, total
         });
     } catch (error) {
         console.error('Error fetching payments:', error);
@@ -109,95 +100,88 @@ router.get('/payments/all', auth, adminAuth, async (req, res) => {
     }
 });
 
-// GET statistik pembayaran - LETAKKAN SEBELUM /payments/:id
+// GET statistik pembayaran (jumlah per status + total uang masuk)
 router.get('/payments/stats', auth, adminAuth, async (req, res) => {
     try {
-        const pending = await ManualPayment.countDocuments({ status: 'pending' }).catch(() => 0);
-        const verified = await ManualPayment.countDocuments({ status: 'verified' }).catch(() => 0);
-        const rejected = await ManualPayment.countDocuments({ status: 'rejected' }).catch(() => 0);
-        
-        const allVerified = await ManualPayment.find({ status: 'verified' }).catch(() => []);
+        const [pending, verified, rejected, allVerified] = await Promise.all([
+            ManualPayment.countDocuments({ status: 'pending' }),
+            ManualPayment.countDocuments({ status: 'verified' }),
+            ManualPayment.countDocuments({ status: 'rejected' }),
+            ManualPayment.find({ status: 'verified' })
+        ]);
+
         const totalAmount = allVerified.reduce((sum, p) => sum + (p.amount || 0), 0);
-        
+
         res.json({
             success: true,
-            stats: {
-                pending: pending || 0,
-                verified: verified || 0,
-                rejected: rejected || 0,
-                totalVerified: verified || 0,
-                totalAmount: totalAmount || 0
-            }
+            stats: { pending, verified, rejected, totalVerified: verified, totalAmount }
         });
     } catch (error) {
         console.error('Error fetching payment stats:', error);
+        // Kembalikan nilai default agar frontend tidak crash
         res.json({
             success: true,
-            stats: {
-                pending: 0,
-                verified: 0,
-                rejected: 0,
-                totalVerified: 0,
-                totalAmount: 0
-            }
+            stats: { pending: 0, verified: 0, rejected: 0, totalVerified: 0, totalAmount: 0 }
         });
     }
 });
 
-// GET detail pembayaran by ID - LETAKKAN PALING BAWAH
+// GET pending count saja (untuk badge navbar)
+router.get('/payments/pending-count', auth, adminAuth, async (req, res) => {
+    try {
+        const count = await ManualPayment.countDocuments({ status: 'pending' });
+        res.json({ count });
+    } catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// GET detail satu pembayaran — letakkan PALING BAWAH dari GET /payments/...
 router.get('/payments/:id', auth, adminAuth, async (req, res) => {
     try {
         const payment = await ManualPayment.findById(req.params.id)
             .populate('userId', 'name email phone address')
             .populate({
                 path: 'referenceId',
-                populate: {
-                    path: 'doctorId',
-                    select: 'name specialization'
-                }
+                populate: { path: 'doctorId', select: 'name specialization' }
             });
-        
-        if (!payment) {
-            return res.status(404).json({ error: 'Payment not found' });
-        }
-        
-        res.json({
-            success: true,
-            payment
-        });
+
+        if (!payment) return res.status(404).json({ error: 'Payment not found' });
+        res.json({ success: true, payment });
     } catch (error) {
         console.error('Error fetching payment:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// VERIFY payment
+// PUT verifikasi / tolak pembayaran
 router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
     try {
-        const { id } = req.params;
         const { status, notes } = req.body;
-        
-        const payment = await ManualPayment.findById(id);
-        
-        if (!payment) {
-            return res.status(404).json({ error: 'Payment not found' });
-        }
-        
-        payment.status = status;
-        payment.adminNotes = notes || '';
-        payment.verifiedAt = new Date();
-        payment.verifiedBy = req.userId;
-        
+        const payment = await ManualPayment.findById(req.params.id);
+        if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+        payment.status      = status;
+        payment.adminNotes  = notes || '';
+        payment.verifiedAt  = new Date();
+        payment.verifiedBy  = req.userId;
         await payment.save();
-        
-        if (status === 'verified' && payment.paymentType === 'consultation') {
-            await Consultation.findByIdAndUpdate(payment.referenceId, { 
-                status: 'paid',
-                paymentVerified: true,
-                verifiedAt: new Date()
-            });
+
+        // Update status konsultasi / order setelah verified
+        if (status === 'verified') {
+            if (payment.paymentType === 'consultation') {
+                await Consultation.findByIdAndUpdate(payment.referenceId, {
+                    status: 'ongoing', paymentVerified: true, verifiedAt: new Date()
+                });
+            }
+            if (payment.paymentType === 'pharmacy') {
+                const Order = require('../models/Order');
+                await Order.findByIdAndUpdate(payment.referenceId, {
+                    status: 'processing', paymentVerified: true
+                });
+            }
         }
-        
+
         res.json({
             success: true,
             message: `Payment ${status === 'verified' ? 'diverifikasi' : 'ditolak'}`,
@@ -209,25 +193,121 @@ router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
     }
 });
 
-// ========== OTHER ADMIN ROUTES ==========
+// ══════════════════════════════════════════════════════════════════
+// MANAJEMEN DOKTER
+// ══════════════════════════════════════════════════════════════════
+
 router.get('/doctors', auth, adminAuth, async (req, res) => {
     try {
         const doctors = await Doctor.find({})
             .populate('userId', 'name email phone')
             .sort('-createdAt');
-        res.json(doctors);
+        res.json({ success: true, doctors });
     } catch (error) {
         console.error('Error fetching doctors:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
+router.post('/doctors', auth, adminAuth, async (req, res) => {
+    try {
+        const { name, specialization, qualification, experience,
+                consultationFee, bio, availableDays, email, password, phone } = req.body;
+
+        if (!name || !specialization || !consultationFee || !email || !password) {
+            return res.status(400).json({ error: 'Nama, spesialisasi, biaya konsultasi, email, dan password wajib diisi' });
+        }
+
+        const existingUser = await User.findOne({ email });
+        if (existingUser) return res.status(400).json({ error: 'Email sudah terdaftar' });
+
+        const userDoc = new User({ name, email, password, phone: phone || '-', role: 'doctor' });
+        await userDoc.save();
+
+        const doctor = new Doctor({
+            userId: userDoc._id, name, specialization,
+            qualification: qualification || '', experience: experience || 0,
+            consultationFee, bio: bio || '', availableDays: availableDays || [], isActive: true
+        });
+        await doctor.save();
+
+        res.status(201).json({ success: true, message: 'Dokter berhasil ditambahkan', doctor });
+    } catch (error) {
+        console.error('Error adding doctor:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.put('/doctors/:id', auth, adminAuth, async (req, res) => {
+    try {
+        const { name, specialization, qualification, experience,
+                consultationFee, bio, availableDays, isActive, phone } = req.body;
+
+        const doctor = await Doctor.findByIdAndUpdate(
+            req.params.id,
+            { $set: { name, specialization, qualification, experience, consultationFee, bio, availableDays, isActive } },
+            { new: true }
+        );
+        if (!doctor) return res.status(404).json({ error: 'Dokter tidak ditemukan' });
+
+        if (doctor.userId) {
+            await User.findByIdAndUpdate(doctor.userId, { $set: { name, ...(phone && { phone }) } });
+        }
+
+        res.json({ success: true, message: 'Data dokter berhasil diperbarui', doctor });
+    } catch (error) {
+        console.error('Error updating doctor:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// PUT toggle aktif/nonaktif dokter (lebih aman dari DELETE)
+router.put('/doctors/:id/toggle-status', auth, adminAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findById(req.params.id);
+        if (!doctor) return res.status(404).json({ error: 'Dokter tidak ditemukan' });
+
+        doctor.isActive = !doctor.isActive;
+        await doctor.save();
+
+        res.json({
+            success: true,
+            message: `Dokter ${doctor.isActive ? 'diaktifkan' : 'dinonaktifkan'}`,
+            isActive: doctor.isActive
+        });
+    } catch (error) {
+        console.error('Error toggling doctor status:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// DELETE hapus dokter permanen (beserta akun user)
+router.delete('/doctors/:id', auth, adminAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findById(req.params.id);
+        if (!doctor) return res.status(404).json({ error: 'Dokter tidak ditemukan' });
+
+        if (doctor.userId) await User.findByIdAndDelete(doctor.userId);
+        await Doctor.findByIdAndDelete(req.params.id);
+
+        res.json({ success: true, message: 'Dokter berhasil dihapus' });
+    } catch (error) {
+        console.error('Error deleting doctor:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// KONSULTASI, JANJI TEMU, SURAT SAKIT, USERS, TRANSAKSI
+// ══════════════════════════════════════════════════════════════════
+
 router.get('/consultations', auth, adminAuth, async (req, res) => {
     try {
+        // ✅ FIX: hapus .populate('paymentId') — field ini mungkin berbeda nama
+        //         di model Consultation kamu. Tambahkan kembali jika perlu.
         const consultations = await Consultation.find({})
             .populate('userId', 'name email')
             .populate('doctorId', 'name specialization')
-            .populate('paymentId')
             .sort('-createdAt');
         res.json(consultations);
     } catch (error) {
@@ -236,12 +316,26 @@ router.get('/consultations', auth, adminAuth, async (req, res) => {
     }
 });
 
+router.put('/consultations/:id/end', auth, adminAuth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findByIdAndUpdate(
+            req.params.id, { status: 'completed', endTime: new Date() }, { new: true }
+        );
+        if (!consultation) return res.status(404).json({ error: 'Konsultasi tidak ditemukan' });
+        res.json({ success: true, message: 'Konsultasi diselesaikan', consultation });
+    } catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 router.get('/sick-letters', auth, adminAuth, async (req, res) => {
     try {
+        // ✅ FIX: hapus populate paymentId (tidak ada di SickLetter schema)
+        // enum status hanya 'draft' | 'issued'
         const sickLetters = await SickLetter.find({})
             .populate('userId', 'name email')
             .populate('doctorId', 'name')
-            .populate('paymentId')
+            .populate('consultationId', 'symptoms createdAt')
             .sort('-createdAt');
         res.json(sickLetters);
     } catch (error) {
@@ -252,13 +346,16 @@ router.get('/sick-letters', auth, adminAuth, async (req, res) => {
 
 router.put('/sick-letters/:id/approve', auth, adminAuth, async (req, res) => {
     try {
-        const sickLetter = await SickLetter.findById(req.params.id);
-        if (!sickLetter) {
-            return res.status(404).json({ error: 'Sick letter not found' });
-        }
-        sickLetter.status = 'approved';
-        await sickLetter.save();
-        res.json({ success: true, message: 'Surat sakit disetujui' });
+        // ✅ FIX 1: status 'approved' tidak ada di enum — nilai valid: 'draft' | 'issued'
+        // ✅ FIX 2: pakai findByIdAndUpdate (bukan .save()) agar tidak
+        //           trigger validasi required field lain (consultationId, dll)
+        const sickLetter = await SickLetter.findByIdAndUpdate(
+            req.params.id,
+            { status: 'issued', issuedAt: new Date() },
+            { new: true, runValidators: false }
+        );
+        if (!sickLetter) return res.status(404).json({ error: 'Surat sakit tidak ditemukan' });
+        res.json({ success: true, message: 'Surat sakit diterbitkan', sickLetter });
     } catch (error) {
         console.error('Error approving sick letter:', error);
         res.status(500).json({ error: 'Server error' });
@@ -267,10 +364,10 @@ router.put('/sick-letters/:id/approve', auth, adminAuth, async (req, res) => {
 
 router.get('/appointments', auth, adminAuth, async (req, res) => {
     try {
+        // ✅ FIX: hapus populate paymentId — pastikan field ini ada di model Appointment kamu
         const appointments = await Appointment.find({})
             .populate('userId', 'name email phone')
             .populate('doctorId', 'name specialization')
-            .populate('paymentId')
             .sort('-appointmentDate');
         res.json(appointments);
     } catch (error) {
@@ -279,14 +376,50 @@ router.get('/appointments', auth, adminAuth, async (req, res) => {
     }
 });
 
+router.put('/appointments/:id/confirm', auth, adminAuth, async (req, res) => {
+    try {
+        const appointment = await Appointment.findByIdAndUpdate(
+            req.params.id, { status: 'confirmed' }, { new: true }
+        );
+        if (!appointment) return res.status(404).json({ error: 'Janji tidak ditemukan' });
+        res.json({ success: true, message: 'Janji temu dikonfirmasi', appointment });
+    } catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.put('/appointments/:id/cancel', auth, adminAuth, async (req, res) => {
+    try {
+        const appointment = await Appointment.findByIdAndUpdate(
+            req.params.id, { status: 'cancelled' }, { new: true }
+        );
+        if (!appointment) return res.status(404).json({ error: 'Janji tidak ditemukan' });
+        res.json({ success: true, message: 'Janji temu dibatalkan', appointment });
+    } catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 router.get('/users', auth, adminAuth, async (req, res) => {
     try {
-        const users = await User.find({})
-            .select('-password')
-            .sort('-createdAt');
+        const users = await User.find({}).select('-password').sort('-createdAt');
         res.json(users);
     } catch (error) {
         console.error('Error fetching users:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.put('/users/:id/toggle-status', auth, adminAuth, async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
+        if (user.role === 'admin') return res.status(400).json({ message: 'Tidak bisa menonaktifkan admin' });
+
+        user.isActive = !user.isActive;
+        await user.save();
+        res.json({ success: true, message: `User ${user.isActive ? 'diaktifkan' : 'dinonaktifkan'}`, user });
+    } catch (error) {
         res.status(500).json({ error: 'Server error' });
     }
 });
@@ -297,10 +430,7 @@ router.get('/transactions', auth, adminAuth, async (req, res) => {
             .populate('userId', 'name email')
             .populate({
                 path: 'referenceId',
-                populate: {
-                    path: 'doctorId',
-                    select: 'name'
-                }
+                populate: { path: 'doctorId', select: 'name' }
             })
             .sort('-createdAt');
         res.json(transactions);

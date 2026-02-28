@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, ProgressBar, Table } from 'react-bootstrap';
-import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import api from '../../utils/api';
 import { FaHeartbeat, FaTachometerAlt, FaExclamationTriangle, FaCheckCircle } from 'react-icons/fa';
 
 const BloodPressureChecker = () => {
@@ -15,7 +15,7 @@ const BloodPressureChecker = () => {
         setLoading(true);
 
         try {
-            const response = await axios.post('http://localhost:5000/api/health-check/check-blood-pressure', {
+            const response = await api.post('/api/health-check/check-blood-pressure', {
                 systolic: parseInt(systolic),
                 diastolic: parseInt(diastolic)
             });

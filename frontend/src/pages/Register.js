@@ -7,14 +7,9 @@ import {
     FaEnvelope, 
     FaLock, 
     FaPhone, 
-    FaMapMarkerAlt, 
-    FaCity, 
-    FaBuilding,
-    FaMailBulk,
     FaEye,
     FaEyeSlash,
-    FaCheckCircle,
-    FaTimesCircle
+    FaCheckCircle
 } from 'react-icons/fa';
 
 const Register = () => {
@@ -28,13 +23,7 @@ const Register = () => {
         email: '',
         password: '',
         confirmPassword: '',
-        phone: '',
-        address: {
-            street: '',
-            city: '',
-            province: '',
-            postalCode: ''
-        }
+        phone: ''
     });
     const [errors, setErrors] = useState({});
     const [agreeTerms, setAgreeTerms] = useState(false);
@@ -42,21 +31,10 @@ const Register = () => {
     const handleChange = (e) => {
         const { name, value } = e.target;
         
-        if (name.includes('.')) {
-            const [parent, child] = name.split('.');
-            setFormData(prev => ({
-                ...prev,
-                [parent]: {
-                    ...prev[parent],
-                    [child]: value
-                }
-            }));
-        } else {
-            setFormData(prev => ({
-                ...prev,
-                [name]: value
-            }));
-        }
+        setFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
 
         // Clear error for this field
         if (errors[name]) {
@@ -99,28 +77,16 @@ const Register = () => {
             newErrors.confirmPassword = 'Password tidak cocok';
         }
 
-        // Phone validation
-        const phoneRegex = /^[0-9]{10,13}$/;
+        // Phone validation - Mendukung nomor internasional
+        const phoneRegex = /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,10}[-\s.]?[0-9]{1,10}$/;
         if (!formData.phone) {
             newErrors.phone = 'Nomor telepon harus diisi';
-        } else if (!phoneRegex.test(formData.phone.replace(/\D/g, ''))) {
-            newErrors.phone = 'Nomor telepon tidak valid (10-13 digit)';
-        }
-
-        // Address validation
-        if (!formData.address.street) {
-            newErrors['address.street'] = 'Alamat jalan harus diisi';
-        }
-        if (!formData.address.city) {
-            newErrors['address.city'] = 'Kota harus diisi';
-        }
-        if (!formData.address.province) {
-            newErrors['address.province'] = 'Provinsi harus diisi';
-        }
-        if (!formData.address.postalCode) {
-            newErrors['address.postalCode'] = 'Kode pos harus diisi';
-        } else if (!/^[0-9]{5}$/.test(formData.address.postalCode)) {
-            newErrors['address.postalCode'] = 'Kode pos harus 5 digit';
+        } else {
+            // Remove all non-digit characters except leading +
+            const cleanedPhone = formData.phone.replace(/[^\d+]/g, '');
+            if (cleanedPhone.length < 8 || cleanedPhone.length > 15) {
+                newErrors.phone = 'Nomor telepon harus 8-15 digit (termasuk kode negara)';
+            }
         }
 
         // Terms agreement
@@ -142,8 +108,15 @@ const Register = () => {
         setLoading(true);
         
         try {
+            // Clean phone number before sending
+            const cleanedPhone = formData.phone.replace(/[^\d+]/g, '');
+            
             // Remove confirmPassword before sending
-            const { confirmPassword, ...registerData } = formData;
+            const { confirmPassword, ...registerData } = {
+                ...formData,
+                phone: cleanedPhone
+            };
+            
             const success = await register(registerData);
             
             if (success) {
@@ -151,6 +124,7 @@ const Register = () => {
             }
         } catch (error) {
             console.error('Registration error:', error);
+            setErrors({ submit: error.message || 'Terjadi kesalahan saat mendaftar' });
         } finally {
             setLoading(false);
         }
@@ -166,382 +140,308 @@ const Register = () => {
         if (/(?=.*[0-9])/.test(password)) score++;
         if (/(?=.*[a-z])/.test(password)) score++;
         if (/(?=.*[A-Z])/.test(password)) score++;
-        if (/(?=.*[!@#$%^&*])/.test(password)) score++;
         
-        if (score <= 2) return { score: 20, label: 'Lemah', variant: 'danger' };
-        if (score <= 4) return { score: 60, label: 'Sedang', variant: 'warning' };
+        if (score <= 2) return { score: 33, label: 'Lemah', variant: 'danger' };
+        if (score <= 4) return { score: 66, label: 'Sedang', variant: 'warning' };
         return { score: 100, label: 'Kuat', variant: 'success' };
     };
 
     const passwordStrength = getPasswordStrength();
 
     return (
-        <Container className="py-5">
-            <Row className="justify-content-center">
-                <Col lg={8}>
-                    <Card className="shadow-lg border-0">
-                        <Card.Header className="bg-primary text-white text-center py-4">
-                            <h3 className="mb-0">Daftar Akun Baru</h3>
-                            <p className="text-white-50 mb-0 mt-2">
-                                Bergabunglah dengan Klinik Pratama IPB untuk akses semua layanan
-                            </p>
-                        </Card.Header>
-                        <Card.Body className="p-5">
-                            <Form onSubmit={handleSubmit}>
-                                {/* Personal Information */}
-                                <h5 className="mb-4 pb-2 border-bottom">
-                                    <FaUser className="me-2 text-primary" />
-                                    Informasi Pribadi
-                                </h5>
+        <div style={{ 
+            minHeight: '100vh', 
+            backgroundColor: '#f8f9fa',
+            display: 'flex', 
+            alignItems: 'center',
+            padding: '20px 0'
+        }}>
+            <Container fluid style={{ maxWidth: '500px' }}>
+                <Row className="justify-content-center">
+                    <Col xs={12}>
+                        {/* Simple Header */}
+                        <div className="text-center mb-4">
+                            <div
+                                className="bg-white shadow-sm rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
+                                style={{ width: 64, height: 64 }}
+                            >
+                                <FaUser size={28} color="#0d6efd" />
+                            </div>
+                            <h5 className="fw-bold mb-1" style={{ color: '#212529' }}>Buat Akun Baru</h5>
+                            <p className="text-secondary small mb-0">Daftar untuk mengakses semua layanan</p>
+                        </div>
 
-                                <Row>
-                                    <Col md={6}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Nama Lengkap <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaUser className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type="text"
-                                                    name="name"
-                                                    value={formData.name}
-                                                    onChange={handleChange}
-                                                    placeholder="Masukkan nama lengkap"
-                                                    className="border-start-0"
-                                                    isInvalid={!!errors.name}
-                                                />
-                                                {formData.name && formData.name.length >= 3 && (
-                                                    <InputGroup.Text className="bg-light border-start-0">
-                                                        <FaCheckCircle className="text-success" />
-                                                    </InputGroup.Text>
-                                                )}
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors.name}
-                                            </Form.Control.Feedback>
-                                        </Form.Group>
-                                    </Col>
+                        <Card className="border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                            <Card.Body className="p-4">
+                                {errors.submit && (
+                                    <Alert variant="danger" className="small py-2 mb-4">
+                                        {errors.submit}
+                                    </Alert>
+                                )}
 
-                                    <Col md={6}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Email <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaEnvelope className="text-muted" />
+                                <Form onSubmit={handleSubmit}>
+                                    {/* Nama Lengkap */}
+                                    <Form.Group className="mb-3">
+                                        <Form.Label className="fw-medium small text-secondary">Nama Lengkap</Form.Label>
+                                        <InputGroup style={{ height: '48px' }}>
+                                            <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
+                                                <FaUser className="text-secondary" size={14} />
+                                            </InputGroup.Text>
+                                            <Form.Control
+                                                type="text"
+                                                name="name"
+                                                value={formData.name}
+                                                onChange={handleChange}
+                                                placeholder="Masukkan nama lengkap"
+                                                className="border-start-0 bg-white"
+                                                style={{ 
+                                                    fontSize: '0.95rem',
+                                                    height: '48px',
+                                                    borderRadius: '0 8px 8px 0',
+                                                    borderColor: '#dee2e6'
+                                                }}
+                                                isInvalid={!!errors.name}
+                                            />
+                                            {formData.name && formData.name.length >= 3 && !errors.name && (
+                                                <InputGroup.Text className="bg-white border-start-0" style={{ borderRadius: '0 8px 8px 0' }}>
+                                                    <FaCheckCircle className="text-success" size={14} />
                                                 </InputGroup.Text>
-                                                <Form.Control
-                                                    type="email"
-                                                    name="email"
-                                                    value={formData.email}
-                                                    onChange={handleChange}
-                                                    placeholder="contoh@email.com"
-                                                    className="border-start-0"
-                                                    isInvalid={!!errors.email}
-                                                />
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors.email}
-                                            </Form.Control.Feedback>
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-
-                                <Row>
-                                    <Col md={6}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Password <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaLock className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type={showPassword ? "text" : "password"}
-                                                    name="password"
-                                                    value={formData.password}
-                                                    onChange={handleChange}
-                                                    placeholder="Minimal 6 karakter"
-                                                    className="border-start-0 border-end-0"
-                                                    isInvalid={!!errors.password}
-                                                />
-                                                <InputGroup.Text 
-                                                    className="bg-light border-start-0 cursor-pointer"
-                                                    onClick={() => setShowPassword(!showPassword)}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    {showPassword ? <FaEyeSlash className="text-muted" /> : <FaEye className="text-muted" />}
-                                                </InputGroup.Text>
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors.password}
-                                            </Form.Control.Feedback>
-                                            
-                                            {formData.password && (
-                                                <div className="mt-2">
-                                                    <div className="d-flex justify-content-between align-items-center mb-1">
-                                                        <small className="text-muted">Kekuatan Password:</small>
-                                                        <small className={`text-${passwordStrength.variant} fw-bold`}>
-                                                            {passwordStrength.label}
-                                                        </small>
-                                                    </div>
-                                                    <div className="progress" style={{ height: '6px' }}>
-                                                        <div 
-                                                            className={`progress-bar bg-${passwordStrength.variant}`}
-                                                            style={{ width: `${passwordStrength.score}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
                                             )}
-                                        </Form.Group>
-                                    </Col>
-
-                                    <Col md={6}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Konfirmasi Password <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaLock className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type={showConfirmPassword ? "text" : "password"}
-                                                    name="confirmPassword"
-                                                    value={formData.confirmPassword}
-                                                    onChange={handleChange}
-                                                    placeholder="Ulangi password"
-                                                    className="border-start-0 border-end-0"
-                                                    isInvalid={!!errors.confirmPassword}
-                                                />
-                                                <InputGroup.Text 
-                                                    className="bg-light border-start-0"
-                                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    {showConfirmPassword ? <FaEyeSlash className="text-muted" /> : <FaEye className="text-muted" />}
-                                                </InputGroup.Text>
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors.confirmPassword}
-                                            </Form.Control.Feedback>
-                                            {formData.password && formData.confirmPassword && formData.password === formData.confirmPassword && (
-                                                <Form.Text className="text-success">
-                                                    <FaCheckCircle className="me-1" />
-                                                    Password cocok
-                                                </Form.Text>
-                                            )}
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-
-                                <Row>
-                                    <Col md={12}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Nomor Telepon <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaPhone className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type="tel"
-                                                    name="phone"
-                                                    value={formData.phone}
-                                                    onChange={handleChange}
-                                                    placeholder="081234567890"
-                                                    className="border-start-0"
-                                                    isInvalid={!!errors.phone}
-                                                />
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors.phone}
-                                            </Form.Control.Feedback>
-                                            <Form.Text className="text-muted">
-                                                Gunakan nomor yang aktif untuk konfirmasi dan pengiriman
-                                            </Form.Text>
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-
-                                {/* Address Information */}
-                                <h5 className="mb-4 mt-5 pb-2 border-bottom">
-                                    <FaMapMarkerAlt className="me-2 text-primary" />
-                                    Alamat Lengkap
-                                </h5>
-
-                                <Row>
-                                    <Col md={12}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Alamat Jalan <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaMapMarkerAlt className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type="text"
-                                                    name="address.street"
-                                                    value={formData.address.street}
-                                                    onChange={handleChange}
-                                                    placeholder="Nama jalan, nomor, RT/RW"
-                                                    className="border-start-0"
-                                                    isInvalid={!!errors['address.street']}
-                                                />
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors['address.street']}
-                                            </Form.Control.Feedback>
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-
-                                <Row>
-                                    <Col md={4}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Kota <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaCity className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type="text"
-                                                    name="address.city"
-                                                    value={formData.address.city}
-                                                    onChange={handleChange}
-                                                    placeholder="Kota"
-                                                    className="border-start-0"
-                                                    isInvalid={!!errors['address.city']}
-                                                />
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors['address.city']}
-                                            </Form.Control.Feedback>
-                                        </Form.Group>
-                                    </Col>
-
-                                    <Col md={4}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Provinsi <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaBuilding className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type="text"
-                                                    name="address.province"
-                                                    value={formData.address.province}
-                                                    onChange={handleChange}
-                                                    placeholder="Provinsi"
-                                                    className="border-start-0"
-                                                    isInvalid={!!errors['address.province']}
-                                                />
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors['address.province']}
-                                            </Form.Control.Feedback>
-                                        </Form.Group>
-                                    </Col>
-
-                                    <Col md={4}>
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-bold">
-                                                Kode Pos <span className="text-danger">*</span>
-                                            </Form.Label>
-                                            <InputGroup>
-                                                <InputGroup.Text className="bg-light border-end-0">
-                                                    <FaMailBulk className="text-muted" />
-                                                </InputGroup.Text>
-                                                <Form.Control
-                                                    type="text"
-                                                    name="address.postalCode"
-                                                    value={formData.address.postalCode}
-                                                    onChange={handleChange}
-                                                    placeholder="5 digit"
-                                                    maxLength="5"
-                                                    className="border-start-0"
-                                                    isInvalid={!!errors['address.postalCode']}
-                                                />
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">
-                                                {errors['address.postalCode']}
-                                            </Form.Control.Feedback>
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-
-                                {/* Terms and Conditions */}
-                                <Form.Group className="mb-4 mt-4">
-                                    <Form.Check>
-                                        <Form.Check.Input 
-                                            type="checkbox"
-                                            checked={agreeTerms}
-                                            onChange={(e) => {
-                                                setAgreeTerms(e.target.checked);
-                                                if (errors.agreeTerms) {
-                                                    setErrors(prev => ({ ...prev, agreeTerms: null }));
-                                                }
-                                            }}
-                                            isInvalid={!!errors.agreeTerms}
-                                        />
-                                        <Form.Check.Label className="ms-2">
-                                            Saya menyetujui <Link to="/terms" className="text-primary">Syarat dan Ketentuan</Link> serta{' '}
-                                            <Link to="/privacy" className="text-primary">Kebijakan Privasi</Link> yang berlaku
-                                        </Form.Check.Label>
+                                        </InputGroup>
                                         <Form.Control.Feedback type="invalid">
-                                            {errors.agreeTerms}
+                                            {errors.name}
                                         </Form.Control.Feedback>
-                                    </Form.Check>
-                                </Form.Group>
+                                    </Form.Group>
 
-                                {/* Submit Button */}
-                                <div className="d-grid gap-3 mt-5">
-                                    <Button 
-                                        type="submit" 
-                                        variant="primary" 
-                                        size="lg"
+                                    {/* Email */}
+                                    <Form.Group className="mb-3">
+                                        <Form.Label className="fw-medium small text-secondary">Email</Form.Label>
+                                        <InputGroup style={{ height: '48px' }}>
+                                            <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
+                                                <FaEnvelope className="text-secondary" size={14} />
+                                            </InputGroup.Text>
+                                            <Form.Control
+                                                type="email"
+                                                name="email"
+                                                value={formData.email}
+                                                onChange={handleChange}
+                                                placeholder="nama@email.com"
+                                                className="border-start-0 bg-white"
+                                                style={{ 
+                                                    fontSize: '0.95rem',
+                                                    height: '48px',
+                                                    borderRadius: '0 8px 8px 0',
+                                                    borderColor: '#dee2e6'
+                                                }}
+                                                isInvalid={!!errors.email}
+                                            />
+                                        </InputGroup>
+                                        <Form.Control.Feedback type="invalid">
+                                            {errors.email}
+                                        </Form.Control.Feedback>
+                                    </Form.Group>
+
+                                    {/* Nomor Telepon */}
+                                    <Form.Group className="mb-3">
+                                        <Form.Label className="fw-medium small text-secondary">Nomor Telepon</Form.Label>
+                                        <InputGroup style={{ height: '48px' }}>
+                                            <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
+                                                <FaPhone className="text-secondary" size={14} />
+                                            </InputGroup.Text>
+                                            <Form.Control
+                                                type="tel"
+                                                name="phone"
+                                                value={formData.phone}
+                                                onChange={handleChange}
+                                                placeholder="+6281234567890 atau 081234567890"
+                                                className="border-start-0 bg-white"
+                                                style={{ 
+                                                    fontSize: '0.95rem',
+                                                    height: '48px',
+                                                    borderRadius: '0 8px 8px 0',
+                                                    borderColor: '#dee2e6'
+                                                }}
+                                                isInvalid={!!errors.phone}
+                                            />
+                                        </InputGroup>
+                                        <Form.Control.Feedback type="invalid">
+                                            {errors.phone}
+                                        </Form.Control.Feedback>
+                                        <Form.Text className="text-muted small">
+                                            Gunakan format internasional: +62xxx atau 08xxx
+                                        </Form.Text>
+                                    </Form.Group>
+
+                                    {/* Password */}
+                                    <Form.Group className="mb-3">
+                                        <Form.Label className="fw-medium small text-secondary">Password</Form.Label>
+                                        <InputGroup style={{ height: '48px' }}>
+                                            <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
+                                                <FaLock className="text-secondary" size={14} />
+                                            </InputGroup.Text>
+                                            <Form.Control
+                                                type={showPassword ? "text" : "password"}
+                                                name="password"
+                                                value={formData.password}
+                                                onChange={handleChange}
+                                                placeholder="Minimal 6 karakter, mengandung angka"
+                                                className="border-start-0 border-end-0 bg-white"
+                                                style={{ 
+                                                    fontSize: '0.95rem',
+                                                    height: '48px',
+                                                    borderColor: '#dee2e6'
+                                                }}
+                                                isInvalid={!!errors.password}
+                                            />
+                                            <Button
+                                                variant="light"
+                                                className="border bg-white"
+                                                onClick={() => setShowPassword(!showPassword)}
+                                                type="button"
+                                                style={{ 
+                                                    borderColor: '#dee2e6',
+                                                    borderRadius: '0 8px 8px 0',
+                                                    height: '48px',
+                                                    width: '48px'
+                                                }}
+                                            >
+                                                {showPassword ? 
+                                                    <FaEyeSlash className="text-secondary" size={14} /> : 
+                                                    <FaEye className="text-secondary" size={14} />
+                                                }
+                                            </Button>
+                                        </InputGroup>
+                                        <Form.Control.Feedback type="invalid">
+                                            {errors.password}
+                                        </Form.Control.Feedback>
+                                        
+                                        {formData.password && (
+                                            <div className="mt-2">
+                                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                                    <small className="text-muted">Kekuatan password:</small>
+                                                    <small className={`text-${passwordStrength.variant} fw-bold`}>
+                                                        {passwordStrength.label}
+                                                    </small>
+                                                </div>
+                                                <div className="progress" style={{ height: '4px' }}>
+                                                    <div 
+                                                        className={`progress-bar bg-${passwordStrength.variant}`}
+                                                        style={{ width: `${passwordStrength.score}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </Form.Group>
+
+                                    {/* Konfirmasi Password */}
+                                    <Form.Group className="mb-4">
+                                        <Form.Label className="fw-medium small text-secondary">Konfirmasi Password</Form.Label>
+                                        <InputGroup style={{ height: '48px' }}>
+                                            <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
+                                                <FaLock className="text-secondary" size={14} />
+                                            </InputGroup.Text>
+                                            <Form.Control
+                                                type={showConfirmPassword ? "text" : "password"}
+                                                name="confirmPassword"
+                                                value={formData.confirmPassword}
+                                                onChange={handleChange}
+                                                placeholder="Ulangi password"
+                                                className="border-start-0 border-end-0 bg-white"
+                                                style={{ 
+                                                    fontSize: '0.95rem',
+                                                    height: '48px',
+                                                    borderColor: '#dee2e6'
+                                                }}
+                                                isInvalid={!!errors.confirmPassword}
+                                            />
+                                            <Button
+                                                variant="light"
+                                                className="border bg-white"
+                                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                type="button"
+                                                style={{ 
+                                                    borderColor: '#dee2e6',
+                                                    borderRadius: '0 8px 8px 0',
+                                                    height: '48px',
+                                                    width: '48px'
+                                                }}
+                                            >
+                                                {showConfirmPassword ? 
+                                                    <FaEyeSlash className="text-secondary" size={14} /> : 
+                                                    <FaEye className="text-secondary" size={14} />
+                                                }
+                                            </Button>
+                                        </InputGroup>
+                                        <Form.Control.Feedback type="invalid">
+                                            {errors.confirmPassword}
+                                        </Form.Control.Feedback>
+                                        {formData.password && formData.confirmPassword && formData.password === formData.confirmPassword && (
+                                            <Form.Text className="text-success small">
+                                                <FaCheckCircle className="me-1" />
+                                                Password cocok
+                                            </Form.Text>
+                                        )}
+                                    </Form.Group>
+
+                                    {/* Terms and Conditions */}
+                                    <Form.Group className="mb-4">
+                                        <Form.Check>
+                                            <Form.Check.Input 
+                                                type="checkbox"
+                                                checked={agreeTerms}
+                                                onChange={(e) => {
+                                                    setAgreeTerms(e.target.checked);
+                                                    if (errors.agreeTerms) {
+                                                        setErrors(prev => ({ ...prev, agreeTerms: null }));
+                                                    }
+                                                }}
+                                                isInvalid={!!errors.agreeTerms}
+                                            />
+                                            <Form.Check.Label className="small">
+                                                Saya menyetujui <Link to="/terms" className="text-primary text-decoration-none">Syarat dan Ketentuan</Link> yang berlaku
+                                            </Form.Check.Label>
+                                            <Form.Control.Feedback type="invalid">
+                                                {errors.agreeTerms}
+                                            </Form.Control.Feedback>
+                                        </Form.Check>
+                                    </Form.Group>
+
+                                    {/* Submit Button */}
+                                    <Button
+                                        type="submit"
+                                        variant="primary"
+                                        className="w-100 fw-medium mb-3"
+                                        style={{ 
+                                            backgroundColor: '#0d6efd',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            height: '48px',
+                                            fontSize: '0.95rem'
+                                        }}
                                         disabled={loading}
                                     >
-                                        {loading ? (
-                                            <>
-                                                <span className="spinner-border spinner-border-sm me-2" />
-                                                Mendaftarkan...
-                                            </>
-                                        ) : (
-                                            'Daftar Sekarang'
-                                        )}
+                                        {loading ? 'Memproses...' : 'Daftar'}
                                     </Button>
-                                    
+
                                     <div className="text-center">
-                                        <span className="text-muted">Sudah punya akun? </span>
-                                        <Link to="/login" className="text-primary fw-bold">
-                                            Login di sini
-                                        </Link>
+                                        <span className="text-secondary small">
+                                            Sudah punya akun?{' '}
+                                            <Link to="/login" className="text-primary fw-medium text-decoration-none">
+                                                Masuk
+                                            </Link>
+                                        </span>
                                     </div>
-                                </div>
-                            </Form>
-                        </Card.Body>
-                        <Card.Footer className="bg-light text-center py-3">
-                            <small className="text-muted">
-                                Dengan mendaftar, Anda mendapatkan akses ke semua layanan:
-                                Konsultasi Online, Farmasi, Surat Sakit, dan Janji Temu
-                            </small>
-                        </Card.Footer>
-                    </Card>
-                </Col>
-            </Row>
-        </Container>
+                                </Form>
+                            </Card.Body>
+                        </Card>
+
+                        <p className="text-center text-secondary small mt-4 mb-0">
+                            © {new Date().getFullYear()} Klinik Pratama IPB
+                        </p>
+                    </Col>
+                </Row>
+            </Container>
+        </div>
     );
 };
 

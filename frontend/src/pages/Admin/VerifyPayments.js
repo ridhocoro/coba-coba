@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import api, { API_URL } from '../../utils/api';
 import { 
     Container, Row, Col, Card, Table, Button, 
     Badge, Modal, Image, Form, Alert, Pagination,
@@ -6,7 +7,7 @@ import {
 } from 'react-bootstrap';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+
 import { toast } from 'react-hot-toast';
 import { 
     FaMoneyBillWave, FaCheckCircle, FaTimesCircle, 
@@ -49,20 +50,16 @@ const VerifyPayments = () => {
     const fetchPayments = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            let url = 'http://localhost:5000/api/admin/payments/all';
+            let url = '/api/admin/payments/all';
             
             if (filter === 'pending') {
-                url = 'http://localhost:5000/api/admin/payments/pending';
-                const response = await axios.get(url, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                url = '/api/admin/payments/pending';
+                const response = await api.get(url);
                 setPayments(response.data.payments);
                 setTotalPages(1);
             } else {
-                const response = await axios.get(
-                    `${url}?status=${filter}&page=${page}&limit=10`,
-                    { headers: { Authorization: `Bearer ${token}` } }
+                const response = await api.get(
+                    `${url}?status=${filter}&page=${page}&limit=10`
                 );
                 setPayments(response.data.payments);
                 setTotalPages(response.data.totalPages);
@@ -76,10 +73,8 @@ const VerifyPayments = () => {
 
     const fetchStats = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(
-                'http://localhost:5000/api/admin/payments/stats',
-                { headers: { Authorization: `Bearer ${token}` } }
+            const response = await api.get(
+                '/api/admin/payments/stats'
             );
             setStats(response.data.stats);
         } catch (error) {
@@ -99,14 +94,12 @@ const VerifyPayments = () => {
         }
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(
-                `http://localhost:5000/api/admin/payments/${paymentId}/verify`,
+            await api.put(
+                `/api/admin/payments/${paymentId}/verify`,
                 { 
                     status, 
                     notes: status === 'rejected' ? rejectNotes : 'Pembayaran valid' 
-                },
-                { headers: { Authorization: `Bearer ${token}` } }
+                }
             );
 
             toast.success(`Pembayaran ${status === 'verified' ? 'diverifikasi' : 'ditolak'}`);
@@ -471,7 +464,7 @@ const VerifyPayments = () => {
                             {selectedPayment.transferProof ? (
                                 <div className="text-center border p-3 rounded bg-light">
                                     <Image 
-                                        src={`http://localhost:5000${selectedPayment.transferProof}`}
+                                        src={`${API_URL}${selectedPayment.transferProof}`}
                                         fluid
                                         style={{ maxHeight: '400px' }}
                                     />
@@ -479,7 +472,7 @@ const VerifyPayments = () => {
                                         <Button 
                                             variant="outline-primary"
                                             size="sm"
-                                            href={`http://localhost:5000${selectedPayment.transferProof}`}
+                                            href={`${API_URL}${selectedPayment.transferProof}`}
                                             target="_blank"
                                         >
                                             <FaDownload className="me-1" />

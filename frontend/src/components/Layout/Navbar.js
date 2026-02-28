@@ -1,21 +1,33 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar, Nav, Container, NavDropdown, Badge } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import NotificationDropdown from '../Notifications/NotificationDropdown';
-import { 
-    FaUserMd, FaClipboardList, FaPills, FaCalendarAlt, 
+import api from '../../utils/api';
+import {
+    FaUserMd, FaClipboardList, FaPills, FaCalendarAlt,
     FaHeartbeat, FaSignInAlt, FaUserPlus, FaSignOutAlt,
     FaUser, FaCog, FaShieldAlt, FaStethoscope, FaFileMedical,
-    FaHome, FaChartLine, FaHistory, FaCreditCard,
-    FaBox, FaUsers, FaMoneyBillWave, FaPrescription
+    FaHome, FaChartLine, FaCreditCard,
+    FaBox, FaUsers, FaMoneyBillWave, FaPrescription,
+    FaComment, FaClock
 } from 'react-icons/fa';
 
 const Navigation = () => {
     const { user, logout } = useAuth();
     const { unreadCount } = useNotifications();
     const navigate = useNavigate();
+    const [pendingPayments, setPendingPayments] = useState(0);
+
+    // Fetch jumlah pembayaran pending untuk badge admin (dinamis dari API)
+    useEffect(() => {
+        if (user?.role === 'admin') {
+            api.get('/api/admin/payments/pending')
+                .then(res => setPendingPayments(res.data.payments?.length || 0))
+                .catch(() => setPendingPayments(0));
+        }
+    }, [user]);
 
     const handleLogout = () => {
         logout();
@@ -29,11 +41,12 @@ const Navigation = () => {
                     <FaHeartbeat className="me-2" />
                     Klinik Pratama IPB
                 </Navbar.Brand>
-                
-                <Navbar.Toggle aria-controls="basic-navbar-nav" />
-                <Navbar.Collapse id="basic-navbar-nav">
-                    {/* Menu Navigasi Utama - Tampil untuk semua yang sudah login */}
-                    {user && (
+
+                <Navbar.Toggle aria-controls="main-navbar" />
+                <Navbar.Collapse id="main-navbar">
+
+                    {/* ========== NAV UTAMA: USER ========== */}
+                    {user?.role === 'user' && (
                         <Nav className="me-auto">
                             <Nav.Link as={Link} to="/dashboard">
                                 <FaHome className="me-1" /> Dashboard
@@ -53,7 +66,49 @@ const Navigation = () => {
                         </Nav>
                     )}
 
-                    {/* Menu untuk yang BELUM login */}
+                    {/* ========== NAV UTAMA: DOKTER ========== */}
+                    {user?.role === 'doctor' && (
+                        <Nav className="me-auto">
+                            <Nav.Link as={Link} to="/doctor">
+                                <FaHome className="me-1" /> Dashboard
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/doctor/appointments">
+                                <FaCalendarAlt className="me-1" /> Janji Temu
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/doctor/consultations">
+                                <FaComment className="me-1" /> Konsultasi
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/doctor/sick-letters">
+                                <FaFileMedical className="me-1" /> Surat Sakit
+                                {unreadCount > 0 && (
+                                    <Badge bg="danger" className="ms-1">{unreadCount}</Badge>
+                                )}
+                            </Nav.Link>
+                        </Nav>
+                    )}
+
+                    {/* ========== NAV UTAMA: ADMIN ========== */}
+                    {user?.role === 'admin' && (
+                        <Nav className="me-auto">
+                            <Nav.Link as={Link} to="/admin">
+                                <FaHome className="me-1" /> Dashboard
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/admin/verify-payments">
+                                <FaMoneyBillWave className="me-1" /> Verifikasi
+                                {pendingPayments > 0 && (
+                                    <Badge bg="danger" className="ms-1">{pendingPayments}</Badge>
+                                )}
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/admin/doctors">
+                                <FaUserMd className="me-1" /> Dokter
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/admin/users">
+                                <FaUsers className="me-1" /> Pengguna
+                            </Nav.Link>
+                        </Nav>
+                    )}
+
+                    {/* ========== NAV: BELUM LOGIN ========== */}
                     {!user && (
                         <Nav className="me-auto">
                             <Nav.Link as={Link} to="/health-check">
@@ -61,16 +116,17 @@ const Navigation = () => {
                             </Nav.Link>
                         </Nav>
                     )}
-                    
+
+                    {/* ========== NAV KANAN ========== */}
                     <Nav className="align-items-center">
-                        {/* Notification Bell (untuk semua yang login) */}
+                        {/* Notification Bell (hanya untuk yang sudah login) */}
                         {user && <NotificationDropdown />}
 
                         {user ? (
                             <>
-                                {/* ========== MENU UNTUK USER BIASA ========== */}
+                                {/* ----- Dropdown: USER ----- */}
                                 {user.role === 'user' && (
-                                    <NavDropdown 
+                                    <NavDropdown
                                         title={
                                             <span>
                                                 <FaUser className="me-1" />
@@ -102,15 +158,15 @@ const Navigation = () => {
                                             <FaBox className="me-2" /> Pesanan Obat
                                         </NavDropdown.Item>
                                         <NavDropdown.Divider />
-                                        <NavDropdown.Item onClick={handleLogout}>
+                                        <NavDropdown.Item onClick={handleLogout} className="text-danger">
                                             <FaSignOutAlt className="me-2" /> Logout
                                         </NavDropdown.Item>
                                     </NavDropdown>
                                 )}
 
-                                {/* ========== MENU UNTUK DOKTER ========== */}
+                                {/* ----- Dropdown: DOKTER ----- */}
                                 {user.role === 'doctor' && (
-                                    <NavDropdown 
+                                    <NavDropdown
                                         title={
                                             <span className="text-success">
                                                 <FaStethoscope className="me-1" />
@@ -129,10 +185,14 @@ const Navigation = () => {
                                         <NavDropdown.Item as={Link} to="/doctor/appointments">
                                             <FaCalendarAlt className="me-2" /> Jadwal Praktek
                                         </NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/consultations">
+                                            <FaComment className="me-2" /> Konsultasi
+                                        </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/doctor/sick-letters">
-                                            <FaFileMedical className="me-2" /> 
-                                            Surat Sakit
-                                            <Badge bg="warning" className="ms-2">{unreadCount}</Badge>
+                                            <FaFileMedical className="me-2" /> Surat Sakit
+                                            {unreadCount > 0 && (
+                                                <Badge bg="warning" className="ms-2">{unreadCount}</Badge>
+                                            )}
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/doctor/patients">
                                             <FaUsers className="me-2" /> Pasien Saya
@@ -142,21 +202,17 @@ const Navigation = () => {
                                             <FaUser className="me-2" /> Profil Saya
                                         </NavDropdown.Item>
                                         <NavDropdown.Divider />
-                                        <NavDropdown.Item onClick={handleLogout}>
+                                        <NavDropdown.Item onClick={handleLogout} className="text-danger">
                                             <FaSignOutAlt className="me-2" /> Logout
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/doctor/appointments">
-                                            <FaCalendarAlt className="me-2" /> Janji Temu
                                         </NavDropdown.Item>
                                     </NavDropdown>
                                 )}
-                                
-                                {/* ========== MENU UNTUK ADMIN ========== */}
+
+                                {/* ----- Dropdown: ADMIN ----- */}
                                 {user.role === 'admin' && (
-                                    <NavDropdown 
+                                    <NavDropdown
                                         title={
                                             <span className="text-warning">
-                                                <FaShieldAlt className="me-1" />
                                                 Admin
                                             </span>
                                         }
@@ -170,21 +226,22 @@ const Navigation = () => {
                                             <FaChartLine className="me-2" /> Dashboard
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/admin/verify-payments">
-                                            <FaMoneyBillWave className="me-2" /> 
-                                            Verifikasi Pembayaran
-                                            <Badge bg="danger" className="ms-2">3</Badge>
+                                            <FaMoneyBillWave className="me-2" /> Verifikasi Pembayaran
+                                            {pendingPayments > 0 && (
+                                                <Badge bg="danger" className="ms-2">{pendingPayments}</Badge>
+                                            )}
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/admin/doctors">
                                             <FaUserMd className="me-2" /> Kelola Dokter
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/admin/users">
-                                            <FaUsers className="me-2" /> Kelola User
+                                            <FaUsers className="me-2" /> Kelola Pengguna
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/admin/consultations">
                                             <FaPrescription className="me-2" /> Semua Konsultasi
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/admin/appointments">
-                                            <FaCalendarAlt className="me-2" /> Semua Janji
+                                            <FaCalendarAlt className="me-2" /> Semua Janji Temu
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/admin/pharmacy">
                                             <FaPills className="me-2" /> Manajemen Farmasi
@@ -194,7 +251,7 @@ const Navigation = () => {
                                             <FaUser className="me-2" /> Profil Saya
                                         </NavDropdown.Item>
                                         <NavDropdown.Divider />
-                                        <NavDropdown.Item onClick={handleLogout}>
+                                        <NavDropdown.Item onClick={handleLogout} className="text-danger">
                                             <FaSignOutAlt className="me-2" /> Logout
                                         </NavDropdown.Item>
                                     </NavDropdown>

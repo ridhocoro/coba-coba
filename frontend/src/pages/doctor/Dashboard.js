@@ -1,259 +1,271 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Button, ListGroup, Badge } from 'react-bootstrap';
+import { Container, Row, Col, Card, Button, ListGroup, Badge, Spinner, Alert } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import axios from 'axios';
-import { 
+import api from '../../utils/api';
+import {
     FaUserMd, FaCalendarAlt, FaClock, FaUsers,
-    FaFileMedical, FaComment, FaArrowRight, FaCheckCircle,
-    FaHourglassHalf, FaStethoscope, FaClipboardList
+    FaFileMedical, FaArrowRight, FaCheckCircle,
+    FaHourglassHalf, FaStethoscope, FaClipboardList,
+    FaComment, FaExclamationTriangle, FaSync
 } from 'react-icons/fa';
 
 const DoctorDashboard = () => {
-    const { user } = useAuth();
-    const [stats, setStats] = useState({
-        todayAppointments: 0,
-        pendingSickLetters: 0,
-        totalPatients: 0,
-        ongoingConsultations: 0
-    });
+    const { user, loading: authLoading } = useAuth();
+    const [stats, setStats] = useState({ todayAppointments: 0, pendingAppointments: 0, totalPatients: 0, ongoingConsultations: 0 });
     const [todaySchedule, setTodaySchedule] = useState([]);
-    const [pendingSickLetters, setPendingSickLetters] = useState([]);
+    const [pendingConsultations, setPendingConsultations] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [noProfile, setNoProfile] = useState(false);
 
     useEffect(() => {
-        fetchDoctorData();
-    }, []);
+        if (authLoading) return;
+        if (user && user.role === 'doctor') {
+            fetchDoctorData();
+        }
+    }, [authLoading, user]);
 
     const fetchDoctorData = async () => {
+        setLoading(true);
+        setError(null);
+        setNoProfile(false);
         try {
-            const token = localStorage.getItem('token');
-            
-            // Fetch pending sick letters
-            const sickRes = await axios.get(
-                'http://localhost:5000/api/consultations/doctor/pending',
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            
-            setPendingSickLetters(sickRes.data.letters || []);
-            
-            // TODO: Fetch appointments, patients, etc
-            
-            setStats({
-                todayAppointments: 3,
-                pendingSickLetters: sickRes.data.letters?.length || 0,
-                totalPatients: 45,
-                ongoingConsultations: 2
-            });
-            
-            // Dummy today schedule
-            setTodaySchedule([
-                { time: '09:00', patient: 'Budi Santoso', type: 'Konsultasi' },
-                { time: '10:30', patient: 'Siti Aminah', type: 'Janji Temu' },
-                { time: '13:00', patient: 'Ahmad Rizki', type: 'Konsultasi' }
+            // Cek apakah dokter punya Doctor record
+            try {
+                const profileRes = await api.get('/api/doctors/my/profile');
+                if (profileRes.data?.needsProfile) {
+                    setNoProfile(true);
+                    setLoading(false);
+                    return;
+                }
+            } catch (profileErr) {
+                if (profileErr.response?.status === 404) {
+                    setNoProfile(true);
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            const [apptRes, consRes] = await Promise.allSettled([
+                api.get('/api/appointments/doctor/stats'),
+                api.get('/api/consultations/doctor/pending')
             ]);
 
-        } catch (error) {
-            console.error('Error fetching doctor data:', error);
+            if (apptRes.status === 'fulfilled') {
+                const d = apptRes.value.data;
+                setStats(prev => ({
+                    ...prev,
+                    todayAppointments: d.stats?.todayAppointments ?? 0,
+                    pendingAppointments: d.stats?.pendingAppointments ?? 0,
+                    totalPatients: d.stats?.totalPatients ?? 0
+                }));
+                setTodaySchedule(d.todaySchedule || []);
+            } else {
+                console.error('Appointments stats error:', apptRes.reason?.response?.data || apptRes.reason?.message);
+            }
+
+            if (consRes.status === 'fulfilled') {
+                const consultations = consRes.value.data?.consultations || [];
+                const ongoing = consultations.filter(c => c.status === 'ongoing').length;
+                setStats(prev => ({ ...prev, ongoingConsultations: ongoing }));
+                setPendingConsultations(consultations.slice(0, 5));
+            } else {
+                console.error('Consultations error:', consRes.reason?.response?.data || consRes.reason?.message);
+            }
+
+            // Jika KEDUA request gagal, tampilkan error
+            if (apptRes.status === 'rejected' && consRes.status === 'rejected') {
+                setError('Gagal memuat data dashboard. Pastikan server berjalan.');
+            }
+        } catch (err) {
+            console.error('Dashboard error:', err);
+            setError('Gagal memuat data dashboard');
         } finally {
             setLoading(false);
         }
     };
 
     const quickActions = [
-        { icon: <FaCalendarAlt />, title: 'Jadwal Praktek', color: 'primary', link: '/doctor/appointments' },
-        { icon: <FaFileMedical />, title: 'Surat Sakit', color: 'warning', link: '/doctor/sick-letters', badge: stats.pendingSickLetters },
-        { icon: <FaUsers />, title: 'Pasien Saya', color: 'success', link: '/doctor/patients' },
-        { icon: <FaClipboardList />, title: 'Laporan', color: 'info', link: '/doctor/reports' }
+        { icon: <FaCalendarAlt />, title: 'Jadwal Praktek', color: 'primary', link: '/doctor/appointments', badge: stats.pendingAppointments },
+        { icon: <FaFileMedical />, title: 'Surat Sakit', color: 'warning', link: '/doctor/sick-letters' },
+        { icon: <FaComment />, title: 'Konsultasi', color: 'success', link: '/doctor/consultations', badge: stats.ongoingConsultations },
+        { icon: <FaUsers />, title: 'Pasien Saya', color: 'info', link: '/doctor/patients' }
     ];
 
+    const getApptBadge = (status) => {
+        const map = {
+            pending: ['warning', 'Menunggu'],
+            confirmed: ['success', 'Dikonfirmasi'],
+            completed: ['primary', 'Selesai'],
+            cancelled: ['danger', 'Batal']
+        };
+        const [bg, label] = map[status] || ['secondary', status];
+        return <Badge bg={bg} className="small">{label}</Badge>;
+    };
+
+    const getConsBadge = (status) => {
+        const map = {
+            paid: ['info', 'Menunggu Dokter'],
+            ongoing: ['success', 'Berlangsung'],
+            completed: ['primary', 'Selesai']
+        };
+        const [bg, label] = map[status] || ['secondary', status];
+        return <Badge bg={bg} className="small">{label}</Badge>;
+    };
+
+    if (noProfile) return (
+        <Container className="py-5">
+            <Alert variant="warning" className="text-center">
+                <FaExclamationTriangle size={40} className="mb-3 d-block mx-auto" />
+                <h5>Profil Dokter Belum Terdaftar</h5>
+                <p className="mb-3">
+                    Akun Anda terdaftar sebagai <strong>dokter</strong>, tetapi profil dokter belum dibuat oleh admin.
+                    Hubungi administrator untuk menghubungkan akun Anda ke profil dokter.
+                </p>
+                <p className="text-muted small">
+                    Admin dapat melakukan ini melalui menu <strong>Kelola Dokter → Hubungkan Akun</strong>
+                </p>
+            </Alert>
+        </Container>
+    );
+
+    if (authLoading) return (
+        <Container className="py-5 text-center">
+            <Spinner animation="border" variant="primary" />
+            <p className="mt-2 text-muted">Memeriksa akses...</p>
+        </Container>
+    );
+
+    if (loading) return (
+        <Container className="py-5 text-center">
+            <Spinner animation="border" variant="primary" />
+            <p className="mt-2 text-muted">Memuat dashboard...</p>
+        </Container>
+    );
+
     return (
-        <Container className="py-4">
-            {/* Welcome Section */}
-            <Row className="mb-4">
+        <Container fluid className="py-4 px-4">
+            {/* Header */}
+            <Row className="mb-4 align-items-center">
                 <Col>
-                    <Card className="border-0 bg-gradient-primary text-white">
-                        <Card.Body className="p-4">
-                            <Row className="align-items-center">
-                                <Col md={8}>
-                                    <h2 className="mb-2">Selamat Datang, dr. {user?.name}!</h2>
-                                    <p className="mb-0 opacity-75">
-                                        Semoga hari Anda menyenangkan. Berikut ringkasan aktivitas hari ini.
-                                    </p>
-                                </Col>
-                                <Col md={4} className="text-end">
-                                    <FaStethoscope size={60} className="opacity-50" />
-                                </Col>
-                            </Row>
-                        </Card.Body>
-                    </Card>
+                    <div className="d-flex align-items-center gap-3">
+                        <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center text-white"
+                            style={{ width: 52, height: 52, fontSize: 22 }}>
+                            <FaUserMd />
+                        </div>
+                        <div>
+                            <h5 className="fw-bold mb-0">Selamat datang, dr. {user?.name}</h5>
+                            <p className="text-muted mb-0 small">Dashboard Dokter</p>
+                        </div>
+                    </div>
+                </Col>
+                <Col xs="auto">
+                    <Button variant="outline-primary" size="sm" onClick={fetchDoctorData}>
+                        <FaSync className="me-1" /> Refresh
+                    </Button>
                 </Col>
             </Row>
+
+            {error && (
+                <Alert variant="danger" className="d-flex align-items-center gap-2">
+                    <FaExclamationTriangle />
+                    <span>{error}</span>
+                    <Button variant="link" size="sm" className="ms-auto p-0" onClick={fetchDoctorData}>Coba lagi</Button>
+                </Alert>
+            )}
 
             {/* Stats Cards */}
-            <Row className="mb-4 g-4">
-                <Col md={3}>
-                    <Card className="border-0 shadow-sm bg-primary text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
+            <Row className="mb-4 g-3">
+                {[
+                    { label: 'Janji Hari Ini', value: stats.todayAppointments, icon: <FaCalendarAlt />, bg: 'primary' },
+                    { label: 'Menunggu Konfirmasi', value: stats.pendingAppointments, icon: <FaHourglassHalf />, bg: 'warning' },
+                    { label: 'Total Pasien', value: stats.totalPatients, icon: <FaUsers />, bg: 'success' },
+                    { label: 'Konsultasi Aktif', value: stats.ongoingConsultations, icon: <FaComment />, bg: 'info' },
+                ].map((s, i) => (
+                    <Col md={3} xs={6} key={i}>
+                        <Card className={`border-0 shadow-sm bg-${s.bg} text-white`}>
+                            <Card.Body className="d-flex align-items-center justify-content-between py-3 px-3">
                                 <div>
-                                    <h6 className="text-white-50 mb-2">Janji Temu Hari Ini</h6>
-                                    <h2 className="mb-0">{stats.todayAppointments}</h2>
+                                    <div className="small opacity-75">{s.label}</div>
+                                    <h3 className="fw-bold mb-0">{s.value}</h3>
                                 </div>
-                                <FaCalendarAlt size={40} className="opacity-50" />
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="border-0 shadow-sm bg-warning text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 className="text-white-50 mb-2">Surat Sakit Pending</h6>
-                                    <h2 className="mb-0">{stats.pendingSickLetters}</h2>
-                                </div>
-                                <FaFileMedical size={40} className="opacity-50" />
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="border-0 shadow-sm bg-success text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 className="text-white-50 mb-2">Total Pasien</h6>
-                                    <h2 className="mb-0">{stats.totalPatients}</h2>
-                                </div>
-                                <FaUsers size={40} className="opacity-50" />
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="border-0 shadow-sm bg-info text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 className="text-white-50 mb-2">Konsultasi Berlangsung</h6>
-                                    <h2 className="mb-0">{stats.ongoingConsultations}</h2>
-                                </div>
-                                <FaComment size={40} className="opacity-50" />
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
-
-            {/* Quick Actions */}
-            <Row className="mb-5 g-4">
-                {quickActions.map((action, idx) => (
-                    <Col md={3} key={idx}>
-                        <Card 
-                            as={Link} 
-                            to={action.link}
-                            className="text-decoration-none h-100 border-0 shadow-sm hover-card position-relative"
-                            style={{ cursor: 'pointer' }}
-                        >
-                            {action.badge > 0 && (
-                                <Badge 
-                                    bg="danger" 
-                                    className="position-absolute top-0 end-0 m-3"
-                                    pill
-                                >
-                                    {action.badge}
-                                </Badge>
-                            )}
-                            <Card.Body className="text-center p-4">
-                                <div className={`text-${action.color} mb-3`} style={{ fontSize: '2.5rem' }}>
-                                    {action.icon}
-                                </div>
-                                <h6 className="fw-bold mb-0">{action.title}</h6>
+                                <div className="opacity-25 fs-2">{s.icon}</div>
                             </Card.Body>
                         </Card>
                     </Col>
                 ))}
             </Row>
 
-            <Row>
-                {/* Today's Schedule */}
-                <Col md={7} className="mb-4">
+            <Row className="g-4">
+                {/* Quick Actions */}
+                <Col md={4}>
                     <Card className="border-0 shadow-sm h-100">
-                        <Card.Header className="bg-white border-0 pt-4">
-                            <h5 className="mb-0">
-                                <FaClock className="me-2 text-primary" />
-                                Jadwal Praktek Hari Ini
-                            </h5>
+                        <Card.Header className="bg-white border-0 fw-bold pt-3">
+                            <FaClipboardList className="me-2 text-primary" />Menu Cepat
                         </Card.Header>
-                        <Card.Body>
-                            {todaySchedule.length === 0 ? (
-                                <p className="text-muted text-center py-4">Tidak ada jadwal hari ini</p>
-                            ) : (
-                                <ListGroup variant="flush">
-                                    {todaySchedule.map((item, idx) => (
-                                        <ListGroup.Item key={idx} className="px-0 border-0 border-bottom py-3">
-                                            <Row className="align-items-center">
-                                                <Col md={2}>
-                                                    <Badge bg="primary">{item.time}</Badge>
-                                                </Col>
-                                                <Col md={6}>
-                                                    <strong>{item.patient}</strong>
-                                                    <p className="small text-muted mb-0">{item.type}</p>
-                                                </Col>
-                                                <Col md={4} className="text-end">
-                                                    <Button size="sm" variant="outline-primary">
-                                                        Mulai
-                                                    </Button>
-                                                </Col>
-                                            </Row>
-                                        </ListGroup.Item>
-                                    ))}
-                                </ListGroup>
-                            )}
+                        <Card.Body className="pt-2">
+                            <Row className="g-2">
+                                {quickActions.map((action, i) => (
+                                    <Col xs={6} key={i}>
+                                        <Button
+                                            as={Link}
+                                            to={action.link}
+                                            variant={`outline-${action.color}`}
+                                            className="w-100 py-3 position-relative"
+                                            style={{ borderRadius: 10 }}
+                                        >
+                                            <div className="fs-4 mb-1">{action.icon}</div>
+                                            <div className="small">{action.title}</div>
+                                            {action.badge > 0 && (
+                                                <Badge bg="danger" pill
+                                                    className="position-absolute top-0 end-0 m-1">
+                                                    {action.badge}
+                                                </Badge>
+                                            )}
+                                        </Button>
+                                    </Col>
+                                ))}
+                            </Row>
                         </Card.Body>
                     </Card>
                 </Col>
 
-                {/* Pending Sick Letters */}
-                <Col md={5} className="mb-4">
+                {/* Jadwal Hari Ini */}
+                <Col md={8}>
                     <Card className="border-0 shadow-sm h-100">
-                        <Card.Header className="bg-white border-0 pt-4">
-                            <div className="d-flex justify-content-between align-items-center">
-                                <h5 className="mb-0">
-                                    <FaFileMedical className="me-2 text-warning" />
-                                    Surat Sakit Menunggu
-                                </h5>
-                                <Button 
-                                    as={Link} 
-                                    to="/doctor/sick-letters" 
-                                    variant="link" 
-                                    size="sm"
-                                    className="text-warning"
-                                >
-                                    Lihat Semua <FaArrowRight className="ms-1" size={12} />
-                                </Button>
-                            </div>
+                        <Card.Header className="bg-white border-0 d-flex justify-content-between align-items-center pt-3">
+                            <span className="fw-bold">
+                                <FaCalendarAlt className="me-2 text-primary" />Jadwal Hari Ini
+                            </span>
+                            <Button as={Link} to="/doctor/appointments" variant="link" size="sm" className="p-0 text-decoration-none">
+                                Lihat Semua <FaArrowRight />
+                            </Button>
                         </Card.Header>
-                        <Card.Body>
-                            {pendingSickLetters.length === 0 ? (
-                                <p className="text-muted text-center py-4">
-                                    <FaFileMedical size={40} className="mb-3 opacity-50" />
-                                    <br />
-                                    Tidak ada surat sakit menunggu
-                                </p>
+                        <Card.Body className="p-0">
+                            {todaySchedule.length === 0 ? (
+                                <div className="text-center py-4 text-muted">
+                                    <FaCalendarAlt size={36} className="mb-2 opacity-25" />
+                                    <p className="mb-0 small">Tidak ada janji temu hari ini</p>
+                                </div>
                             ) : (
                                 <ListGroup variant="flush">
-                                    {pendingSickLetters.slice(0, 3).map(letter => (
-                                        <ListGroup.Item key={letter._id} className="px-0 border-0 border-bottom py-3">
+                                    {todaySchedule.map((apt, i) => (
+                                        <ListGroup.Item key={apt._id} className="px-3 py-2">
                                             <div className="d-flex justify-content-between align-items-center">
-                                                <div>
-                                                    <strong>{letter.userId?.name}</strong>
-                                                    <p className="small text-muted mb-0">
-                                                        {letter.diagnosis}
-                                                    </p>
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <div className="bg-primary bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center text-primary"
+                                                        style={{ width: 36, height: 36, fontSize: 14 }}>
+                                                        {i + 1}
+                                                    </div>
+                                                    <div>
+                                                        <div className="fw-semibold small">{apt.userId?.name}</div>
+                                                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                                            <FaClock className="me-1" />{apt.appointmentTime} · {apt.userId?.phone}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <Badge bg="warning">Menunggu</Badge>
+                                                {getApptBadge(apt.status)}
                                             </div>
                                         </ListGroup.Item>
                                     ))}
@@ -262,6 +274,47 @@ const DoctorDashboard = () => {
                         </Card.Body>
                     </Card>
                 </Col>
+
+                {/* Konsultasi Perlu Tindakan */}
+                {pendingConsultations.length > 0 && (
+                    <Col md={12}>
+                        <Card className="border-0 shadow-sm">
+                            <Card.Header className="bg-white border-0 d-flex justify-content-between align-items-center pt-3">
+                                <span className="fw-bold">
+                                    <FaStethoscope className="me-2 text-success" />Konsultasi Perlu Tindakan
+                                </span>
+                                <Button as={Link} to="/doctor/consultations" variant="link" size="sm" className="p-0 text-decoration-none">
+                                    Lihat Semua <FaArrowRight />
+                                </Button>
+                            </Card.Header>
+                            <Card.Body className="p-0">
+                                <ListGroup variant="flush">
+                                    {pendingConsultations.map(c => (
+                                        <ListGroup.Item key={c._id} className="px-3 py-2">
+                                            <div className="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <div className="fw-semibold small">{c.userId?.name}</div>
+                                                    <div className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                                        {c.symptoms?.slice(0, 60)}{c.symptoms?.length > 60 ? '...' : ''}
+                                                    </div>
+                                                </div>
+                                                <div className="d-flex align-items-center gap-2">
+                                                    {getConsBadge(c.status)}
+                                                    {c.status === 'ongoing' && (
+                                                        <Button as={Link} to={`/consultations/${c._id}`}
+                                                            variant="success" size="sm">
+                                                            Chat
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </ListGroup.Item>
+                                    ))}
+                                </ListGroup>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                )}
             </Row>
         </Container>
     );

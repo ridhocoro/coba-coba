@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Table, Badge, Button, Modal, Image } from 'react-bootstrap';
-import axios from 'axios';
+import api, { API_URL } from '../../utils/api';
 import { toast } from 'react-hot-toast';
 
 const ManualPayments = () => {
@@ -15,10 +15,8 @@ const ManualPayments = () => {
 
     const fetchPendingPayments = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(
-                'http://localhost:5000/api/manual-payment/admin/pending',
-                { headers: { Authorization: `Bearer ${token}` } }
+            const response = await api.get(
+                '/api/manual-payment/admin/pending'
             );
             setPayments(response.data.payments);
         } catch (error) {
@@ -30,11 +28,9 @@ const ManualPayments = () => {
 
     const verifyPayment = async (paymentId, status, notes) => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(
-                `http://localhost:5000/api/manual-payment/admin/verify/${paymentId}`,
-                { status, notes },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.put(
+                `/api/manual-payment/admin/verify/${paymentId}`,
+                { status, notes }
             );
             toast.success(`Pembayaran ${status === 'verified' ? 'diverifikasi' : 'ditolak'}`);
             fetchPendingPayments();
@@ -118,7 +114,7 @@ const ManualPayments = () => {
                                 <strong>ID Transaksi:</strong> {selectedPayment.transactionId}
                             </p>
                             <Image 
-                                src={`http://localhost:5000${selectedPayment.transferProof}`}
+                                src={`${API_URL}${selectedPayment.transferProof}`}
                                 fluid
                             />
                         </>

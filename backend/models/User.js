@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema({
     postalCode: String
   },
   role: { type: String, enum: ['user', 'doctor', 'admin'], default: 'user' },
+  isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
 

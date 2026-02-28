@@ -1,69 +1,61 @@
 import React, { useState, useEffect } from 'react';
+import api from '../../utils/api';
 import { 
     Container, Row, Col, Card, Table, Badge, 
     Button, Modal, Form, Alert, Spinner, Tabs, Tab 
 } from 'react-bootstrap';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { 
     FaCalendarAlt, FaUser, FaClock, FaCheckCircle,
     FaTimesCircle, FaHourglassHalf, FaInfoCircle,
-    FaStethoscope, FaFilter
+    FaStethoscope, FaSync
 } from 'react-icons/fa';
 
 const DoctorAppointments = () => {
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
     const navigate = useNavigate();
     const [appointments, setAppointments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState('');
     const [showRejectModal, setShowRejectModal] = useState(false);
+    const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedAppointment, setSelectedAppointment] = useState(null);
     const [rejectReason, setRejectReason] = useState('');
     const [activeTab, setActiveTab] = useState('pending');
-    const [stats, setStats] = useState({
-        pending: 0,
-        confirmed: 0,
-        completed: 0,
-        rejected: 0
-    });
+    const [stats, setStats] = useState({ pending: 0, confirmed: 0, completed: 0, rejected: 0 });
+    const [processing, setProcessing] = useState(false);
 
+    // ✅ FIX: tunggu auth loading selesai dulu sebelum cek role
     useEffect(() => {
+        if (authLoading) return;
         if (!user || user.role !== 'doctor') {
             toast.error('Akses ditolak');
             navigate('/');
             return;
         }
         fetchAppointments();
-    }, [selectedDate]);
+    }, [authLoading, user, selectedDate]);
 
     const fetchAppointments = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            let url = 'http://localhost:5000/api/appointments/doctor/appointments';
             const params = new URLSearchParams();
             if (selectedDate) params.append('date', selectedDate);
             
-            const response = await axios.get(
-                `${url}?${params.toString()}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            
-            const allAppointments = response.data.appointments || [];
+            const response = await api.get(`/api/appointments/doctor/appointments?${params.toString()}`);
+            const allAppointments = response.data.appointments || response.data || [];
             setAppointments(allAppointments);
             
-            // Hitung statistik
             setStats({
                 pending: allAppointments.filter(a => a.status === 'pending').length,
                 confirmed: allAppointments.filter(a => a.status === 'confirmed').length,
                 completed: allAppointments.filter(a => a.status === 'completed').length,
                 rejected: allAppointments.filter(a => a.status === 'rejected').length
             });
-            
         } catch (error) {
+            console.error('Fetch appointments error:', error);
             toast.error('Gagal memuat data janji temu');
         } finally {
             setLoading(false);
@@ -71,310 +63,301 @@ const DoctorAppointments = () => {
     };
 
     const handleApprove = async (id) => {
+        setProcessing(true);
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(
-                `http://localhost:5000/api/appointments/doctor/${id}/approve`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            await api.put(`/api/appointments/doctor/${id}/approve`);
             toast.success('Janji temu disetujui');
             fetchAppointments();
         } catch (error) {
-            toast.error('Gagal menyetujui janji');
+            toast.error(error.response?.data?.message || 'Gagal menyetujui janji');
+        } finally {
+            setProcessing(false);
         }
     };
 
     const handleReject = async () => {
-        if (!rejectReason) {
-            toast.error('Isi alasan penolakan');
-            return;
-        }
-
+        if (!rejectReason.trim()) { toast.error('Isi alasan penolakan'); return; }
+        setProcessing(true);
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(
-                `http://localhost:5000/api/appointments/doctor/${selectedAppointment._id}/reject`,
-                { reason: rejectReason },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            await api.put(`/api/appointments/doctor/${selectedAppointment._id}/reject`, { reason: rejectReason });
             toast.success('Janji temu ditolak');
             setShowRejectModal(false);
             setRejectReason('');
             fetchAppointments();
         } catch (error) {
-            toast.error('Gagal menolak janji');
+            toast.error(error.response?.data?.message || 'Gagal menolak janji');
+        } finally {
+            setProcessing(false);
         }
     };
 
     const handleComplete = async (id) => {
+        if (!window.confirm('Tandai janji temu ini sebagai selesai?')) return;
+        setProcessing(true);
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(
-                `http://localhost:5000/api/appointments/doctor/${id}/complete`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            toast.success('Janji temu selesai');
+            await api.put(`/api/appointments/doctor/${id}/complete`);
+            toast.success('Janji temu diselesaikan');
             fetchAppointments();
         } catch (error) {
-            toast.error('Gagal menyelesaikan janji');
+            toast.error(error.response?.data?.message || 'Gagal menyelesaikan janji');
+        } finally {
+            setProcessing(false);
         }
     };
 
     const getStatusBadge = (status) => {
         const variants = {
-            pending: { bg: 'warning', icon: FaHourglassHalf, text: 'Menunggu' },
-            confirmed: { bg: 'success', icon: FaCheckCircle, text: 'Disetujui' },
-            rejected: { bg: 'danger', icon: FaTimesCircle, text: 'Ditolak' },
-            completed: { bg: 'info', icon: FaCheckCircle, text: 'Selesai' },
-            cancelled: { bg: 'secondary', icon: FaTimesCircle, text: 'Dibatalkan' }
+            pending: { bg: 'warning', text: 'Menunggu' },
+            confirmed: { bg: 'success', text: 'Disetujui' },
+            rejected: { bg: 'danger', text: 'Ditolak' },
+            completed: { bg: 'info', text: 'Selesai' },
+            cancelled: { bg: 'secondary', text: 'Dibatalkan' }
         };
-        const v = variants[status] || variants.pending;
-        return (
-            <Badge bg={v.bg} className="d-flex align-items-center gap-1">
-                <v.icon size={12} />
-                <span>{v.text}</span>
-            </Badge>
-        );
+        const v = variants[status] || { bg: 'secondary', text: status };
+        return <Badge bg={v.bg}>{v.text}</Badge>;
     };
 
-    const formatDate = (date) => {
-        return new Date(date).toLocaleDateString('id-ID', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
-        });
-    };
+    const formatDate = (date) => new Date(date).toLocaleDateString('id-ID', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+    });
 
     const filteredAppointments = appointments.filter(a => {
-        if (activeTab === 'pending') return a.status === 'pending';
-        if (activeTab === 'confirmed') return a.status === 'confirmed';
-        if (activeTab === 'completed') return a.status === 'completed';
-        if (activeTab === 'rejected') return a.status === 'rejected';
-        return true;
+        if (activeTab === 'all') return true;
+        return a.status === activeTab;
     });
+
+    // Tampilkan spinner saat auth masih loading
+    if (authLoading) return (
+        <Container className="py-5 text-center">
+            <Spinner animation="border" variant="primary" />
+            <p className="mt-2 text-muted">Memeriksa akses...</p>
+        </Container>
+    );
 
     return (
         <Container fluid className="py-4">
-            <Row className="mb-4">
+            <Row className="mb-4 align-items-center">
                 <Col>
-                    <h2 className="text-center">
+                    <h4 className="fw-bold mb-0">
                         <FaStethoscope className="me-2 text-primary" />
-                        Panel Dokter - Janji Temu
-                    </h2>
+                        Janji Temu Saya
+                    </h4>
+                    <p className="text-muted small mb-0">Kelola jadwal janji temu pasien</p>
+                </Col>
+                <Col xs="auto">
+                    <Button variant="outline-primary" size="sm" onClick={fetchAppointments} disabled={loading}>
+                        <FaSync className="me-1" /> Refresh
+                    </Button>
                 </Col>
             </Row>
 
             {/* Stats Cards */}
-            <Row className="mb-4 g-4">
-                <Col md={3}>
-                    <Card className="bg-warning text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 className="text-white-50 mb-2">Menunggu</h6>
-                                    <h2 className="mb-0">{stats.pending}</h2>
+            <Row className="mb-4 g-3">
+                {[
+                    { label: 'Menunggu', value: stats.pending, bg: 'warning', tab: 'pending' },
+                    { label: 'Disetujui', value: stats.confirmed, bg: 'success', tab: 'confirmed' },
+                    { label: 'Selesai', value: stats.completed, bg: 'info', tab: 'completed' },
+                    { label: 'Ditolak', value: stats.rejected, bg: 'danger', tab: 'rejected' },
+                ].map((s, i) => (
+                    <Col md={3} xs={6} key={i}>
+                        <Card
+                            className={`bg-${s.bg} text-white border-0 shadow-sm`}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => setActiveTab(s.tab)}
+                        >
+                            <Card.Body className="py-3">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <div className="small opacity-75">{s.label}</div>
+                                        <h3 className="fw-bold mb-0">{s.value}</h3>
+                                    </div>
+                                    {s.tab === 'pending' && <FaHourglassHalf size={30} className="opacity-25" />}
+                                    {s.tab === 'confirmed' && <FaCheckCircle size={30} className="opacity-25" />}
+                                    {s.tab === 'completed' && <FaCalendarAlt size={30} className="opacity-25" />}
+                                    {s.tab === 'rejected' && <FaTimesCircle size={30} className="opacity-25" />}
                                 </div>
-                                <FaHourglassHalf size={40} />
-                            </div>
-                        </Card.Body>
-                    </Card>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                ))}
+            </Row>
+
+            {/* Filter */}
+            <Row className="mb-3 g-2 align-items-end">
+                <Col md={3}>
+                    <Form.Label className="small fw-semibold">Filter Tanggal</Form.Label>
+                    <Form.Control type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
                 </Col>
-                <Col md={3}>
-                    <Card className="bg-success text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 className="text-white-50 mb-2">Disetujui</h6>
-                                    <h2 className="mb-0">{stats.confirmed}</h2>
-                                </div>
-                                <FaCheckCircle size={40} />
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="bg-info text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 className="text-white-50 mb-2">Selesai</h6>
-                                    <h2 className="mb-0">{stats.completed}</h2>
-                                </div>
-                                <FaCheckCircle size={40} />
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="bg-danger text-white">
-                        <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 className="text-white-50 mb-2">Ditolak</h6>
-                                    <h2 className="mb-0">{stats.rejected}</h2>
-                                </div>
-                                <FaTimesCircle size={40} />
-                            </div>
-                        </Card.Body>
-                    </Card>
+                <Col xs="auto">
+                    <Button variant="outline-secondary" size="sm" onClick={() => setSelectedDate('')}>Reset</Button>
                 </Col>
             </Row>
 
-            {/* Filter by Date */}
-            <Row className="mb-4">
-                <Col md={4}>
-                    <Form.Group>
-                        <Form.Label>Filter Tanggal</Form.Label>
-                        <Form.Control
-                            type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                        />
-                    </Form.Group>
-                </Col>
-                <Col md={2} className="d-flex align-items-end">
-                    <Button variant="outline-secondary" onClick={() => setSelectedDate('')}>
-                        Reset
-                    </Button>
-                </Col>
-            </Row>
-
-            {/* Tabs */}
-            <Card className="shadow-sm border-0 mb-4">
-                <Card.Header className="bg-white">
-                    <Tabs
-                        activeKey={activeTab}
-                        onSelect={(k) => setActiveTab(k)}
-                        className="mb-0 border-0"
-                    >
+            {/* Tabs + Table */}
+            <Card className="shadow-sm border-0">
+                <Card.Header className="bg-white border-0 pt-3 pb-0">
+                    <Tabs activeKey={activeTab} onSelect={k => setActiveTab(k)} className="mb-0 border-0">
                         <Tab eventKey="pending" title={`Menunggu (${stats.pending})`} />
                         <Tab eventKey="confirmed" title={`Disetujui (${stats.confirmed})`} />
                         <Tab eventKey="completed" title={`Selesai (${stats.completed})`} />
                         <Tab eventKey="rejected" title={`Ditolak (${stats.rejected})`} />
+                        <Tab eventKey="all" title={`Semua (${appointments.length})`} />
                     </Tabs>
                 </Card.Header>
-                <Card.Body>
+                <Card.Body className="p-0">
                     {loading ? (
                         <div className="text-center py-5">
                             <Spinner animation="border" variant="primary" />
+                            <p className="mt-2 text-muted">Memuat janji temu...</p>
                         </div>
                     ) : filteredAppointments.length === 0 ? (
                         <div className="text-center py-5">
-                            <FaCalendarAlt size={50} className="text-muted mb-3" />
-                            <h5>Tidak Ada Janji Temu</h5>
-                            <p className="text-muted">
-                                {selectedDate ? 'Tidak ada janji pada tanggal ini' : 'Belum ada janji temu'}
-                            </p>
+                            <FaCalendarAlt size={48} className="text-muted mb-3 opacity-25" />
+                            <h6 className="text-muted">Tidak ada janji temu</h6>
+                            <p className="text-muted small">{selectedDate ? 'Tidak ada janji pada tanggal ini' : 'Belum ada data'}</p>
                         </div>
                     ) : (
-                        <div className="table-responsive">
-                            <Table hover>
-                                <thead>
-                                    <tr>
-                                        <th>No.</th>
-                                        <th>Pasien</th>
-                                        <th>Tanggal</th>
-                                        <th>Waktu</th>
-                                        <th>Keluhan</th>
-                                        <th>Status</th>
-                                        <th>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredAppointments.map((apt, index) => (
-                                        <tr key={apt._id}>
-                                            <td>{apt.queueNumber}</td>
-                                            <td>
-                                                <strong>{apt.userId?.name}</strong>
-                                                <br />
-                                                <small className="text-muted">{apt.userId?.phone}</small>
-                                            </td>
-                                            <td>{formatDate(apt.appointmentDate)}</td>
-                                            <td>{apt.appointmentTime}</td>
-                                            <td>{apt.complaint}</td>
-                                            <td>{getStatusBadge(apt.status)}</td>
-                                            <td>
+                        <Table hover responsive className="mb-0">
+                            <thead className="bg-light">
+                                <tr>
+                                    <th>No.</th>
+                                    <th>Pasien</th>
+                                    <th>Tanggal</th>
+                                    <th>Waktu</th>
+                                    <th>Keluhan</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredAppointments.map(apt => (
+                                    <tr key={apt._id}>
+                                        <td><Badge bg="primary">#{apt.queueNumber || '-'}</Badge></td>
+                                        <td>
+                                            <div className="fw-semibold">{apt.userId?.name}</div>
+                                            <div className="text-muted small">{apt.userId?.phone}</div>
+                                        </td>
+                                        <td className="small">{formatDate(apt.appointmentDate)}</td>
+                                        <td className="small">
+                                            <FaClock className="me-1 text-muted" size={11} />
+                                            {apt.appointmentTime}
+                                        </td>
+                                        <td className="small text-muted" style={{ maxWidth: 150 }}>
+                                            {apt.complaint?.length > 45 ? apt.complaint.slice(0, 45) + '...' : apt.complaint}
+                                        </td>
+                                        <td>{getStatusBadge(apt.status)}</td>
+                                        <td>
+                                            <div className="d-flex gap-1 flex-wrap">
+                                                <Button variant="outline-secondary" size="sm"
+                                                    onClick={() => { setSelectedAppointment(apt); setShowDetailModal(true); }}>
+                                                    <FaInfoCircle />
+                                                </Button>
                                                 {apt.status === 'pending' && (
                                                     <>
-                                                        <Button
-                                                            variant="success"
-                                                            size="sm"
-                                                            className="me-2"
-                                                            onClick={() => handleApprove(apt._id)}
-                                                        >
-                                                            <FaCheckCircle className="me-1" />
-                                                            Setujui
+                                                        <Button variant="success" size="sm" disabled={processing}
+                                                            onClick={() => handleApprove(apt._id)}>
+                                                            <FaCheckCircle />
                                                         </Button>
-                                                        <Button
-                                                            variant="danger"
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                setSelectedAppointment(apt);
-                                                                setShowRejectModal(true);
-                                                            }}
-                                                        >
-                                                            <FaTimesCircle className="me-1" />
-                                                            Tolak
+                                                        <Button variant="danger" size="sm"
+                                                            onClick={() => { setSelectedAppointment(apt); setShowRejectModal(true); }}>
+                                                            <FaTimesCircle />
                                                         </Button>
                                                     </>
                                                 )}
                                                 {apt.status === 'confirmed' && (
-                                                    <Button
-                                                        variant="info"
-                                                        size="sm"
-                                                        onClick={() => handleComplete(apt._id)}
-                                                    >
+                                                    <Button variant="info" size="sm" disabled={processing}
+                                                        onClick={() => handleComplete(apt._id)}>
                                                         Selesai
                                                     </Button>
                                                 )}
                                                 {apt.status === 'rejected' && apt.rejectionReason && (
-                                                    <Button
-                                                        variant="outline-secondary"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            alert(`Alasan: ${apt.rejectionReason}`);
-                                                        }}
-                                                    >
-                                                        <FaInfoCircle className="me-1" />
-                                                        Lihat Alasan
+                                                    <Button variant="outline-secondary" size="sm"
+                                                        onClick={() => { setSelectedAppointment(apt); setShowDetailModal(true); }}>
+                                                        <FaInfoCircle />
                                                     </Button>
                                                 )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </Table>
-                        </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
                     )}
                 </Card.Body>
             </Card>
 
-            {/* Modal Reject */}
-            <Modal show={showRejectModal} onHide={() => setShowRejectModal(false)}>
+            {/* Detail Modal */}
+            <Modal show={showDetailModal} onHide={() => setShowDetailModal(false)}>
                 <Modal.Header closeButton>
-                    <Modal.Title>Alasan Penolakan</Modal.Title>
+                    <Modal.Title><FaCalendarAlt className="me-2 text-primary" />Detail Janji Temu</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
+                    {selectedAppointment && (
+                        <Table borderless size="sm">
+                            <tbody>
+                                <tr><td className="text-muted fw-semibold" style={{ width: '40%' }}>Pasien</td><td>{selectedAppointment.userId?.name}</td></tr>
+                                <tr><td className="text-muted fw-semibold">Telepon</td><td>{selectedAppointment.userId?.phone || '-'}</td></tr>
+                                <tr><td className="text-muted fw-semibold">Email</td><td>{selectedAppointment.userId?.email || '-'}</td></tr>
+                                <tr><td className="text-muted fw-semibold">Tanggal</td><td>{formatDate(selectedAppointment.appointmentDate)}</td></tr>
+                                <tr><td className="text-muted fw-semibold">Waktu</td><td>{selectedAppointment.appointmentTime}</td></tr>
+                                <tr><td className="text-muted fw-semibold">Keluhan</td><td>{selectedAppointment.complaint}</td></tr>
+                                <tr><td className="text-muted fw-semibold">Status</td><td>{getStatusBadge(selectedAppointment.status)}</td></tr>
+                                {selectedAppointment.rejectionReason && (
+                                    <tr><td className="text-muted fw-semibold">Alasan Tolak</td>
+                                        <td className="text-danger">{selectedAppointment.rejectionReason}</td>
+                                    </tr>
+                                )}
+                                {selectedAppointment.doctorNotes && (
+                                    <tr><td className="text-muted fw-semibold">Catatan</td><td>{selectedAppointment.doctorNotes}</td></tr>
+                                )}
+                            </tbody>
+                        </Table>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowDetailModal(false)}>Tutup</Button>
+                    {selectedAppointment?.status === 'pending' && (
+                        <>
+                            <Button variant="success" disabled={processing}
+                                onClick={() => { handleApprove(selectedAppointment._id); setShowDetailModal(false); }}>
+                                <FaCheckCircle className="me-1" /> Setujui
+                            </Button>
+                            <Button variant="danger"
+                                onClick={() => { setShowDetailModal(false); setShowRejectModal(true); }}>
+                                <FaTimesCircle className="me-1" /> Tolak
+                            </Button>
+                        </>
+                    )}
+                    {selectedAppointment?.status === 'confirmed' && (
+                        <Button variant="info" disabled={processing}
+                            onClick={() => { handleComplete(selectedAppointment._id); setShowDetailModal(false); }}>
+                            Tandai Selesai
+                        </Button>
+                    )}
+                </Modal.Footer>
+            </Modal>
+
+            {/* Reject Modal */}
+            <Modal show={showRejectModal} onHide={() => { setShowRejectModal(false); setRejectReason(''); }}>
+                <Modal.Header closeButton>
+                    <Modal.Title><FaTimesCircle className="me-2 text-danger" />Tolak Janji Temu</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p className="mb-2">Pasien: <strong>{selectedAppointment?.userId?.name}</strong></p>
                     <Form.Group>
-                        <Form.Label>Catatan untuk pasien</Form.Label>
+                        <Form.Label>Alasan Penolakan <span className="text-danger">*</span></Form.Label>
                         <Form.Control
-                            as="textarea"
-                            rows={4}
+                            as="textarea" rows={3}
                             value={rejectReason}
-                            onChange={(e) => setRejectReason(e.target.value)}
-                            placeholder="Contoh: Jadwal penuh, dokter tidak praktek, dll"
+                            onChange={e => setRejectReason(e.target.value)}
+                            placeholder="Contoh: Jadwal penuh, dokter tidak praktek, dll."
                         />
                     </Form.Group>
                 </Modal.Body>
                 <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowRejectModal(false)}>
-                        Batal
-                    </Button>
-                    <Button variant="danger" onClick={handleReject}>
-                        Tolak Janji
+                    <Button variant="secondary" onClick={() => { setShowRejectModal(false); setRejectReason(''); }}>Batal</Button>
+                    <Button variant="danger" disabled={processing} onClick={handleReject}>
+                        {processing ? 'Memproses...' : 'Tolak Janji'}
                     </Button>
                 </Modal.Footer>
             </Modal>

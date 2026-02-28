@@ -1,11 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import io from 'socket.io-client';
-import axios from 'axios';
+import api, { API_URL } from '../utils/api';
 import { toast } from 'react-hot-toast';
 
 const NotificationContext = createContext();
-
 export const useNotifications = () => useContext(NotificationContext);
 
 export const NotificationProvider = ({ children }) => {
@@ -17,13 +16,8 @@ export const NotificationProvider = ({ children }) => {
 
     const fetchNotifications = useCallback(async () => {
         if (!user) return;
-        
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(
-                'http://localhost:5000/api/notifications',
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const response = await api.get('/api/notifications');
             setNotifications(response.data.notifications);
             setUnreadCount(response.data.unreadCount);
         } catch (error) {
@@ -33,110 +27,60 @@ export const NotificationProvider = ({ children }) => {
 
     useEffect(() => {
         if (!user) return;
-
-        // Koneksi Socket.io
-        const newSocket = io('http://localhost:5000');
+        const newSocket = io(API_URL);
         setSocket(newSocket);
-
-        // Join user room
         newSocket.emit('join-user', user.id);
 
-        // Listen for new notifications
         newSocket.on('new-notification', (notification) => {
             setNotifications(prev => [notification, ...prev]);
             setUnreadCount(prev => prev + 1);
-            
-            // Tampilkan toast berdasarkan tipe notifikasi
             const toastMessages = {
                 consultation_request: '📋 Permintaan konsultasi baru',
                 new_message: '💬 Pesan baru',
+                consultation_reply: '💬 Dokter membalas pesan Anda',
                 sick_letter_issued: '📄 Surat sakit telah terbit',
+                appointment_request: '📅 Permintaan janji temu baru',
                 payment_verified: '💰 Pembayaran diverifikasi',
+                payment_pending: '💰 Pembayaran menunggu verifikasi',
                 order_shipped: '📦 Pesanan obat dikirim',
-                order_delivered: '✅ Pesanan obat sampai'
+                appointment_confirmed: '✅ Janji temu dikonfirmasi',
+                appointment_rejected: '❌ Janji temu ditolak',
             };
-            
-            toast.success(toastMessages[notification.type] || notification.title, {
-                duration: 5000,
-                position: 'top-right'
-            });
+            toast.success(toastMessages[notification.type] || notification.title, { duration: 5000 });
         });
 
-        // Listen for unread count updates
-        newSocket.on('unread-count', (count) => {
-            setUnreadCount(count);
-        });
-
-        // Fetch existing notifications
+        newSocket.on('unread-count', (count) => setUnreadCount(count));
         fetchNotifications();
 
-        return () => {
-            newSocket.close();
-        };
+        return () => { newSocket.close(); };
     }, [user, fetchNotifications]);
 
     const markAsRead = async (notificationId) => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.put(
-                `http://localhost:5000/api/notifications/${notificationId}/read`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            
+            const response = await api.put(`/api/notifications/${notificationId}/read`);
             setUnreadCount(response.data.unreadCount);
-            setNotifications(prev =>
-                prev.map(n =>
-                    n._id === notificationId ? { ...n, isRead: true } : n
-                )
-            );
-        } catch (error) {
-            console.error('Error marking as read:', error);
-        }
+            setNotifications(prev => prev.map(n => n._id === notificationId ? { ...n, isRead: true } : n));
+        } catch (error) { console.error('Error marking as read:', error); }
     };
 
     const markAllAsRead = async () => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(
-                'http://localhost:5000/api/notifications/read-all',
-                {},
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            
+            await api.put('/api/notifications/read-all');
             setUnreadCount(0);
-            setNotifications(prev =>
-                prev.map(n => ({ ...n, isRead: true }))
-            );
-        } catch (error) {
-            console.error('Error marking all as read:', error);
-        }
+            setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+        } catch (error) { console.error('Error marking all as read:', error); }
     };
 
     const handleNotificationClick = (notification) => {
-        // Mark as read if not already read
-        if (!notification.isRead) {
-            markAsRead(notification._id);
-        }
-        
-        // Navigate to the URL
-        if (notification.data?.url) {
-            window.location.href = notification.data.url;
-        }
-        
+        if (!notification.isRead) markAsRead(notification._id);
+        if (notification.data?.url) window.location.href = notification.data.url;
         setShowDropdown(false);
     };
 
     return (
         <NotificationContext.Provider value={{
-            notifications,
-            unreadCount,
-            showDropdown,
-            setShowDropdown,
-            markAsRead,
-            markAllAsRead,
-            handleNotificationClick,
-            fetchNotifications
+            notifications, unreadCount, showDropdown, setShowDropdown,
+            markAsRead, markAllAsRead, handleNotificationClick, fetchNotifications
         }}>
             {children}
         </NotificationContext.Provider>

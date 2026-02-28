@@ -171,25 +171,27 @@ const doctors = [
 
 const seedDoctors = async () => {
     try {
-        // Connect ke database
-        await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/klinik-ipb');
+        const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/klinik-ipb';
+
+        await mongoose.connect(MONGO_URI);
         console.log('✅ Connected to MongoDB');
 
-        // Hapus semua dokter yang ada
         await Doctor.deleteMany({});
-        console.log('✅ Existing doctors deleted');
+        console.log('🗑️ Existing doctors deleted');
 
-        // Insert data dokter baru
         const result = await Doctor.insertMany(doctors);
         console.log(`✅ ${result.length} doctors seeded successfully`);
 
-        // Tampilkan daftar dokter
         console.log('\n📋 Daftar Dokter:');
         result.forEach((doc, index) => {
             console.log(`${index + 1}. ${doc.name} - ${doc.specialization} - Rp ${doc.consultationFee.toLocaleString()}`);
         });
 
+        await mongoose.disconnect();
+        console.log('🔌 Disconnected from MongoDB');
+
         process.exit(0);
+
     } catch (error) {
         console.error('❌ Error seeding doctors:', error);
         process.exit(1);

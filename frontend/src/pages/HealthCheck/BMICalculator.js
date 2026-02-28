@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Table } from 'react-bootstrap';
-import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import api from '../../utils/api';
 import { FaCalculator, FaInfoCircle, FaWeight, FaRuler } from 'react-icons/fa';
 
 const BMICalculator = () => {
@@ -59,7 +59,7 @@ const BMICalculator = () => {
         try {
             console.log('Mengirim data:', { weight: weightNum, height: heightNum, unit }); // ✅ Debug
             
-            const response = await axios.post('http://localhost:5000/api/health-check/calculate-bmi', {
+            const response = await api.post('/api/health-check/calculate-bmi', {
                 weight: weightNum,
                 height: heightNum,
                 unit: unit // ✅ Kirim 'cm', 'm', atau 'imperial'

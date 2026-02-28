@@ -22,7 +22,7 @@ router.post('/register', [
     
     let user = await User.findOne({ email });
     if (user) {
-      return res.status(400).json({ message: 'Email already registered' });
+      return res.status(400).json({ message: 'Email sudah terdaftar' });
     }
 
     user = new User({ name, email, password, phone, address });
@@ -50,12 +50,17 @@ router.post('/login', [
     
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: 'Email atau password salah' });
+    }
+
+    // ✅ FIX: cek isActive - tolak login jika dinonaktifkan
+    if (user.isActive === false) {
+      return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: 'Email atau password salah' });
     }
 
     const token = jwt.sign(
@@ -74,6 +79,7 @@ router.post('/login', [
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('-password');
+    if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

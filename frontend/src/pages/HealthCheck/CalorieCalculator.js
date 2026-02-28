@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Table, ProgressBar } from 'react-bootstrap';
-import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import api from '../../utils/api';
 import { FaFire, FaApple, FaRunning, FaBed } from 'react-icons/fa';
 
 const CalorieCalculator = () => {
@@ -27,7 +27,7 @@ const CalorieCalculator = () => {
         setLoading(true);
 
         try {
-            const response = await axios.post('http://localhost:5000/api/health-check/calculate-calories', {
+            const response = await api.post('/api/health-check/calculate-calories', {
                 ...formData,
                 age: parseInt(formData.age),
                 weight: parseFloat(formData.weight),

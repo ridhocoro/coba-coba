@@ -18,6 +18,11 @@ const notificationSchema = new mongoose.Schema({
             'order_shipped',
             'order_delivered',
             'appointment_reminder',
+            'appointment_request',
+            'appointment_confirmed',
+            'appointment_rejected',
+            'appointment_cancelled',
+            'appointment_completed',
             'sick_letter_draft',
             'sick_letter_issued',
             'system'
