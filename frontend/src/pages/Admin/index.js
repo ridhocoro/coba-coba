@@ -269,7 +269,7 @@ const AdminDashboard = () => {
         { icon: <FaFileMedical />,   title: 'Surat Sakit',        desc: 'Kelola dan setujui surat sakit',             color: 'info',      tab: 'sickLetters',    count: sickLetters.filter(l => l.status === 'draft').length || null },
         { icon: <FaPills />,         title: 'Farmasi',            desc: 'Manajemen stok dan data obat',               color: 'danger',    tab: 'pharmacy' },
         { icon: <FaUsers />,         title: 'Pengguna',           desc: 'Lihat semua data pengguna terdaftar',        color: 'secondary', tab: 'users' },
-        { icon: <FaPrescription />,  title: 'Konsultasi',         desc: 'Pantau semua konsultasi berjalan',           color: 'dark',      tab: 'consultations' },
+        { icon: <FaPrescription />,  title: 'Konsultasi',         desc: 'Pantau semua konsultasi berjalan',           color: 'dark',      tab: 'consultations',  count: consultations.filter(c => c.status === 'pending_payment').length || null },
         { icon: <FaChartLine />,     title: 'Transaksi',          desc: 'Riwayat seluruh transaksi',                  color: 'primary',   tab: 'transactions' },
     ];
 
@@ -569,10 +569,25 @@ const AdminDashboard = () => {
                                             <td>{c.symptoms}</td>
                                             <td>
                                                 <Badge bg={
-                                                    c.status === 'completed' ? 'success' :
-                                                    c.status === 'ongoing'   ? 'primary' :
-                                                    c.status === 'pending'   ? 'warning' : 'secondary'
-                                                }>{c.status}</Badge>
+                                                    c.status === 'completed'       ? 'success' :
+                                                    c.status === 'ongoing'         ? 'primary' :
+                                                    c.status === 'pending_payment' ? 'warning' :
+                                                    c.status === 'scheduled'       ? 'info'    :
+                                                    c.status === 'paid'            ? 'info'    :
+                                                    c.status === 'cancelled'       ? 'danger'  :
+                                                    c.status === 'expired'         ? 'secondary':
+                                                    c.status === 'no_show'         ? 'warning' : 'secondary'
+                                                }>{
+                                                    c.status === 'pending_payment'  ? 'Menunggu Bayar' :
+                                                    c.status === 'paid'             ? 'Dibayar' :
+                                                    c.status === 'scheduled'        ? 'Terjadwal' :
+                                                    c.status === 'ongoing'          ? 'Berlangsung' :
+                                                    c.status === 'completed'        ? 'Selesai' :
+                                                    c.status === 'cancelled'        ? 'Dibatalkan' :
+                                                    c.status === 'expired'          ? 'Kadaluarsa' :
+                                                    c.status === 'no_show'          ? 'Tidak Hadir' :
+                                                    c.status === 'rejected_payment' ? 'Bayar Ditolak' : c.status
+                                                }</Badge>
                                             </td>
                                             <td>{new Date(c.createdAt).toLocaleDateString('id-ID')}</td>
                                         </tr>

@@ -80,6 +80,16 @@ const ManageDoctors = () => {
         }
     };
 
+    const handleToggleOnline = async (doctor) => {
+        try {
+            await api.put(`/api/doctors/${doctor._id}/online-status`, { isOnline: !doctor.isOnline });
+            toast.success(`Status dokter: ${!doctor.isOnline ? 'Online' : 'Offline'}`);
+            fetchData();
+        } catch {
+            toast.error('Gagal mengubah status online');
+        }
+    };
+
     const handleToggle = async (doctor) => {
         try {
             await api.put(`/api/admin/doctors/${doctor._id}/toggle-status`);
@@ -215,6 +225,7 @@ const ManageDoctors = () => {
                                 <th>Akun User</th>
                                 <th>Jadwal</th>
                                 <th>Status</th>
+                                <th>Online</th>
                                 <th>Aksi</th>
                             </tr>
                         </thead>
@@ -244,6 +255,16 @@ const ManageDoctors = () => {
                                         <Badge bg={d.isActive ? 'success' : 'secondary'}>
                                             {d.isActive ? 'Aktif' : 'Nonaktif'}
                                         </Badge>
+                                    </td>
+                                    <td>
+                                        <Button
+                                            variant={d.isOnline ? 'success' : 'outline-secondary'}
+                                            size="sm"
+                                            title={d.isOnline ? 'Klik untuk set Offline' : 'Klik untuk set Online'}
+                                            onClick={() => handleToggleOnline(d)}
+                                        >
+                                            {d.isOnline ? '🟢 Online' : '⚫ Offline'}
+                                        </Button>
                                     </td>
                                     <td>
                                         <div className="d-flex gap-1 flex-wrap">
