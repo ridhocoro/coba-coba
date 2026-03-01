@@ -151,6 +151,36 @@ router.put('/doctor/:id/reject', auth, doctorAuth, async (req, res) => {
     }
 });
 
+// CHECK-IN appointment (dokter - pasien sudah datang)
+router.put('/doctor/:id/check-in', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ message: 'Profil dokter belum terdaftar. Hubungi admin.' });
+
+        const appointment = await Appointment.findById(req.params.id).populate('userId');
+        if (!appointment) return res.status(404).json({ message: 'Janji tidak ditemukan' });
+        if (appointment.doctorId.toString() !== doctor._id.toString()) return res.status(403).json({ message: 'Akses ditolak' });
+        if (appointment.status !== 'confirmed') return res.status(400).json({ message: 'Hanya janji confirmed yang bisa di-check-in' });
+
+        appointment.status = 'checked_in';
+        appointment.checkedInAt = new Date();
+        await appointment.save();
+
+        await createNotification({
+            userId: appointment.userId._id,
+            type: 'appointment_confirmed',
+            title: 'Pasien Check-In',
+            message: `Pasien Anda telah check-in untuk janji temu hari ini.`,
+            data: { appointmentId: appointment._id, url: '/appointments' },
+            io: req.app.get('io')
+        });
+
+        res.json({ success: true, message: 'Pasien berhasil di-check-in', appointment });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 // COMPLETE appointment (dokter)
 router.put('/doctor/:id/complete', auth, doctorAuth, async (req, res) => {
     try {
@@ -160,7 +190,7 @@ router.put('/doctor/:id/complete', auth, doctorAuth, async (req, res) => {
         const appointment = await Appointment.findById(req.params.id);
         if (!appointment) return res.status(404).json({ message: 'Janji tidak ditemukan' });
         if (appointment.doctorId.toString() !== doctor._id.toString()) return res.status(403).json({ message: 'Akses ditolak' });
-        if (appointment.status !== 'confirmed') return res.status(400).json({ message: 'Hanya janji confirmed yang bisa diselesaikan' });
+        if (appointment.status !== 'checked_in') return res.status(400).json({ message: 'Hanya janji yang sudah check-in yang bisa diselesaikan' });
 
         appointment.status = 'completed';
         appointment.completedAt = new Date();

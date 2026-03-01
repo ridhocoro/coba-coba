@@ -227,6 +227,16 @@ const Pharmacy = () => {
     };
 
     const createOrder = async () => {
+        if (!address.trim()) {
+            toast.error('Alamat pengiriman harus diisi');
+            return;
+        }
+
+        if (!phone.trim()) {
+            toast.error('Nomor telepon harus diisi');
+            return;
+        }
+
         if (!selectedCourier || !courierService || shippingCost === 0) {
             toast.error('Pilih kurir dan layanan pengiriman');
             return;
@@ -251,6 +261,17 @@ const Pharmacy = () => {
 
         } catch (error) {
             toast.error(error.response?.data?.message || 'Gagal membuat pesanan');
+        }
+    };
+
+    const confirmReceipt = async (orderId) => {
+        if (!window.confirm('Konfirmasi pesanan sudah diterima?')) return;
+        try {
+            await api.put(`/api/pharmacy/orders/${orderId}/confirm-receipt`);
+            toast.success('Pesanan dikonfirmasi diterima!');
+            fetchOrders();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Gagal mengkonfirmasi penerimaan');
         }
     };
 
@@ -375,7 +396,7 @@ const Pharmacy = () => {
             paid: { bg: '#cce5ff', text: '#004085', icon: FaCheckCircle, label: 'Lunas' },
             processing: { bg: '#d4edda', text: '#155724', icon: FaBox, label: 'Diproses' },
             shipped: { bg: '#d4edda', text: '#155724', icon: FaTruck, label: 'Dikirim' },
-            delivered: { bg: '#d4edda', text: '#155724', icon: FaCheckCircle, label: 'Terkirim' },
+            delivered: { bg: '#d4edda', text: '#155724', icon: FaCheckCircle, label: 'Diterima ✓' },
             expired: { bg: '#f8d7da', text: '#721c24', icon: FaExclamationTriangle, label: 'Kadaluarsa' },
             cancelled: { bg: '#f8d7da', text: '#721c24', icon: FaTrash, label: 'Dibatalkan' }
         };
@@ -709,6 +730,7 @@ const Pharmacy = () => {
                                                                     onClick={() => {
                                                                         setCurrentOrder(order);
                                                                         setPaymentAmount(order.totalAmount);
+                                                                        setPaymentExpiry(order.paymentExpiry ? new Date(order.paymentExpiry) : null);
                                                                         setShowPaymentModal(true);
                                                                         setStep(1);
                                                                     }}
@@ -731,7 +753,7 @@ const Pharmacy = () => {
                                                                 variant="success"
                                                                 size="sm"
                                                                 className="rounded-pill px-3 w-100"
-                                                                onClick={() => toast.info('Fitur konfirmasi terima akan segera hadir')}
+                                                                onClick={() => confirmReceipt(order._id)}
                                                             >
                                                                 Terima Pesanan
                                                             </Button>

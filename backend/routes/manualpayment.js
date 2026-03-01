@@ -213,7 +213,8 @@ router.put('/admin/verify/:paymentId', auth, async (req, res) => {
             }
 
             // Update status order farmasi
-            if (payment.paymentType === 'pharmacy') {
+            // FIX: frontend mengirim paymentType 'medicine', bukan 'pharmacy'
+            if (payment.paymentType === 'medicine') {
                 await Order.findByIdAndUpdate(payment.referenceId, {
                     status: 'processing',
                     paymentVerified: true

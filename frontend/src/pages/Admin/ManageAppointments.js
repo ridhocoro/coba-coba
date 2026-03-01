@@ -16,11 +16,12 @@ import {
    STATUS CONFIG
 ───────────────────────────────────────────────────────── */
 const STATUS_CONFIG = {
-    pending:   { bg: 'warning',   label: 'Menunggu'     },
-    confirmed: { bg: 'success',   label: 'Dikonfirmasi' },
-    completed: { bg: 'info',      label: 'Selesai'      },
-    rejected:  { bg: 'danger',    label: 'Ditolak'      },
-    cancelled: { bg: 'secondary', label: 'Dibatalkan'   },
+    pending:    { bg: 'warning',   label: 'Menunggu'      },
+    confirmed:  { bg: 'success',   label: 'Dikonfirmasi'  },
+    checked_in: { bg: 'primary',   label: 'Hadir ✓'      },
+    completed:  { bg: 'info',      label: 'Selesai'       },
+    rejected:   { bg: 'danger',    label: 'Ditolak'       },
+    cancelled:  { bg: 'secondary', label: 'Dibatalkan'    },
 };
 
 /* ─────────────────────────────────────────────────────────
@@ -86,6 +87,24 @@ const ManageAppointments = () => {
     /* ─────────────────────────────────────────────────────
        ACTIONS
     ───────────────────────────────────────────────────── */
+
+    const handleCheckIn = useCallback(async (id) => {
+        if (!window.confirm('Konfirmasi pasien sudah hadir?')) return;
+        setProcessingId(id);
+        try {
+            await api.put(`/api/admin/appointments/${id}/check-in`);
+            setAppointments(prev =>
+                prev.map(a => a._id === id ? { ...a, status: 'checked_in', checkedInAt: new Date() } : a)
+            );
+            setSelected(prev => prev?._id === id ? { ...prev, status: 'checked_in' } : prev);
+            toast.success('Pasien berhasil di-check-in');
+            setShowDetailModal(false);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Gagal melakukan check-in');
+        } finally {
+            setProcessingId(null);
+        }
+    }, []);
 
     // Konfirmasi — optimistic update langsung tanpa full refetch
     const handleConfirm = useCallback(async (id) => {
@@ -348,6 +367,20 @@ const ManageAppointments = () => {
                                                 </Button>
                                             )}
 
+                                            {/* Check-in — hanya confirmed */}
+                                            {a.status === 'confirmed' && (
+                                                <Button
+                                                    variant="primary" size="sm"
+                                                    title="Pasien Hadir"
+                                                    disabled={processingId === a._id}
+                                                    onClick={() => handleCheckIn(a._id)}
+                                                >
+                                                    {processingId === a._id
+                                                        ? <Spinner size="sm" animation="border" />
+                                                        : '✓ Hadir'}
+                                                </Button>
+                                            )}
+
                                             {/* Batalkan — pending atau confirmed */}
                                             {['pending', 'confirmed'].includes(a.status) && (
                                                 <Button
@@ -476,9 +509,20 @@ const ManageAppointments = () => {
                     )}
 
                     {selected?.status === 'confirmed' && (
-                        <Button variant="danger" onClick={() => openCancel(selected)}>
-                            <FaTimesCircle className="me-1" /> Batalkan
-                        </Button>
+                        <>
+                            <Button variant="danger" onClick={() => openCancel(selected)}>
+                                <FaTimesCircle className="me-1" /> Batalkan
+                            </Button>
+                            <Button
+                                variant="primary"
+                                disabled={processingId === selected._id}
+                                onClick={() => handleCheckIn(selected._id)}
+                            >
+                                {processingId === selected._id
+                                    ? <><Spinner size="sm" animation="border" className="me-1" /> Memproses...</>
+                                    : '✓ Pasien Hadir'}
+                            </Button>
+                        </>
                     )}
                 </Modal.Footer>
             </Modal>

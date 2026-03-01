@@ -174,7 +174,8 @@ router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
                     status: 'ongoing', paymentVerified: true, verifiedAt: new Date()
                 });
             }
-            if (payment.paymentType === 'pharmacy') {
+            // FIX: frontend mengirim paymentType 'medicine', bukan 'pharmacy'
+            if (payment.paymentType === 'medicine') {
                 const Order = require('../models/Order');
                 await Order.findByIdAndUpdate(payment.referenceId, {
                     status: 'processing', paymentVerified: true
@@ -372,6 +373,20 @@ router.get('/appointments', auth, adminAuth, async (req, res) => {
         res.json(appointments);
     } catch (error) {
         console.error('Error fetching appointments:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.put('/appointments/:id/check-in', auth, adminAuth, async (req, res) => {
+    try {
+        const appointment = await Appointment.findByIdAndUpdate(
+            req.params.id,
+            { status: 'checked_in', checkedInAt: new Date() },
+            { new: true }
+        );
+        if (!appointment) return res.status(404).json({ error: 'Janji tidak ditemukan' });
+        res.json({ success: true, message: 'Pasien berhasil di-check-in', appointment });
+    } catch (error) {
         res.status(500).json({ error: 'Server error' });
     }
 });

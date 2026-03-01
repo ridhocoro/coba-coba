@@ -150,11 +150,12 @@ const Appointments = () => {
 
     const getStatusBadge = (status) => {
         const variants = {
-            pending: { bg: 'warning', bgSoft: '#fff3cd', text: '#856404', icon: FaHourglassHalf, label: 'Menunggu' },
-            confirmed: { bg: 'success', bgSoft: '#d4edda', text: '#155724', icon: FaCheckCircle, label: 'Dikonfirmasi' },
-            rejected: { bg: 'danger', bgSoft: '#f8d7da', text: '#721c24', icon: FaTimesCircle, label: 'Ditolak' },
-            completed: { bg: 'info', bgSoft: '#d1ecf1', text: '#0c5460', icon: FaCheckCircle, label: 'Selesai' },
-            cancelled: { bg: 'secondary', bgSoft: '#e2e3e5', text: '#383d41', icon: FaTimesCircle, label: 'Dibatalkan' }
+            pending:    { bg: 'warning',   bgSoft: '#fff3cd', text: '#856404', icon: FaHourglassHalf, label: 'Menunggu'       },
+            confirmed:  { bg: 'success',   bgSoft: '#d4edda', text: '#155724', icon: FaCheckCircle,   label: 'Dikonfirmasi'   },
+            checked_in: { bg: 'primary',   bgSoft: '#cce5ff', text: '#004085', icon: FaCheckCircle,   label: 'Sudah Hadir ✓' },
+            rejected:   { bg: 'danger',    bgSoft: '#f8d7da', text: '#721c24', icon: FaTimesCircle,   label: 'Ditolak'        },
+            completed:  { bg: 'info',      bgSoft: '#d1ecf1', text: '#0c5460', icon: FaCheckCircle,   label: 'Selesai'        },
+            cancelled:  { bg: 'secondary', bgSoft: '#e2e3e5', text: '#383d41', icon: FaTimesCircle,   label: 'Dibatalkan'     },
         };
         const v = variants[status] || variants.pending;
         return (
@@ -371,6 +372,7 @@ const Appointments = () => {
                                         <option value="all">Semua</option>
                                         <option value="pending">Menunggu</option>
                                         <option value="confirmed">Dikonfirmasi</option>
+                                        <option value="checked_in">Sudah Hadir</option>
                                         <option value="completed">Selesai</option>
                                         <option value="cancelled">Dibatalkan</option>
                                         <option value="rejected">Ditolak</option>
@@ -461,14 +463,14 @@ const Appointments = () => {
                                                             )}
                                                             
                                                             {apt.status === 'completed' && (
-                                                                <Button
-                                                                    variant="success"
-                                                                    size="sm"
-                                                                    className="mt-2 rounded-pill px-3"
-                                                                    onClick={() => navigate(`/appointments/${apt._id}/payment`)}
+                                                                <Badge
+                                                                    bg="light"
+                                                                    text="success"
+                                                                    className="mt-2 px-3 py-2 border border-success"
+                                                                    style={{ borderRadius: '20px', fontSize: '0.75rem' }}
                                                                 >
-                                                                    Bayar
-                                                                </Button>
+                                                                    ✓ Selesai ditangani
+                                                                </Badge>
                                                             )}
                                                         </Col>
                                                     </Row>

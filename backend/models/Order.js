@@ -50,6 +50,7 @@ const orderSchema = new mongoose.Schema({
     notes: String,
     cancelledAt: Date,
     cancelReason: String,
+    deliveredAt: Date,
     
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }

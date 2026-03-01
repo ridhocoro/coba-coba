@@ -230,6 +230,31 @@ router.put('/orders/:id/confirm-payment', auth, async (req, res) => {
     }
 });
 
+// ✅ KONFIRMASI TERIMA PESANAN (user konfirmasi sudah terima)
+router.put('/orders/:id/confirm-receipt', auth, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order tidak ditemukan' });
+        }
+        if (order.userId.toString() !== req.userId) {
+            return res.status(403).json({ success: false, message: 'Unauthorized' });
+        }
+        if (order.status !== 'shipped') {
+            return res.status(400).json({ success: false, message: 'Hanya pesanan dengan status Dikirim yang bisa dikonfirmasi' });
+        }
+
+        order.status = 'delivered';
+        order.deliveredAt = new Date();
+        await order.save();
+
+        res.json({ success: true, message: 'Terima kasih! Pesanan dikonfirmasi sudah diterima.', order });
+    } catch (error) {
+        console.error('Error confirming receipt:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // ✅ BATALKAN ORDER (release locked stock)
 router.put('/orders/:id/cancel', auth, async (req, res) => {
     try {

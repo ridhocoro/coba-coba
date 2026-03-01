@@ -10,7 +10,7 @@ import { toast } from 'react-hot-toast';
 import { 
     FaCalendarAlt, FaUser, FaClock, FaCheckCircle,
     FaTimesCircle, FaHourglassHalf, FaInfoCircle,
-    FaStethoscope, FaSync
+    FaStethoscope, FaSync, FaUserCheck
 } from 'react-icons/fa';
 
 const DoctorAppointments = () => {
@@ -24,7 +24,7 @@ const DoctorAppointments = () => {
     const [selectedAppointment, setSelectedAppointment] = useState(null);
     const [rejectReason, setRejectReason] = useState('');
     const [activeTab, setActiveTab] = useState('pending');
-    const [stats, setStats] = useState({ pending: 0, confirmed: 0, completed: 0, rejected: 0 });
+    const [stats, setStats] = useState({ pending: 0, confirmed: 0, checked_in: 0, completed: 0, rejected: 0 });
     const [processing, setProcessing] = useState(false);
 
     // ✅ FIX: tunggu auth loading selesai dulu sebelum cek role
@@ -49,10 +49,11 @@ const DoctorAppointments = () => {
             setAppointments(allAppointments);
             
             setStats({
-                pending: allAppointments.filter(a => a.status === 'pending').length,
-                confirmed: allAppointments.filter(a => a.status === 'confirmed').length,
-                completed: allAppointments.filter(a => a.status === 'completed').length,
-                rejected: allAppointments.filter(a => a.status === 'rejected').length
+                pending:    allAppointments.filter(a => a.status === 'pending').length,
+                confirmed:  allAppointments.filter(a => a.status === 'confirmed').length,
+                checked_in: allAppointments.filter(a => a.status === 'checked_in').length,
+                completed:  allAppointments.filter(a => a.status === 'completed').length,
+                rejected:   allAppointments.filter(a => a.status === 'rejected').length,
             });
         } catch (error) {
             console.error('Fetch appointments error:', error);
@@ -91,6 +92,20 @@ const DoctorAppointments = () => {
         }
     };
 
+    const handleCheckIn = async (id) => {
+        if (!window.confirm('Konfirmasi pasien sudah hadir (check-in)?')) return;
+        setProcessing(true);
+        try {
+            await api.put(`/api/appointments/doctor/${id}/check-in`);
+            toast.success('Pasien berhasil di-check-in');
+            fetchAppointments();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Gagal melakukan check-in');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
     const handleComplete = async (id) => {
         if (!window.confirm('Tandai janji temu ini sebagai selesai?')) return;
         setProcessing(true);
@@ -107,11 +122,12 @@ const DoctorAppointments = () => {
 
     const getStatusBadge = (status) => {
         const variants = {
-            pending: { bg: 'warning', text: 'Menunggu' },
-            confirmed: { bg: 'success', text: 'Disetujui' },
-            rejected: { bg: 'danger', text: 'Ditolak' },
-            completed: { bg: 'info', text: 'Selesai' },
-            cancelled: { bg: 'secondary', text: 'Dibatalkan' }
+            pending:    { bg: 'warning',   text: 'Menunggu'   },
+            confirmed:  { bg: 'success',   text: 'Disetujui'  },
+            checked_in: { bg: 'primary',   text: 'Hadir ✓'   },
+            rejected:   { bg: 'danger',    text: 'Ditolak'    },
+            completed:  { bg: 'info',      text: 'Selesai'    },
+            cancelled:  { bg: 'secondary', text: 'Dibatalkan' },
         };
         const v = variants[status] || { bg: 'secondary', text: status };
         return <Badge bg={v.bg}>{v.text}</Badge>;
@@ -154,12 +170,13 @@ const DoctorAppointments = () => {
             {/* Stats Cards */}
             <Row className="mb-4 g-3">
                 {[
-                    { label: 'Menunggu', value: stats.pending, bg: 'warning', tab: 'pending' },
-                    { label: 'Disetujui', value: stats.confirmed, bg: 'success', tab: 'confirmed' },
-                    { label: 'Selesai', value: stats.completed, bg: 'info', tab: 'completed' },
-                    { label: 'Ditolak', value: stats.rejected, bg: 'danger', tab: 'rejected' },
+                    { label: 'Menunggu',  value: stats.pending,    bg: 'warning', tab: 'pending',    icon: FaHourglassHalf },
+                    { label: 'Disetujui', value: stats.confirmed,  bg: 'success', tab: 'confirmed',  icon: FaCheckCircle   },
+                    { label: 'Hadir',     value: stats.checked_in, bg: 'primary', tab: 'checked_in', icon: FaUserCheck     },
+                    { label: 'Selesai',   value: stats.completed,  bg: 'info',    tab: 'completed',  icon: FaCalendarAlt   },
+                    { label: 'Ditolak',   value: stats.rejected,   bg: 'danger',  tab: 'rejected',   icon: FaTimesCircle   },
                 ].map((s, i) => (
-                    <Col md={3} xs={6} key={i}>
+                    <Col key={i}>
                         <Card
                             className={`bg-${s.bg} text-white border-0 shadow-sm`}
                             style={{ cursor: 'pointer' }}
@@ -171,10 +188,7 @@ const DoctorAppointments = () => {
                                         <div className="small opacity-75">{s.label}</div>
                                         <h3 className="fw-bold mb-0">{s.value}</h3>
                                     </div>
-                                    {s.tab === 'pending' && <FaHourglassHalf size={30} className="opacity-25" />}
-                                    {s.tab === 'confirmed' && <FaCheckCircle size={30} className="opacity-25" />}
-                                    {s.tab === 'completed' && <FaCalendarAlt size={30} className="opacity-25" />}
-                                    {s.tab === 'rejected' && <FaTimesCircle size={30} className="opacity-25" />}
+                                    <s.icon size={30} className="opacity-25" />
                                 </div>
                             </Card.Body>
                         </Card>
@@ -197,11 +211,12 @@ const DoctorAppointments = () => {
             <Card className="shadow-sm border-0">
                 <Card.Header className="bg-white border-0 pt-3 pb-0">
                     <Tabs activeKey={activeTab} onSelect={k => setActiveTab(k)} className="mb-0 border-0">
-                        <Tab eventKey="pending" title={`Menunggu (${stats.pending})`} />
-                        <Tab eventKey="confirmed" title={`Disetujui (${stats.confirmed})`} />
-                        <Tab eventKey="completed" title={`Selesai (${stats.completed})`} />
-                        <Tab eventKey="rejected" title={`Ditolak (${stats.rejected})`} />
-                        <Tab eventKey="all" title={`Semua (${appointments.length})`} />
+                        <Tab eventKey="pending"    title={`Menunggu (${stats.pending})`} />
+                        <Tab eventKey="confirmed"  title={`Disetujui (${stats.confirmed})`} />
+                        <Tab eventKey="checked_in" title={`Hadir (${stats.checked_in})`} />
+                        <Tab eventKey="completed"  title={`Selesai (${stats.completed})`} />
+                        <Tab eventKey="rejected"   title={`Ditolak (${stats.rejected})`} />
+                        <Tab eventKey="all"        title={`Semua (${appointments.length})`} />
                     </Tabs>
                 </Card.Header>
                 <Card.Body className="p-0">
@@ -265,6 +280,13 @@ const DoctorAppointments = () => {
                                                     </>
                                                 )}
                                                 {apt.status === 'confirmed' && (
+                                                    <Button variant="primary" size="sm" disabled={processing}
+                                                        onClick={() => handleCheckIn(apt._id)}
+                                                        title="Pasien sudah hadir">
+                                                        <FaUserCheck />
+                                                    </Button>
+                                                )}
+                                                {apt.status === 'checked_in' && (
                                                     <Button variant="info" size="sm" disabled={processing}
                                                         onClick={() => handleComplete(apt._id)}>
                                                         Selesai
@@ -329,6 +351,12 @@ const DoctorAppointments = () => {
                         </>
                     )}
                     {selectedAppointment?.status === 'confirmed' && (
+                        <Button variant="primary" disabled={processing}
+                            onClick={() => { handleCheckIn(selectedAppointment._id); setShowDetailModal(false); }}>
+                            <FaUserCheck className="me-1" /> Check-in Pasien
+                        </Button>
+                    )}
+                    {selectedAppointment?.status === 'checked_in' && (
                         <Button variant="info" disabled={processing}
                             onClick={() => { handleComplete(selectedAppointment._id); setShowDetailModal(false); }}>
                             Tandai Selesai
