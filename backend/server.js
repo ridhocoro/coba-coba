@@ -52,6 +52,9 @@ app.use('/api/notifications', require('./routes/notifications'));
 // Socket.io for real-time chat
 require('./socket/chat')(io);
 
+// Cron: expired consultation checker (setiap 1 menit)
+require('./utils/expiredConsultationCron').startCron(io);
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);

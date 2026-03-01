@@ -1,260 +1,193 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
-import {
-    Container, Row, Col, Card, Table, Badge, Button,
-    Form, InputGroup, Spinner, Modal, ListGroup
-} from 'react-bootstrap';
 import { toast } from 'react-hot-toast';
-import {
-    FaStethoscope, FaSearch, FaFilter, FaEye, FaArrowLeft,
-    FaComment, FaFileMedical, FaClock, FaCheckCircle,
-    FaSync, FaUser
-} from 'react-icons/fa';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
+const STATUS_CFG = {
+  paid:      { color: '#58a6ff', label: 'Menunggu Mulai' },
+  scheduled: { color: '#a371f7', label: 'Terjadwal' },
+  ongoing:   { color: '#3fb950', label: 'Berlangsung' },
+  completed: { color: '#8b949e', label: 'Selesai' },
+  cancelled: { color: '#f85149', label: 'Dibatalkan' },
+  no_show:   { color: '#f0883e', label: 'Tidak Hadir' },
+};
+
+const StatusBadge = ({ status }) => {
+  const c = STATUS_CFG[status] || { color: '#8b949e', label: status };
+  return (
+    <span style={{ background: `${c.color}15`, color: c.color, border: `1px solid ${c.color}40`, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {c.label}
+    </span>
+  );
+};
+
+const fmtDate = (d) => d ? new Date(d).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+
 const DoctorConsultations = () => {
-    const { user, loading: authLoading } = useAuth();
-    const navigate = useNavigate();
-    const [consultations, setConsultations] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
-    const [filterStatus, setFilterStatus] = useState('all');
-    const [selected, setSelected] = useState(null);
-    const [showModal, setShowModal] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [consultations, setConsultations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('active'); // active | history
+  const [search, setSearch] = useState('');
+  const [processing, setProcessing] = useState('');
 
-    useEffect(() => {
-        if (authLoading) return;
-        if (!user || user.role !== 'doctor') { navigate('/'); return; }
-        fetchData();
-    }, [authLoading, user]);
+  useEffect(() => {
+    if (user && user.role !== 'doctor') { navigate('/'); return; }
+    fetchData();
+  }, [user, navigate]);
 
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const res = await api.get('/api/consultations/doctor/all');
-            setConsultations(res.data.consultations || res.data || []);
-        } catch {
-            toast.error('Gagal memuat data konsultasi');
-        } finally {
-            setLoading(false);
-        }
-    };
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get('/api/consultations/doctor/history');
+      setConsultations(r.data.consultations || []);
+    } catch { toast.error('Gagal memuat konsultasi'); }
+    finally { setLoading(false); }
+  };
 
-    const statusConfig = {
-        pending:         { bg: 'secondary', label: 'Menunggu' },
-        waiting_payment: { bg: 'warning',   label: 'Menunggu Bayar' },
-        paid:            { bg: 'info',      label: 'Sudah Dibayar' },
-        ongoing:         { bg: 'primary',   label: 'Berlangsung' },
-        completed:       { bg: 'success',   label: 'Selesai' },
-        cancelled:       { bg: 'danger',    label: 'Dibatalkan' },
-    };
+  const handleStart = async (id) => {
+    setProcessing(id + '_start');
+    try {
+      await api.put(`/api/consultations/${id}/start`);
+      toast.success('Konsultasi dimulai!');
+      fetchData();
+    } catch (err) { toast.error(err.response?.data?.message || 'Gagal'); }
+    finally { setProcessing(''); }
+  };
 
-    const filtered = consultations.filter(c => {
-        const q = search.toLowerCase();
-        const matchSearch = !search ||
-            c.userId?.name?.toLowerCase().includes(q) ||
-            c.symptoms?.toLowerCase().includes(q);
-        const matchStatus = filterStatus === 'all' || c.status === filterStatus;
-        return matchSearch && matchStatus;
-    });
+  const handleEnd = async (id) => {
+    if (!window.confirm('Akhiri konsultasi ini?')) return;
+    setProcessing(id + '_end');
+    try {
+      await api.put(`/api/consultations/${id}/end`);
+      toast.success('Konsultasi selesai');
+      fetchData();
+    } catch { toast.error('Gagal mengakhiri'); }
+    finally { setProcessing(''); }
+  };
 
-    const stats = {
-        ongoing: consultations.filter(c => c.status === 'ongoing').length,
-        paid: consultations.filter(c => c.status === 'paid').length,
-        completed: consultations.filter(c => c.status === 'completed').length,
-        total: consultations.length,
-    };
+  const active = consultations.filter(c => ['paid', 'scheduled', 'ongoing'].includes(c.status));
+  const history = consultations.filter(c => ['completed', 'cancelled', 'no_show'].includes(c.status));
+  const displayed = (tab === 'active' ? active : history).filter(c => {
+    const q = search.toLowerCase();
+    return !search || c.userId?.name?.toLowerCase().includes(q) || c.symptoms?.toLowerCase().includes(q);
+  });
 
-    if (authLoading || loading) return (
-        <Container className="py-5 text-center">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2 text-muted">Memuat data...</p>
-        </Container>
-    );
+  const s = { fontFamily: "'DM Sans', sans-serif" };
 
-    return (
-        <Container fluid className="py-4">
-            <Row className="mb-4 align-items-center">
-                <Col>
-                    <Button as={Link} to="/doctor" variant="link" className="p-0 text-muted mb-1">
-                        <FaArrowLeft className="me-1" /> Dashboard
-                    </Button>
-                    <h4 className="fw-bold mb-0">
-                        <FaStethoscope className="me-2 text-success" />
-                        Konsultasi Saya
-                    </h4>
-                </Col>
-                <Col xs="auto">
-                    <Button variant="outline-primary" size="sm" onClick={fetchData}>
-                        <FaSync className="me-1" /> Refresh
-                    </Button>
-                </Col>
-            </Row>
+  return (
+    <div style={{ ...s, minHeight: '100vh', background: '#0d1117', padding: '28px 20px' }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h4 style={{ color: '#e6edf3', fontWeight: 800, marginBottom: 2 }}>Konsultasi Saya</h4>
+            <p style={{ color: '#8b949e', fontSize: 13, margin: 0 }}>Kelola dan pantau sesi konsultasi dengan pasien</p>
+          </div>
+          <button onClick={fetchData} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>↻ Refresh</button>
+        </div>
 
-            <Row className="mb-4 g-3">
-                {[
-                    { label: 'Total', value: stats.total, bg: 'primary' },
-                    { label: 'Berlangsung', value: stats.ongoing, bg: 'info' },
-                    { label: 'Menunggu Masuk', value: stats.paid, bg: 'warning' },
-                    { label: 'Selesai', value: stats.completed, bg: 'success' },
-                ].map((s, i) => (
-                    <Col md={3} xs={6} key={i}>
-                        <Card className={`border-0 shadow-sm bg-${s.bg} text-white`}>
-                            <Card.Body className="py-3 text-center">
-                                <div className="fw-bold fs-3">{s.value}</div>
-                                <div className="small opacity-75">{s.label}</div>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                ))}
-            </Row>
+        {/* Summary */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 10, marginBottom: 20 }}>
+          {[
+            { label: 'Perlu Aksi', count: consultations.filter(c => c.status === 'paid').length, color: '#58a6ff' },
+            { label: 'Terjadwal', count: consultations.filter(c => c.status === 'scheduled').length, color: '#a371f7' },
+            { label: 'Berlangsung', count: consultations.filter(c => c.status === 'ongoing').length, color: '#3fb950' },
+            { label: 'Selesai', count: consultations.filter(c => c.status === 'completed').length, color: '#8b949e' },
+          ].map(item => (
+            <div key={item.label} style={{ background: '#161b22', border: `1px solid ${item.color}30`, borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ color: item.color, fontWeight: 800, fontSize: 26 }}>{item.count}</div>
+              <div style={{ color: '#8b949e', fontSize: 12 }}>{item.label}</div>
+            </div>
+          ))}
+        </div>
 
-            <Row className="mb-3 g-2">
-                <Col md={5}>
-                    <InputGroup>
-                        <InputGroup.Text><FaSearch /></InputGroup.Text>
-                        <Form.Control
-                            placeholder="Cari nama pasien atau keluhan..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-                    </InputGroup>
-                </Col>
-                <Col md={3}>
-                    <InputGroup>
-                        <InputGroup.Text><FaFilter /></InputGroup.Text>
-                        <Form.Select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                            <option value="all">Semua Status</option>
-                            {Object.entries(statusConfig).map(([k, v]) => (
-                                <option key={k} value={k}>{v.label}</option>
-                            ))}
-                        </Form.Select>
-                    </InputGroup>
-                </Col>
-                <Col className="d-flex align-items-center">
-                    <span className="text-muted small">{filtered.length} konsultasi</span>
-                </Col>
-            </Row>
+        {/* Tabs + Search */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
+            {[['active', `⚡ Aktif (${active.length})`], ['history', `📂 Riwayat (${history.length})`]].map(([v, l]) => (
+              <button key={v} onClick={() => setTab(v)} style={{
+                padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                background: tab === v ? '#1f6feb' : 'transparent', color: tab === v ? '#fff' : '#8b949e'
+              }}>{l}</button>
+            ))}
+          </div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Cari pasien..."
+            style={{ flex: 1, minWidth: 180, background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 14px', color: '#e6edf3', fontSize: 13 }} />
+        </div>
 
-            <Card className="border-0 shadow-sm">
-                <Card.Body className="p-0">
-                    <Table hover responsive className="mb-0">
-                        <thead className="bg-light">
-                            <tr>
-                                <th>Pasien</th>
-                                <th>Keluhan</th>
-                                <th>Status</th>
-                                <th>Surat Sakit</th>
-                                <th>Tanggal</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.length === 0 ? (
-                                <tr><td colSpan={6} className="text-center py-5 text-muted">
-                                    <FaStethoscope size={32} className="mb-2 opacity-25 d-block mx-auto" />
-                                    Tidak ada konsultasi
-                                </td></tr>
-                            ) : filtered.map(c => (
-                                <tr key={c._id}>
-                                    <td>
-                                        <div className="fw-semibold small">{c.userId?.name}</div>
-                                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>{c.userId?.phone}</div>
-                                    </td>
-                                    <td className="small text-muted" style={{ maxWidth: 150 }}>
-                                        {c.symptoms?.length > 50 ? c.symptoms.slice(0, 50) + '...' : c.symptoms}
-                                    </td>
-                                    <td>
-                                        <Badge bg={statusConfig[c.status]?.bg || 'secondary'}>
-                                            {statusConfig[c.status]?.label || c.status}
-                                        </Badge>
-                                    </td>
-                                    <td>
-                                        {c.sickLetter
-                                            ? <Badge bg={c.sickLetter.status === 'issued' ? 'success' : 'warning'}>
-                                                {c.sickLetter.status === 'issued' ? 'Diterbitkan' : 'Draft'}
-                                              </Badge>
-                                            : <span className="text-muted small">-</span>}
-                                    </td>
-                                    <td className="small text-muted">
-                                        {new Date(c.createdAt).toLocaleDateString('id-ID')}
-                                    </td>
-                                    <td>
-                                        <div className="d-flex gap-1 flex-wrap">
-                                            <Button variant="outline-secondary" size="sm"
-                                                onClick={() => { setSelected(c); setShowModal(true); }}>
-                                                <FaEye />
-                                            </Button>
-                                            {c.status === 'ongoing' && (
-                                                <Button as={Link} to={`/consultations/${c._id}`}
-                                                    variant="success" size="sm">
-                                                    <FaComment className="me-1" /> Chat
-                                                </Button>
-                                            )}
-                                            {(c.status === 'ongoing' || c.status === 'completed') && !c.sickLetter && (
-                                                <Button as={Link} to="/doctor/sick-letters"
-                                                    variant="warning" size="sm">
-                                                    <FaFileMedical className="me-1" /> Surat
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                </Card.Body>
-            </Card>
-
-            {/* Detail Modal */}
-            <Modal show={showModal} onHide={() => setShowModal(false)} size="md">
-                <Modal.Header closeButton>
-                    <Modal.Title><FaStethoscope className="me-2 text-primary" />Detail Konsultasi</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    {selected && (
+        {/* List */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 48, color: '#8b949e' }}>Memuat...</div>
+        ) : displayed.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 48, color: '#8b949e', background: '#161b22', borderRadius: 14 }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>{tab === 'active' ? '✨' : '📂'}</div>
+            <div style={{ fontWeight: 600 }}>{tab === 'active' ? 'Tidak ada konsultasi aktif' : 'Belum ada riwayat'}</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {displayed.map(c => (
+              <div key={c._id} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 12, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>{c.userId?.name || 'Pasien'}</span>
+                        <StatusBadge status={c.status} />
+                        <span style={{ fontSize: 11, color: '#8b949e', background: '#21262d', padding: '1px 8px', borderRadius: 20 }}>
+                          {c.consultationType === 'chat' ? '💬' : c.consultationType === 'voice_call' ? '📞' : '📹'}
+                          {' '}{c.scheduleType === 'instant' ? '⚡' : '📅'}
+                        </span>
+                      </div>
+                      {c.symptoms && (
+                        <div style={{ color: '#8b949e', fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
+                          Keluhan: {c.symptoms}
+                        </div>
+                      )}
+                      <div style={{ color: '#8b949e', fontSize: 11, marginTop: 2 }}>
+                        {fmtDate(c.createdAt)}
+                        {c.scheduledAt && ` · Jadwal: ${fmtDate(c.scheduledAt)}`}
+                      </div>
+                      {c.rating && <div style={{ marginTop: 4, color: '#ca8a04', fontSize: 12 }}>{'⭐'.repeat(c.rating)} {c.ratingComment && `"${c.ratingComment}"`}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+                      {['paid', 'scheduled'].includes(c.status) && (
+                        <button onClick={() => handleStart(c._id)} disabled={processing === c._id + '_start'}
+                          style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#1a7f37', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                          {processing === c._id + '_start' ? '...' : '▶ Mulai'}
+                        </button>
+                      )}
+                      {c.status === 'ongoing' && (
                         <>
-                            <Table borderless size="sm">
-                                <tbody>
-                                    <tr><td className="text-muted fw-semibold" style={{ width: '40%' }}>Pasien</td><td>{selected.userId?.name}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Telepon</td><td>{selected.userId?.phone || '-'}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Email</td><td>{selected.userId?.email || '-'}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Keluhan</td><td>{selected.symptoms}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Status</td>
-                                        <td><Badge bg={statusConfig[selected.status]?.bg}>{statusConfig[selected.status]?.label}</Badge></td></tr>
-                                    <tr><td className="text-muted fw-semibold">Dibuat</td>
-                                        <td>{new Date(selected.createdAt).toLocaleString('id-ID')}</td></tr>
-                                    {selected.startTime && <tr><td className="text-muted fw-semibold">Mulai</td><td>{new Date(selected.startTime).toLocaleString('id-ID')}</td></tr>}
-                                    {selected.endTime && <tr><td className="text-muted fw-semibold">Selesai</td><td>{new Date(selected.endTime).toLocaleString('id-ID')}</td></tr>}
-                                    <tr><td className="text-muted fw-semibold">Surat Sakit</td>
-                                        <td>{selected.sickLetter
-                                            ? <Badge bg={selected.sickLetter.status === 'issued' ? 'success' : 'warning'}>
-                                                {selected.sickLetter.status === 'issued' ? `Diterbitkan (${selected.sickLetter.letterNumber})` : 'Draft'}
-                                              </Badge>
-                                            : '-'}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Pesan</td><td>{selected.messages?.length || 0} pesan</td></tr>
-                                </tbody>
-                            </Table>
+                          <button onClick={() => navigate(`/consultations/${c._id}`)}
+                            style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#1f6feb', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                            💬 Buka Chat
+                          </button>
+                          <button onClick={() => handleEnd(c._id)} disabled={processing === c._id + '_end'}
+                            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #f85149', background: 'transparent', color: '#f85149', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                            {processing === c._id + '_end' ? '...' : '■ Akhiri'}
+                          </button>
                         </>
-                    )}
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowModal(false)}>Tutup</Button>
-                    {selected?.status === 'ongoing' && (
-                        <Button as={Link} to={`/consultations/${selected._id}`} variant="success">
-                            <FaComment className="me-1" /> Buka Chat
-                        </Button>
-                    )}
-                    {(selected?.status === 'ongoing' || selected?.status === 'completed') && !selected?.sickLetter && (
-                        <Button as={Link} to="/doctor/sick-letters" variant="warning">
-                            <FaFileMedical className="me-1" /> Buat Surat Sakit
-                        </Button>
-                    )}
-                </Modal.Footer>
-            </Modal>
-        </Container>
-    );
+                      )}
+                      {['completed', 'cancelled', 'no_show'].includes(c.status) && (
+                        <button onClick={() => navigate(`/consultations/${c._id}`)}
+                          style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                          Lihat →
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export default DoctorConsultations;

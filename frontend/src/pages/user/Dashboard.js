@@ -29,7 +29,7 @@ const UserDashboard = () => {
             const consultations = consRes.status === 'fulfilled' ? (consRes.value.data || []) : [];
             const ongoing = consultations.filter(c => c.status === 'ongoing').length;
             const completed = consultations.filter(c => c.status === 'completed').length;
-            const waiting = consultations.filter(c => ['pending', 'waiting_payment', 'paid'].includes(c.status)).length;
+            const waiting = consultations.filter(c => ['pending_payment', 'paid', 'scheduled'].includes(c.status)).length;
             setRecentConsultations(consultations.slice(0, 5));
 
             const appointments = apptRes.status === 'fulfilled' ? (apptRes.value.data || []) : [];
@@ -56,7 +56,7 @@ const UserDashboard = () => {
     ];
 
     const getConsultationBadge = (status) => {
-        const map = { ongoing: ['success','Berlangsung'], paid: ['info','Menunggu Dokter'], waiting_payment: ['warning','Menunggu Bayar'], pending: ['secondary','Diproses'], completed: ['primary','Selesai'], cancelled: ['danger','Dibatalkan'] };
+        const map = { ongoing: ['success','Berlangsung'], paid: ['info','Dibayar'], scheduled: ['purple','Terjadwal'], pending_payment: ['warning','Menunggu Bayar'], completed: ['primary','Selesai'], cancelled: ['danger','Dibatalkan'], expired: ['secondary','Kadaluarsa'], rejected_payment: ['danger','Bayar Ditolak'], no_show: ['warning','Tidak Hadir'] };
         const [bg, label] = map[status] || ['secondary', status];
         return <Badge bg={bg}>{label}</Badge>;
     };

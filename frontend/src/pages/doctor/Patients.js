@@ -48,12 +48,15 @@ const DoctorPatients = () => {
     };
 
     const statusConfig = {
-        pending:         { bg: 'secondary', label: 'Menunggu' },
-        waiting_payment: { bg: 'warning',   label: 'Menunggu Bayar' },
-        paid:            { bg: 'info',      label: 'Sudah Bayar' },
-        ongoing:         { bg: 'primary',   label: 'Berlangsung' },
-        completed:       { bg: 'success',   label: 'Selesai' },
-        cancelled:       { bg: 'danger',    label: 'Dibatalkan' },
+        pending_payment:   { bg: 'warning',   label: 'Menunggu Bayar' },
+        paid:              { bg: 'info',      label: 'Sudah Bayar' },
+        scheduled:         { bg: 'primary',   label: 'Terjadwal' },
+        ongoing:           { bg: 'success',   label: 'Berlangsung' },
+        completed:         { bg: 'secondary', label: 'Selesai' },
+        cancelled:         { bg: 'danger',    label: 'Dibatalkan' },
+        expired:           { bg: 'secondary', label: 'Kadaluarsa' },
+        rejected_payment:  { bg: 'danger',    label: 'Bayar Ditolak' },
+        no_show:           { bg: 'warning',   label: 'Tidak Hadir' },
     };
 
     // Deduplikasi pasien unik

@@ -87,10 +87,9 @@ router.post('/create', auth, async (req, res) => {
 
         await manualPayment.save();
 
-        // Update status konsultasi menjadi waiting_payment
+        // Simpan referensi paymentId ke konsultasi (status tetap pending_payment, tidak berubah)
         if (paymentType === 'consultation') {
             await Consultation.findByIdAndUpdate(referenceId, {
-                status: 'waiting_payment',
                 paymentId: manualPayment._id
             });
         }
@@ -203,13 +202,20 @@ router.put('/admin/verify/:paymentId', auth, async (req, res) => {
         await payment.save();
 
         if (status === 'verified') {
-            // FIX: set consultation ke 'ongoing' agar dokter langsung bisa mulai chat
+            // Update consultation: paid → ongoing (instant) atau scheduled sesuai scheduleType
             if (payment.paymentType === 'consultation') {
-                await Consultation.findByIdAndUpdate(payment.referenceId, {
-                    status: 'ongoing',
-                    paymentVerified: true,
-                    verifiedAt: new Date()
-                });
+                const consultation = await Consultation.findById(payment.referenceId);
+                if (consultation) {
+                    consultation.paymentVerified = true;
+                    consultation.verifiedAt = new Date();
+                    if (consultation.scheduleType === 'scheduled') {
+                        consultation.status = 'scheduled';
+                    } else {
+                        consultation.status = 'ongoing';
+                        consultation.startTime = new Date();
+                    }
+                    await consultation.save();
+                }
             }
 
             // Update status order farmasi
@@ -238,13 +244,21 @@ router.put('/admin/verify/:paymentId', auth, async (req, res) => {
         }
 
         if (status === 'rejected') {
+            // Update consultation ke rejected_payment
+            if (payment.paymentType === 'consultation') {
+                await Consultation.findByIdAndUpdate(payment.referenceId, {
+                    status: 'rejected_payment',
+                    rejectedAt: new Date(),
+                    rejectionReason: notes || 'Bukti transfer tidak valid'
+                });
+            }
             // Kirim notifikasi penolakan ke user
             const userId = payment.userId?._id || payment.userId;
             await createNotification({
                 userId,
-                type: 'payment_verified',
+                type: 'payment_rejected',
                 title: 'Pembayaran Ditolak ❌',
-                message: `Pembayaran Anda ditolak. Alasan: ${notes || 'Bukti transfer tidak valid'}. Silakan upload ulang bukti transfer.`,
+                message: `Pembayaran Anda ditolak. Alasan: ${notes || 'Bukti transfer tidak valid'}. Silakan hubungi admin.`,
                 data: { paymentId: payment._id },
                 io: req.app.get('io')
             });

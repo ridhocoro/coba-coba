@@ -18,6 +18,8 @@ const doctorSchema = new mongoose.Schema({
   rating: { type: Number, default: 0 },
   totalReviews: { type: Number, default: 0 },
   isActive: { type: Boolean, default: true },
+  // Status online/offline yang di-set admin
+  isOnline: { type: Boolean, default: false },
   bio: String,
   photo: String
 });

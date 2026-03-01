@@ -170,17 +170,34 @@ router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
         // Update status konsultasi / order setelah verified
         if (status === 'verified') {
             if (payment.paymentType === 'consultation') {
-                await Consultation.findByIdAndUpdate(payment.referenceId, {
-                    status: 'ongoing', paymentVerified: true, verifiedAt: new Date()
-                });
+                // Cek scheduleType untuk tentukan status berikutnya
+                const consultation = await Consultation.findById(payment.referenceId);
+                if (consultation) {
+                    consultation.paymentVerified = true;
+                    consultation.verifiedAt = new Date();
+                    if (consultation.scheduleType === 'scheduled') {
+                        consultation.status = 'scheduled';
+                    } else {
+                        consultation.status = 'ongoing';
+                        consultation.startTime = new Date();
+                    }
+                    await consultation.save();
+                }
             }
-            // FIX: frontend mengirim paymentType 'medicine', bukan 'pharmacy'
             if (payment.paymentType === 'medicine') {
                 const Order = require('../models/Order');
                 await Order.findByIdAndUpdate(payment.referenceId, {
                     status: 'processing', paymentVerified: true
                 });
             }
+        }
+
+        if (status === 'rejected' && payment.paymentType === 'consultation') {
+            await Consultation.findByIdAndUpdate(payment.referenceId, {
+                status: 'rejected_payment',
+                rejectedAt: new Date(),
+                rejectionReason: notes || 'Bukti transfer tidak valid'
+            });
         }
 
         res.json({
@@ -304,11 +321,10 @@ router.delete('/doctors/:id', auth, adminAuth, async (req, res) => {
 
 router.get('/consultations', auth, adminAuth, async (req, res) => {
     try {
-        // ✅ FIX: hapus .populate('paymentId') — field ini mungkin berbeda nama
-        //         di model Consultation kamu. Tambahkan kembali jika perlu.
         const consultations = await Consultation.find({})
-            .populate('userId', 'name email')
-            .populate('doctorId', 'name specialization')
+            .populate('userId', 'name email phone')
+            .populate('doctorId', 'name specialization consultationFee')
+            .populate({ path: 'sickLetter', select: 'status letterNumber diagnosis' })
             .sort('-createdAt');
         res.json(consultations);
     } catch (error) {

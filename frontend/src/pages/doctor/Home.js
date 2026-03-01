@@ -39,7 +39,7 @@ const DoctorHome = () => {
       if (cons.status === 'fulfilled') {
         const list = cons.value.data?.consultations || [];
         setStats(p => ({ ...p, ongoingConsultations: list.filter(c => c.status === 'ongoing').length }));
-        setConsultations(list.filter(c => ['paid', 'ongoing'].includes(c.status)).slice(0, 6));
+        setConsultations(list.filter(c => ['paid', 'scheduled', 'ongoing'].includes(c.status)).slice(0, 6));
       }
     } catch {/* silent */} finally { setLoading(false); }
   }, []);
@@ -73,8 +73,13 @@ const DoctorHome = () => {
   );
 
   const statusMap = {
-    paid:    { color: '#1d4ed8', bg: '#dbeafe', label: 'Menunggu Dokter' },
-    ongoing: { color: '#065f46', bg: '#d1fae5', label: 'Berlangsung' },
+    paid:              { color: '#1d4ed8', bg: '#dbeafe', label: 'Menunggu Mulai' },
+    scheduled:         { color: '#6d28d9', bg: '#ede9fe', label: 'Terjadwal' },
+    ongoing:           { color: '#065f46', bg: '#d1fae5', label: 'Berlangsung' },
+    completed:         { color: '#374151', bg: '#f3f4f6', label: 'Selesai' },
+    cancelled:         { color: '#991b1b', bg: '#fee2e2', label: 'Dibatalkan' },
+    pending_payment:   { color: '#92400e', bg: '#fef3c7', label: 'Menunggu Bayar' },
+    no_show:           { color: '#92400e', bg: '#fef3c7', label: 'Tidak Hadir' },
   };
 
   return (
@@ -233,7 +238,7 @@ const DoctorHome = () => {
                 const s = statusMap[c.status] || { color: '#475569', bg: '#f1f5f9', label: c.status };
                 return (
                   <div key={c._id} className="dh-tile"
-                    onClick={() => c.status === 'ongoing' ? navigate(`/consultations/${c._id}`) : navigate('/doctor/consultations')}
+                    onClick={() => ['ongoing', 'paid', 'scheduled'].includes(c.status) ? navigate(`/consultations/${c._id}`) : navigate('/doctor/consultations')}
                     style={{ background: '#f8fafc', borderRadius: 12, padding: '14px 16px', border: '1px solid #f1f5f9' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <span style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>{c.userId?.name}</span>

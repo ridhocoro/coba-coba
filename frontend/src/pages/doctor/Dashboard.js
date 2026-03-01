@@ -106,9 +106,14 @@ const DoctorDashboard = () => {
 
     const getConsBadge = (status) => {
         const map = {
-            paid: ['info', 'Menunggu Dokter'],
-            ongoing: ['success', 'Berlangsung'],
-            completed: ['primary', 'Selesai']
+            paid:             ['info',      'Menunggu Mulai'],
+            scheduled:        ['primary',   'Terjadwal'],
+            ongoing:          ['success',   'Berlangsung'],
+            completed:        ['secondary', 'Selesai'],
+            cancelled:        ['danger',    'Dibatalkan'],
+            pending_payment:  ['warning',   'Menunggu Bayar'],
+            expired:          ['secondary', 'Kadaluarsa'],
+            no_show:          ['warning',   'Tidak Hadir'],
         };
         const [bg, label] = map[status] || ['secondary', status];
         return <Badge bg={bg} className="small">{label}</Badge>;

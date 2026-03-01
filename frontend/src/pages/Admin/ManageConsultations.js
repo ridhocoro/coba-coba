@@ -1,355 +1,327 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
-import {
-    Container, Row, Col, Card, Table, Badge, Button,
-    InputGroup, Form, Modal, Spinner, Alert
-} from 'react-bootstrap';
 import { toast } from 'react-hot-toast';
-import { Link } from 'react-router-dom';
-import {
-    FaStethoscope, FaSearch, FaFilter, FaArrowLeft,
-    FaEye, FaDownload, FaCheckCircle, FaTimesCircle,
-    FaSync, FaCommentDots
-} from 'react-icons/fa';
+
+const STATUS_CFG = {
+  draft:            { color: '#8b949e', bg: '#21262d', label: 'Draft' },
+  pending_payment:  { color: '#f0883e', bg: '#3d1f00', label: 'Menunggu Bayar' },
+  paid:             { color: '#58a6ff', bg: '#0c2d6b', label: 'Sudah Bayar' },
+  scheduled:        { color: '#a371f7', bg: '#2d1b69', label: 'Terjadwal' },
+  ongoing:          { color: '#3fb950', bg: '#0a3d1e', label: 'Berlangsung' },
+  completed:        { color: '#58a6ff', bg: '#0c2d6b', label: 'Selesai' },
+  cancelled:        { color: '#f85149', bg: '#3d0c09', label: 'Dibatalkan' },
+  expired:          { color: '#8b949e', bg: '#21262d', label: 'Kadaluarsa' },
+  rejected_payment: { color: '#f85149', bg: '#3d0c09', label: 'Bayar Ditolak' },
+  no_show:          { color: '#f0883e', bg: '#3d1f00', label: 'Tidak Hadir' },
+};
+
+const StatusBadge = ({ status }) => {
+  const c = STATUS_CFG[status] || STATUS_CFG.draft;
+  return (
+    <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.color}40`, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {c.label}
+    </span>
+  );
+};
+
+const fmtDate = (d) => d ? new Date(d).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+const fmtRupiah = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 
 const ManageConsultations = () => {
-    const [consultations, setConsultations] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
-    const [filterStatus, setFilterStatus] = useState('all');
-    const [showDetailModal, setShowDetailModal] = useState(false);
-    const [showActionModal, setShowActionModal] = useState(false);
-    const [actionType, setActionType] = useState('');
-    const [selected, setSelected] = useState(null);
-    const [processing, setProcessing] = useState(false);
+  const [consultations, setConsultations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [selected, setSelected] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
-    useEffect(() => { fetchConsultations(); }, []);
+  useEffect(() => { fetchData(); }, []);
 
-    const fetchConsultations = async () => {
-        setLoading(true);
-        try {
-            const res = await api.get('/api/admin/consultations');
-            setConsultations(res.data || []);
-        } catch {
-            toast.error('Gagal memuat data konsultasi');
-        } finally {
-            setLoading(false);
-        }
-    };
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get('/api/admin/consultations');
+      setConsultations(r.data || []);
+    } catch { toast.error('Gagal memuat konsultasi'); }
+    finally { setLoading(false); }
+  };
 
-    const handleAction = async () => {
-        if (!selected) return;
-        setProcessing(true);
-        try {
-            if (actionType === 'end') {
-                await api.put(`/api/admin/consultations/${selected._id}/end`);
-                toast.success('Konsultasi diselesaikan');
-            } else if (actionType === 'cancel') {
-                await api.put(`/api/admin/consultations/${selected._id}/cancel`);
-                toast.success('Konsultasi dibatalkan');
-            }
-            setShowActionModal(false);
-            setShowDetailModal(false);
-            fetchConsultations();
-        } catch {
-            toast.error('Gagal memproses tindakan');
-        } finally {
-            setProcessing(false);
-        }
-    };
+  const handleAction = async (action, consultationId, extraData = {}) => {
+    setProcessing(true);
+    try {
+      const map = {
+        'mark-paid':       () => api.put(`/api/consultations/${consultationId}/mark-paid`),
+        'reject-payment':  () => api.put(`/api/consultations/${consultationId}/reject-payment`, extraData),
+        'start':           () => api.put(`/api/consultations/${consultationId}/start`),
+        'end':             () => api.put(`/api/consultations/${consultationId}/end`),
+        'no-show':         () => api.put(`/api/consultations/${consultationId}/no-show`, extraData),
+        'cancel':          () => api.put(`/api/consultations/${consultationId}/cancel`, extraData),
+      };
+      if (!map[action]) return;
+      await map[action]();
+      toast.success('Berhasil diproses');
+      setShowDetail(false);
+      setShowRejectForm(false);
+      setRejectReason('');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses');
+    } finally { setProcessing(false); }
+  };
 
-    const handleDownloadPDF = async (c) => {
-        try {
-            const res = await api.get(`/api/consultations/${c._id}/sick-letter/pdf`, { responseType: 'blob' });
-            // Pastikan response adalah PDF bukan error JSON
-            if (res.headers['content-type']?.includes('application/json')) {
-                toast.error('Surat sakit tidak ditemukan atau belum diterbitkan');
-                return;
-            }
-            const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `surat-sakit-${c._id}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
-            toast.success('PDF diunduh');
-        } catch {
-            toast.error('Gagal mengunduh PDF');
-        }
-    };
+  const downloadPDF = async (c) => {
+    try {
+      const r = await api.get(`/api/consultations/${c._id}/sick-letter/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a'); a.href = url; a.download = `surat-sakit-${c._id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch { toast.error('Surat sakit belum tersedia'); }
+  };
 
-    const getStatusBadge = (status) => {
-        const map = {
-            pending: ['secondary', 'Pending'],
-            waiting_payment: ['warning', 'Menunggu Bayar'],
-            paid: ['info', 'Dibayar'],
-            ongoing: ['primary', 'Berlangsung'],
-            completed: ['success', 'Selesai'],
-            cancelled: ['danger', 'Dibatalkan'],
-        };
-        const [bg, label] = map[status] || ['secondary', status];
-        return <Badge bg={bg}>{label}</Badge>;
-    };
+  const filtered = consultations.filter(c => {
+    const q = search.toLowerCase();
+    const matchSearch = !search
+      || c.userId?.name?.toLowerCase().includes(q)
+      || c.doctorId?.name?.toLowerCase().includes(q)
+      || c.symptoms?.toLowerCase().includes(q);
+    return matchSearch && (filterStatus === 'all' || c.status === filterStatus);
+  });
 
-    const filtered = consultations.filter(c => {
-        const matchSearch = !search ||
-            c.userId?.name?.toLowerCase().includes(search.toLowerCase()) ||
-            c.doctorId?.name?.toLowerCase().includes(search.toLowerCase()) ||
-            c.symptoms?.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = filterStatus === 'all' || c.status === filterStatus;
-        return matchSearch && matchStatus;
-    });
+  const s = { fontFamily: "'DM Sans', sans-serif", color: '#e6edf3' };
 
-    const stats = {
-        total: consultations.length,
-        ongoing: consultations.filter(c => c.status === 'ongoing').length,
-        completed: consultations.filter(c => c.status === 'completed').length,
-        waiting: consultations.filter(c => c.status === 'waiting_payment' || c.status === 'paid').length,
-    };
+  const DetailPanel = ({ c }) => (
+    <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }}
+      onClick={e => { if (e.target === e.currentTarget) setShowDetail(false); }}>
+      <div style={{ background: '#0d1117', borderLeft: '1px solid #30363d', width: '100%', maxWidth: 500, height: '100vh', overflowY: 'auto', padding: 24, fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h5 style={{ color: '#e6edf3', fontWeight: 700, margin: 0 }}>Detail Konsultasi</h5>
+          <button onClick={() => setShowDetail(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 22, cursor: 'pointer' }}>×</button>
+        </div>
 
-    if (loading) return (
-        <Container className="py-5 text-center">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2 text-muted">Memuat data konsultasi...</p>
-        </Container>
-    );
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <StatusBadge status={c.status} />
+          <span style={{ color: '#8b949e', fontSize: 12 }}>#{c._id.slice(-8)}</span>
+        </div>
 
-    return (
-        <Container fluid className="py-4">
-            <Row className="mb-4 align-items-center">
-                <Col>
-                    <Button as={Link} to="/admin" variant="link" className="p-0 text-muted mb-1">
-                        <FaArrowLeft className="me-1" /> Dashboard Admin
-                    </Button>
-                    <h4 className="fw-bold mb-0">
-                        <FaStethoscope className="me-2 text-primary" />
-                        Kelola Konsultasi
-                    </h4>
-                </Col>
-                <Col xs="auto">
-                    <Button variant="outline-primary" size="sm" onClick={fetchConsultations}>
-                        <FaSync className="me-1" /> Refresh
-                    </Button>
-                </Col>
-            </Row>
+        {[
+          ['Pasien', c.userId?.name || '-'],
+          ['Email', c.userId?.email || '-'],
+          ['Dokter', `dr. ${c.doctorId?.name || '-'}`],
+          ['Spesialis', c.doctorId?.specialization || '-'],
+          ['Tipe', c.consultationType === 'chat' ? 'Chat' : c.consultationType === 'voice_call' ? 'Voice Call' : 'Video Call'],
+          ['Jadwal', c.scheduleType === 'instant' ? 'Instant' : 'Terjadwal'],
+          ...(c.scheduledAt ? [['Waktu Jadwal', fmtDate(c.scheduledAt)]] : []),
+          ['Dibuat', fmtDate(c.createdAt)],
+          ...(c.paymentDeadline ? [['Batas Bayar', fmtDate(c.paymentDeadline)]] : []),
+          ['Biaya', fmtRupiah(c.doctorId?.consultationFee)],
+        ].map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #21262d' }}>
+            <span style={{ color: '#8b949e', fontSize: 13 }}>{k}</span>
+            <span style={{ color: '#e6edf3', fontSize: 13, fontWeight: 500, textAlign: 'right', maxWidth: 280 }}>{v}</span>
+          </div>
+        ))}
 
-            <Row className="mb-4 g-3">
-                {[
-                    { label: 'Total', value: stats.total, bg: 'primary' },
-                    { label: 'Berlangsung', value: stats.ongoing, bg: 'info' },
-                    { label: 'Menunggu Bayar', value: stats.waiting, bg: 'warning' },
-                    { label: 'Selesai', value: stats.completed, bg: 'success' },
-                ].map((s, i) => (
-                    <Col md={3} xs={6} key={i}>
-                        <Card className={`border-0 shadow-sm bg-${s.bg} text-white`}>
-                            <Card.Body className="py-3 text-center">
-                                <div className="fw-bold fs-3">{s.value}</div>
-                                <div className="small opacity-75">{s.label}</div>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                ))}
-            </Row>
+        {c.symptoms && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ color: '#8b949e', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>KELUHAN</div>
+            <div style={{ background: '#161b22', borderRadius: 8, padding: '10px 12px', color: '#c9d1d9', fontSize: 13 }}>{c.symptoms}</div>
+          </div>
+        )}
 
-            <Row className="mb-3 g-2">
-                <Col md={5}>
-                    <InputGroup>
-                        <InputGroup.Text><FaSearch /></InputGroup.Text>
-                        <Form.Control
-                            placeholder="Cari pasien, dokter, keluhan..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-                    </InputGroup>
-                </Col>
-                <Col md={3}>
-                    <InputGroup>
-                        <InputGroup.Text><FaFilter /></InputGroup.Text>
-                        <Form.Select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                            <option value="all">Semua Status</option>
-                            <option value="pending">Pending</option>
-                            <option value="waiting_payment">Menunggu Bayar</option>
-                            <option value="paid">Dibayar</option>
-                            <option value="ongoing">Berlangsung</option>
-                            <option value="completed">Selesai</option>
-                            <option value="cancelled">Dibatalkan</option>
-                        </Form.Select>
-                    </InputGroup>
-                </Col>
-                <Col className="d-flex align-items-center">
-                    <span className="text-muted small">{filtered.length} konsultasi</span>
-                </Col>
-            </Row>
+        {c.prescription && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ color: '#8b949e', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>RESEP</div>
+            <div style={{ background: '#0a3d1e', border: '1px solid #2ea04330', borderRadius: 8, padding: '10px 12px', color: '#3fb950', fontSize: 13, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{c.prescription}</div>
+          </div>
+        )}
 
-            <Card className="border-0 shadow-sm">
-                <Card.Body className="p-0">
-                    <Table hover responsive className="mb-0">
-                        <thead className="bg-light">
-                            <tr>
-                                <th>Pasien</th>
-                                <th>Dokter</th>
-                                <th>Keluhan</th>
-                                <th>Status</th>
-                                <th>Surat Sakit</th>
-                                <th>Tanggal</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.length === 0 ? (
-                                <tr><td colSpan={7} className="text-center py-4 text-muted">Tidak ada data</td></tr>
-                            ) : filtered.map(c => (
-                                <tr key={c._id}>
-                                    <td>
-                                        <div className="fw-semibold small">{c.userId?.name}</div>
-                                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>{c.userId?.email}</div>
-                                    </td>
-                                    <td className="small">dr. {c.doctorId?.name}<br />
-                                        <span className="text-muted" style={{ fontSize: '0.72rem' }}>{c.doctorId?.specialization}</span>
-                                    </td>
-                                    <td className="small text-muted" style={{ maxWidth: 130 }}>
-                                        {c.symptoms?.length > 40 ? c.symptoms.slice(0, 40) + '...' : c.symptoms}
-                                    </td>
-                                    <td>{getStatusBadge(c.status)}</td>
-                                    <td>
-                                        {c.sickLetter
-                                            ? <Badge bg={c.sickLetter.status === 'issued' ? 'success' : 'warning'}>
-                                                {c.sickLetter.status === 'issued' ? 'Diterbitkan' : 'Draft'}
-                                              </Badge>
-                                            : <span className="text-muted small">-</span>
-                                        }
-                                    </td>
-                                    <td className="small text-muted">
-                                        {new Date(c.createdAt).toLocaleDateString('id-ID')}
-                                    </td>
-                                    <td>
-                                        <div className="d-flex gap-1 flex-wrap">
-                                            <Button variant="outline-primary" size="sm"
-                                                onClick={() => { setSelected(c); setShowDetailModal(true); }}>
-                                                <FaEye />
-                                            </Button>
-                                            {c.sickLetter?.status === 'issued' && (
-                                                <Button variant="outline-success" size="sm"
-                                                    onClick={() => handleDownloadPDF(c)}>
-                                                    <FaDownload />
-                                                </Button>
-                                            )}
-                                            {c.status === 'ongoing' && (
-                                                <Button variant="success" size="sm"
-                                                    title="Selesaikan konsultasi"
-                                                    onClick={() => { setSelected(c); setActionType('end'); setShowActionModal(true); }}>
-                                                    <FaCheckCircle />
-                                                </Button>
-                                            )}
-                                            {['pending', 'waiting_payment', 'paid', 'ongoing'].includes(c.status) && (
-                                                <Button variant="danger" size="sm"
-                                                    title="Batalkan konsultasi"
-                                                    onClick={() => { setSelected(c); setActionType('cancel'); setShowActionModal(true); }}>
-                                                    <FaTimesCircle />
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                </Card.Body>
-            </Card>
+        {c.rating && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ color: '#8b949e', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>RATING PASIEN</div>
+            <div style={{ background: '#161b22', borderRadius: 8, padding: '8px 12px', color: '#ca8a04', fontSize: 13 }}>
+              {'⭐'.repeat(c.rating)} {c.ratingComment && `— "${c.ratingComment}"`}
+            </div>
+          </div>
+        )}
 
-            {/* Detail Modal */}
-            <Modal show={showDetailModal} onHide={() => setShowDetailModal(false)} size="md">
-                <Modal.Header closeButton>
-                    <Modal.Title><FaCommentDots className="me-2 text-primary" />Detail Konsultasi</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    {selected && (
-                        <>
-                            <Table borderless size="sm">
-                                <tbody>
-                                    <tr><td className="text-muted fw-semibold" style={{ width: '40%' }}>Pasien</td><td>{selected.userId?.name}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Email</td><td>{selected.userId?.email}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Dokter</td><td>dr. {selected.doctorId?.name}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Spesialis</td><td>{selected.doctorId?.specialization}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Keluhan</td><td>{selected.symptoms}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Status</td><td>{getStatusBadge(selected.status)}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Mulai</td><td>{selected.startTime ? new Date(selected.startTime).toLocaleString('id-ID') : '-'}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Selesai</td><td>{selected.endTime ? new Date(selected.endTime).toLocaleString('id-ID') : '-'}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Surat Sakit</td>
-                                        <td>{selected.sickLetter
-                                            ? <Badge bg={selected.sickLetter.status === 'issued' ? 'success' : 'warning'}>
-                                                {selected.sickLetter.status === 'issued' ? 'Diterbitkan' : 'Draft'}
-                                              </Badge>
-                                            : '-'}
-                                        </td>
-                                    </tr>
-                                    <tr><td className="text-muted fw-semibold">Tgl Dibuat</td><td>{new Date(selected.createdAt).toLocaleString('id-ID')}</td></tr>
-                                    <tr><td className="text-muted fw-semibold">Pesan</td><td>{selected.messages?.length || 0} pesan</td></tr>
-                                </tbody>
-                            </Table>
-                            {selected.status === 'ongoing' && (
-                                <Alert variant="info" className="small mt-2">
-                                    Konsultasi sedang berlangsung. Admin dapat memaksa menyelesaikannya jika diperlukan.
-                                </Alert>
-                            )}
-                        </>
-                    )}
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowDetailModal(false)}>Tutup</Button>
-                    {selected?.sickLetter?.status === 'issued' && (
-                        <Button variant="outline-success" onClick={() => handleDownloadPDF(selected)}>
-                            <FaDownload className="me-1" /> Unduh PDF
-                        </Button>
-                    )}
-                    {selected?.status === 'ongoing' && (
-                        <Button variant="success" onClick={() => { setActionType('end'); setShowActionModal(true); setShowDetailModal(false); }}>
-                            <FaCheckCircle className="me-1" /> Selesaikan
-                        </Button>
-                    )}
-                    {['pending', 'waiting_payment', 'paid', 'ongoing'].includes(selected?.status) && (
-                        <Button variant="danger" onClick={() => { setActionType('cancel'); setShowActionModal(true); setShowDetailModal(false); }}>
-                            <FaTimesCircle className="me-1" /> Batalkan
-                        </Button>
-                    )}
-                </Modal.Footer>
-            </Modal>
+        {/* Action Buttons */}
+        <div style={{ marginTop: 24 }}>
+          <div style={{ color: '#8b949e', fontSize: 12, fontWeight: 600, marginBottom: 12 }}>TINDAKAN ADMIN</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-            {/* Confirmation Modal */}
-            <Modal show={showActionModal} onHide={() => setShowActionModal(false)}>
-                <Modal.Header closeButton>
-                    <Modal.Title>
-                        {actionType === 'end'
-                            ? <><FaCheckCircle className="me-2 text-success" />Selesaikan Konsultasi</>
-                            : <><FaTimesCircle className="me-2 text-danger" />Batalkan Konsultasi</>}
-                    </Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    <p>
-                        Apakah Anda yakin ingin <strong>{actionType === 'end' ? 'menyelesaikan' : 'membatalkan'}</strong> konsultasi milik{' '}
-                        <strong>{selected?.userId?.name}</strong> dengan <strong>dr. {selected?.doctorId?.name}</strong>?
-                    </p>
-                    {actionType === 'cancel' && (
-                        <Alert variant="warning" className="small">
-                            Pembatalan akan mengubah status konsultasi menjadi "Dibatalkan". Tindakan ini tidak dapat dibatalkan.
-                        </Alert>
-                    )}
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowActionModal(false)}>Tidak</Button>
-                    <Button
-                        variant={actionType === 'end' ? 'success' : 'danger'}
-                        disabled={processing}
-                        onClick={handleAction}
-                    >
-                        {processing ? 'Memproses...' : 'Ya, Lanjutkan'}
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-        </Container>
-    );
+            {/* Verifikasi Pembayaran */}
+            {c.status === 'pending_payment' && (
+              <>
+                {!showRejectForm ? (
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => handleAction('mark-paid', c._id)} disabled={processing}
+                      style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: '#1a7f37', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: processing ? 0.5 : 1 }}>
+                      ✓ Verifikasi Bayar
+                    </button>
+                    <button onClick={() => setShowRejectForm(true)}
+                      style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #f85149', background: 'transparent', color: '#f85149', fontWeight: 700, cursor: 'pointer' }}>
+                      ✗ Tolak
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ background: '#1a0a0a', border: '1px solid #f8514940', borderRadius: 10, padding: 14 }}>
+                    <div style={{ color: '#f85149', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Alasan Penolakan</div>
+                    <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2}
+                      placeholder="Contoh: Bukti transfer tidak valid..."
+                      style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: '8px 12px', color: '#e6edf3', fontSize: 13, resize: 'none', marginBottom: 10 }} />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setShowRejectForm(false)} style={{ flex: 1, padding: '8px', borderRadius: 6, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
+                      <button onClick={() => handleAction('reject-payment', c._id, { reason: rejectReason })} disabled={processing}
+                        style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#c0392b', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                        Konfirmasi Tolak
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Mulai (kalau paid/scheduled) */}
+            {['paid', 'scheduled'].includes(c.status) && (
+              <button onClick={() => handleAction('start', c._id)} disabled={processing}
+                style={{ padding: '10px', borderRadius: 8, border: 'none', background: '#1f6feb', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                ▶ Mulai Konsultasi
+              </button>
+            )}
+
+            {/* No-show (scheduled) */}
+            {c.status === 'scheduled' && (
+              <button onClick={() => handleAction('no-show', c._id, { reason: 'Ditandai no-show oleh admin' })} disabled={processing}
+                style={{ padding: '10px', borderRadius: 8, border: '1px solid #f0883e', background: 'transparent', color: '#f0883e', fontWeight: 700, cursor: 'pointer' }}>
+                ✗ Tandai Tidak Hadir
+              </button>
+            )}
+
+            {/* End (ongoing) */}
+            {c.status === 'ongoing' && (
+              <button onClick={() => handleAction('end', c._id)} disabled={processing}
+                style={{ padding: '10px', borderRadius: 8, border: 'none', background: '#854d0e', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                ■ Akhiri Konsultasi
+              </button>
+            )}
+
+            {/* Cancel */}
+            {['pending_payment', 'paid', 'scheduled'].includes(c.status) && (
+              <button onClick={() => handleAction('cancel', c._id, { reason: 'Dibatalkan oleh admin' })} disabled={processing}
+                style={{ padding: '10px', borderRadius: 8, border: '1px solid #f85149', background: 'transparent', color: '#f85149', fontWeight: 600, cursor: 'pointer' }}>
+                ✗ Batalkan Konsultasi
+              </button>
+            )}
+
+            {/* Download PDF */}
+            {c.sickLetter?.status === 'issued' && (
+              <button onClick={() => downloadPDF(c)}
+                style={{ padding: '10px', borderRadius: 8, border: 'none', background: '#21262d', color: '#8b949e', fontWeight: 600, cursor: 'pointer' }}>
+                📄 Unduh Surat Sakit
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ ...s, minHeight: '100vh', background: '#0d1117', padding: '28px 20px' }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <div style={{ marginBottom: 24 }}>
+          <h4 style={{ fontWeight: 800, color: '#e6edf3', marginBottom: 4 }}>Kelola Konsultasi</h4>
+          <p style={{ color: '#8b949e', fontSize: 13, margin: 0 }}>Verifikasi pembayaran & pantau status konsultasi</p>
+        </div>
+
+        {/* Summary Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+          {[
+            { label: 'Menunggu Bayar', count: consultations.filter(c => c.status === 'pending_payment').length, color: '#f0883e' },
+            { label: 'Berlangsung', count: consultations.filter(c => c.status === 'ongoing').length, color: '#3fb950' },
+            { label: 'Terjadwal', count: consultations.filter(c => c.status === 'scheduled').length, color: '#a371f7' },
+            { label: 'Selesai', count: consultations.filter(c => c.status === 'completed').length, color: '#58a6ff' },
+          ].map(item => (
+            <div key={item.label} style={{ background: '#161b22', border: `1px solid ${item.color}30`, borderRadius: 12, padding: '14px 16px', cursor: 'pointer' }}
+              onClick={() => setFilterStatus(consultations.filter(c => c.label === item.label).length ? item.label.toLowerCase().replace(' ', '_') : 'all')}>
+              <div style={{ color: item.color, fontWeight: 800, fontSize: 28 }}>{item.count}</div>
+              <div style={{ color: '#8b949e', fontSize: 12 }}>{item.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Cari pasien, dokter, keluhan..."
+            style={{ flex: 1, minWidth: 200, background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 14px', color: '#e6edf3', fontSize: 13 }} />
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 14px', color: '#e6edf3', fontSize: 13 }}>
+            <option value="all">Semua Status</option>
+            {Object.entries(STATUS_CFG).map(([v, c]) => <option key={v} value={v}>{c.label}</option>)}
+          </select>
+          <button onClick={fetchData} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>↻ Refresh</button>
+        </div>
+
+        {/* Table */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 48, color: '#8b949e' }}>Memuat...</div>
+        ) : (
+          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #30363d', background: '#0d1117' }}>
+                    {['Pasien', 'Dokter', 'Tipe', 'Status', 'Dibuat', 'Batas Bayar', 'Aksi'].map(h => (
+                      <th key={h} style={{ padding: '10px 14px', color: '#8b949e', fontWeight: 600, textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#8b949e' }}>Tidak ada konsultasi</td></tr>
+                  ) : filtered.map(c => (
+                    <tr key={c._id} style={{ borderBottom: '1px solid #21262d', cursor: 'pointer', transition: 'background 0.15s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#1c2128'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '10px 14px' }}>
+                        <div style={{ fontWeight: 600, color: '#e6edf3' }}>{c.userId?.name || '-'}</div>
+                        <div style={{ color: '#8b949e', fontSize: 11 }}>{c.userId?.email || '-'}</div>
+                      </td>
+                      <td style={{ padding: '10px 14px', color: '#c9d1d9' }}>dr. {c.doctorId?.name || '-'}</td>
+                      <td style={{ padding: '10px 14px', color: '#8b949e' }}>
+                        {c.consultationType === 'chat' ? '💬' : c.consultationType === 'voice_call' ? '📞' : '📹'}
+                        {' '}{c.scheduleType === 'scheduled' ? '📅' : '⚡'}
+                      </td>
+                      <td style={{ padding: '10px 14px' }}><StatusBadge status={c.status} /></td>
+                      <td style={{ padding: '10px 14px', color: '#8b949e', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(c.createdAt)}</td>
+                      <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                        {c.paymentDeadline ? (
+                          <span style={{ color: new Date(c.paymentDeadline) < new Date() ? '#f85149' : '#f0883e', fontSize: 12 }}>
+                            {fmtDate(c.paymentDeadline)}
+                          </span>
+                        ) : '-'}
+                      </td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <button onClick={() => { setSelected(c); setShowRejectForm(false); setShowDetail(true); }}
+                          style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #30363d', background: 'transparent', color: '#58a6ff', cursor: 'pointer', fontSize: 12 }}>
+                          Detail →
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+      {showDetail && selected && <DetailPanel c={selected} />}
+    </div>
+  );
 };
 
 export default ManageConsultations;

@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 import {
     FaUserMd, FaPlus, FaEdit, FaToggleOn, FaToggleOff,
     FaArrowLeft, FaExclamationTriangle, FaLink,
-    FaSearch, FaSync, FaCalendarAlt, FaTrash
+    FaSearch, FaSync, FaTrash
 } from 'react-icons/fa';
 
 const defaultForm = {
@@ -231,7 +231,7 @@ const ManageDoctors = () => {
                         </thead>
                         <tbody>
                             {filtered.length === 0 ? (
-                                <tr><td colSpan={7} className="text-center py-4 text-muted">Tidak ada dokter</td></tr>
+                                <tr><td colSpan={8} className="text-center py-4 text-muted">Tidak ada dokter</td></tr>
                             ) : filtered.map(d => (
                                 <tr key={d._id}>
                                     <td>
@@ -283,6 +283,13 @@ const ManageDoctors = () => {
                                                 title={d.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                                                 onClick={() => handleToggle(d)}>
                                                 {d.isActive ? <FaToggleOff /> : <FaToggleOn />}
+                                            </Button>
+                                            <Button
+                                                variant="danger"
+                                                size="sm"
+                                                title="Hapus Dokter Permanen"
+                                                onClick={() => handleDelete(d)}>
+                                                <FaTrash />
                                             </Button>
                                         </div>
                                     </td>

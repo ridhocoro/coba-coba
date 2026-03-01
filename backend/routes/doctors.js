@@ -1,4 +1,4 @@
-    const express = require('express');
+const express = require('express');
     const router = express.Router();
     const Doctor = require('../models/Doctor');
     const auth = require('../middleware/auth');
@@ -99,6 +99,27 @@
             
             await Doctor.findByIdAndUpdate(req.params.id, { isActive: false });
             res.json({ message: 'Dokter dinonaktifkan' });
+        } catch (error) {
+            res.status(500).json({ message: 'Server error' });
+        }
+    });
+
+    // ADMIN: Toggle status online/offline dokter
+    router.put('/:id/online-status', auth, async (req, res) => {
+        try {
+            if (req.userRole !== 'admin') {
+                return res.status(403).json({ message: 'Akses ditolak' });
+            }
+
+            const doctor = await Doctor.findById(req.params.id);
+            if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+
+            // Bisa kirim { isOnline: true/false } atau toggle otomatis
+            const isOnline = req.body.isOnline !== undefined ? req.body.isOnline : !doctor.isOnline;
+            doctor.isOnline = isOnline;
+            await doctor.save();
+
+            res.json({ success: true, isOnline: doctor.isOnline, doctor });
         } catch (error) {
             res.status(500).json({ message: 'Server error' });
         }

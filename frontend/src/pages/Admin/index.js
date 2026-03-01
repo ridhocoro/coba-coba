@@ -200,6 +200,16 @@ const AdminDashboard = () => {
         }
     };
 
+    const toggleDoctorOnline = async (doctor) => {
+        try {
+            await api.put(`/api/doctors/${doctor._id}/online-status`, { isOnline: !doctor.isOnline });
+            toast.success(`Dokter dr. ${doctor.name}: ${!doctor.isOnline ? '🟢 Online' : '⚫ Offline'}`);
+            loadAll();
+        } catch {
+            toast.error('Gagal mengubah status online');
+        }
+    };
+
     const saveMedicine = async (medicineData) => {
         try {
             if (selectedMedicine) {
@@ -511,7 +521,7 @@ const AdminDashboard = () => {
                                 <thead className="table-dark">
                                     <tr>
                                         <th>Nama</th><th>Spesialisasi</th><th>Biaya Konsultasi</th>
-                                        <th>Rating</th><th>Status</th><th>Jadwal</th><th>Aksi</th>
+                                        <th>Rating</th><th>Status</th><th>Online</th><th>Jadwal</th><th>Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -525,6 +535,15 @@ const AdminDashboard = () => {
                                                 <Badge bg={doctor.isActive ? 'success' : 'danger'}>
                                                     {doctor.isActive ? 'Aktif' : 'Nonaktif'}
                                                 </Badge>
+                                            </td>
+                                            <td>
+                                                <Button
+                                                    size="sm"
+                                                    variant={doctor.isOnline ? 'success' : 'outline-secondary'}
+                                                    title={doctor.isOnline ? 'Klik untuk set Offline' : 'Klik untuk set Online'}
+                                                    onClick={() => toggleDoctorOnline(doctor)}>
+                                                    {doctor.isOnline ? '🟢 Online' : '⚫ Offline'}
+                                                </Button>
                                             </td>
                                             <td>
                                                 <Button size="sm" variant="info"

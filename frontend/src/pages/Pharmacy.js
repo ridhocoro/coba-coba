@@ -1118,11 +1118,6 @@ const Pharmacy = () => {
                         {/* STEP 3: Instruksi Pembayaran */}
                         {step === 3 && transaction && (
                             <div className="p-3">
-                                <Alert variant="info" className="mb-4 py-2 small">
-                                    <FaClock className="me-2" />
-                                    <strong>Batas pembayaran:</strong> {formatDate(transaction.expiresAt)}
-                                </Alert>
-
                                 {/* Detail Pembayaran */}
                                 <Card className="border-0 bg-light mb-4">
                                     <Card.Body className="p-3">

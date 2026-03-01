@@ -210,7 +210,7 @@ const ConsultationChat = () => {
       setMessages(r.data.messages || []);
     } catch {
       toast.error('Gagal memuat konsultasi');
-      navigate('/consultations');
+      navigate(user?.role === 'doctor' ? '/doctor/consultations' : '/consultations');
     } finally { setLoading(false); }
   }, [id, navigate]);
 
@@ -391,7 +391,7 @@ const ConsultationChat = () => {
       <div style={{ color: '#f85149', textAlign: 'center' }}>
         <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
         <div>Konsultasi tidak ditemukan</div>
-        <button onClick={() => navigate('/consultations')} style={{ marginTop: 16, padding: '8px 20px', background: '#1f6feb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+        <button onClick={() => navigate(user?.role === 'doctor' ? '/doctor/consultations' : '/consultations')} style={{ marginTop: 16, padding: '8px 20px', background: '#1f6feb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
           Kembali
         </button>
       </div>
@@ -410,7 +410,7 @@ const ConsultationChat = () => {
         <div style={s.sidebar}>
           {/* Back */}
           <div style={{ ...s.sideSection }}>
-            <button onClick={() => navigate('/consultations')} style={s.ghostBtn}>
+            <button onClick={() => navigate(isDoctor ? '/doctor/consultations' : '/consultations')} style={s.ghostBtn}>
               ← Kembali
             </button>
           </div>
