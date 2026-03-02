@@ -5,18 +5,18 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const STATUS_CFG = {
-  paid:      { color: '#58a6ff', label: 'Menunggu Mulai' },
-  scheduled: { color: '#a371f7', label: 'Terjadwal' },
-  ongoing:   { color: '#3fb950', label: 'Berlangsung' },
-  completed: { color: '#8b949e', label: 'Selesai' },
-  cancelled: { color: '#f85149', label: 'Dibatalkan' },
-  no_show:   { color: '#f0883e', label: 'Tidak Hadir' },
+  paid:      { color: '#2563eb', label: 'Menunggu Mulai' },
+  scheduled: { color: '#7e22ce', label: 'Terjadwal' },
+  ongoing:   { color: '#16a34a', label: 'Berlangsung' },
+  completed: { color: '#6b7280', label: 'Selesai' },
+  cancelled: { color: '#b91c1c', label: 'Dibatalkan' },
+  no_show:   { color: '#b45309', label: 'Tidak Hadir' },
 };
 
 const StatusBadge = ({ status }) => {
-  const c = STATUS_CFG[status] || { color: '#8b949e', label: status };
+  const c = STATUS_CFG[status] || { color: '#6b7280', label: status };
   return (
-    <span style={{ background: `${c.color}15`, color: c.color, border: `1px solid ${c.color}40`, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+    <span style={{ background: `${c.color}10`, color: c.color, border: `1px solid ${c.color}30`, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
       {c.label}
     </span>
   );
@@ -75,79 +75,79 @@ const DoctorConsultations = () => {
     return !search || c.userId?.name?.toLowerCase().includes(q) || c.symptoms?.toLowerCase().includes(q);
   });
 
-  const s = { fontFamily: "'DM Sans', sans-serif" };
+  const s = { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" };
 
   return (
-    <div style={{ ...s, minHeight: '100vh', background: '#0d1117', padding: '28px 20px' }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <div style={{ ...s, minHeight: '100vh', background: '#ffffff', padding: '28px 20px' }}>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h4 style={{ color: '#e6edf3', fontWeight: 800, marginBottom: 2 }}>Konsultasi Saya</h4>
-            <p style={{ color: '#8b949e', fontSize: 13, margin: 0 }}>Kelola dan pantau sesi konsultasi dengan pasien</p>
+            <h4 style={{ color: '#111827', fontWeight: 800, marginBottom: 2 }}>Konsultasi Saya</h4>
+            <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>Kelola dan pantau sesi konsultasi dengan pasien</p>
           </div>
-          <button onClick={fetchData} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>↻ Refresh</button>
+          <button onClick={fetchData} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>↻ Refresh</button>
         </div>
 
         {/* Summary */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 10, marginBottom: 20 }}>
           {[
-            { label: 'Perlu Aksi', count: consultations.filter(c => c.status === 'paid').length, color: '#58a6ff' },
-            { label: 'Terjadwal', count: consultations.filter(c => c.status === 'scheduled').length, color: '#a371f7' },
-            { label: 'Berlangsung', count: consultations.filter(c => c.status === 'ongoing').length, color: '#3fb950' },
-            { label: 'Selesai', count: consultations.filter(c => c.status === 'completed').length, color: '#8b949e' },
+            { label: 'Perlu Aksi', count: consultations.filter(c => c.status === 'paid').length, color: '#2563eb' },
+            { label: 'Terjadwal', count: consultations.filter(c => c.status === 'scheduled').length, color: '#7e22ce' },
+            { label: 'Berlangsung', count: consultations.filter(c => c.status === 'ongoing').length, color: '#16a34a' },
+            { label: 'Selesai', count: consultations.filter(c => c.status === 'completed').length, color: '#6b7280' },
           ].map(item => (
-            <div key={item.label} style={{ background: '#161b22', border: `1px solid ${item.color}30`, borderRadius: 10, padding: '12px 14px' }}>
+            <div key={item.label} style={{ background: '#ffffff', border: `1px solid ${item.color}20`, borderRadius: 10, padding: '12px 14px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
               <div style={{ color: item.color, fontWeight: 800, fontSize: 26 }}>{item.count}</div>
-              <div style={{ color: '#8b949e', fontSize: 12 }}>{item.label}</div>
+              <div style={{ color: '#6b7280', fontSize: 12 }}>{item.label}</div>
             </div>
           ))}
         </div>
 
         {/* Tabs + Search */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
             {[['active', `⚡ Aktif (${active.length})`], ['history', `📂 Riwayat (${history.length})`]].map(([v, l]) => (
               <button key={v} onClick={() => setTab(v)} style={{
                 padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                background: tab === v ? '#1f6feb' : 'transparent', color: tab === v ? '#fff' : '#8b949e'
+                background: tab === v ? '#2563eb' : 'transparent', color: tab === v ? '#fff' : '#6b7280'
               }}>{l}</button>
             ))}
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Cari pasien..."
-            style={{ flex: 1, minWidth: 180, background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 14px', color: '#e6edf3', fontSize: 13 }} />
+            style={{ flex: 1, minWidth: 180, background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 14px', color: '#111827', fontSize: 13 }} />
         </div>
 
         {/* List */}
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 48, color: '#8b949e' }}>Memuat...</div>
+          <div style={{ textAlign: 'center', padding: 48, color: '#6b7280' }}>Memuat...</div>
         ) : displayed.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 48, color: '#8b949e', background: '#161b22', borderRadius: 14 }}>
+          <div style={{ textAlign: 'center', padding: 48, color: '#6b7280', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>{tab === 'active' ? '✨' : '📂'}</div>
             <div style={{ fontWeight: 600 }}>{tab === 'active' ? 'Tidak ada konsultasi aktif' : 'Belum ada riwayat'}</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {displayed.map(c => (
-              <div key={c._id} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 12, overflow: 'hidden' }}>
+              <div key={c._id} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                 <div style={{ padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>{c.userId?.name || 'Pasien'}</span>
+                        <span style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{c.userId?.name || 'Pasien'}</span>
                         <StatusBadge status={c.status} />
-                        <span style={{ fontSize: 11, color: '#8b949e', background: '#21262d', padding: '1px 8px', borderRadius: 20 }}>
+                        <span style={{ fontSize: 11, color: '#6b7280', background: '#f3f4f6', padding: '1px 8px', borderRadius: 20 }}>
                           {c.consultationType === 'chat' ? '💬' : c.consultationType === 'voice_call' ? '📞' : '📹'}
                           {' '}{c.scheduleType === 'instant' ? '⚡' : '📅'}
                         </span>
                       </div>
                       {c.symptoms && (
-                        <div style={{ color: '#8b949e', fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
+                        <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
                           Keluhan: {c.symptoms}
                         </div>
                       )}
-                      <div style={{ color: '#8b949e', fontSize: 11, marginTop: 2 }}>
+                      <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>
                         {fmtDate(c.createdAt)}
                         {c.scheduledAt && ` · Jadwal: ${fmtDate(c.scheduledAt)}`}
                       </div>
@@ -156,25 +156,25 @@ const DoctorConsultations = () => {
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                       {['paid', 'scheduled'].includes(c.status) && (
                         <button onClick={() => handleStart(c._id)} disabled={processing === c._id + '_start'}
-                          style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#1a7f37', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                          style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
                           {processing === c._id + '_start' ? '...' : '▶ Mulai'}
                         </button>
                       )}
                       {c.status === 'ongoing' && (
                         <>
                           <button onClick={() => navigate(`/consultations/${c._id}`)}
-                            style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#1f6feb', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                            style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
                             💬 Buka Chat
                           </button>
                           <button onClick={() => handleEnd(c._id)} disabled={processing === c._id + '_end'}
-                            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #f85149', background: 'transparent', color: '#f85149', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #b91c1c', background: 'transparent', color: '#b91c1c', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
                             {processing === c._id + '_end' ? '...' : '■ Akhiri'}
                           </button>
                         </>
                       )}
                       {['completed', 'cancelled', 'no_show'].includes(c.status) && (
                         <button onClick={() => navigate(`/consultations/${c._id}`)}
-                          style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                          style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
                           Lihat →
                         </button>
                       )}

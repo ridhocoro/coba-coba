@@ -10,7 +10,8 @@ const DoctorHome = () => {
   const [schedule, setSchedule] = useState([]);
   const [consultations, setConsultations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [noProfile, setNoProfile] = useState(false);
+  // ✅ FIX: default null (belum tahu), bukan false (sudah punya profil)
+  const [noProfile, setNoProfile] = useState(null);
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -20,20 +21,29 @@ const DoctorHome = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setNoProfile(null); // reset tiap fetch
     try {
-      try {
-        const r = await api.get('/api/doctors/my/profile');
-        if (r.data?.needsProfile) { setNoProfile(true); setLoading(false); return; }
-      } catch (e) {
-        if (e.response?.status === 404) { setNoProfile(true); setLoading(false); return; }
-      }
+      // ✅ FIX UTAMA: cek profil dokter via endpoint yang kini sudah ada
+      // Jika 404 → noProfile = true, tampilkan pesan ke dokter
+      // Jika sukses → lanjut ambil stats
+      const profileRes = await api.get('/api/doctors/my/profile');
+
+      // Profil ada, lanjutkan
+      setNoProfile(false);
+
       const [appt, cons] = await Promise.allSettled([
         api.get('/api/appointments/doctor/stats'),
         api.get('/api/consultations/doctor/pending'),
       ]);
+
       if (appt.status === 'fulfilled') {
         const d = appt.value.data;
-        setStats(p => ({ ...p, todayAppointments: d.stats?.todayAppointments ?? 0, pendingAppointments: d.stats?.pendingAppointments ?? 0, totalPatients: d.stats?.totalPatients ?? 0 }));
+        setStats(p => ({
+          ...p,
+          todayAppointments: d.stats?.todayAppointments ?? 0,
+          pendingAppointments: d.stats?.pendingAppointments ?? 0,
+          totalPatients: d.stats?.totalPatients ?? 0
+        }));
         setSchedule(d.todaySchedule || []);
       }
       if (cons.status === 'fulfilled') {
@@ -41,7 +51,18 @@ const DoctorHome = () => {
         setStats(p => ({ ...p, ongoingConsultations: list.filter(c => c.status === 'ongoing').length }));
         setConsultations(list.filter(c => ['paid', 'scheduled', 'ongoing'].includes(c.status)).slice(0, 6));
       }
-    } catch {/* silent */} finally { setLoading(false); }
+    } catch (e) {
+      // ✅ FIX: 404 dari /my/profile → dokter belum punya profil di DB
+      if (e.response?.status === 404) {
+        setNoProfile(true);
+      } else {
+        // Error lain (network, 500) → set noProfile false, tampilkan halaman dengan data kosong
+        setNoProfile(false);
+        console.error('Dashboard fetch error:', e);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -57,7 +78,18 @@ const DoctorHome = () => {
   const dayName = time.toLocaleDateString('id-ID', { weekday: 'long' });
   const dateStr = time.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  if (noProfile) return (
+  // ✅ Tampilkan loading selama cek profil pertama kali
+  if (loading) return (
+    <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ textAlign: 'center', color: '#64748b' }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>⏳</div>
+        <p>Memuat dashboard...</p>
+      </div>
+    </div>
+  );
+
+  // ✅ Tampilkan pesan noProfile HANYA jika sudah pasti noProfile = true
+  if (noProfile === true) return (
     <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: "'DM Sans', sans-serif", background: '#f8fafc' }}>
       <div style={{ maxWidth: 440, textAlign: 'center', background: '#fff', borderRadius: 20, padding: '48px 40px', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>🏥</div>
@@ -65,21 +97,26 @@ const DoctorHome = () => {
         <p style={{ color: '#64748b', lineHeight: 1.7, marginBottom: 20 }}>
           Akun Anda sudah aktif, namun profil klinik belum disiapkan oleh administrator. Silakan hubungi admin.
         </p>
-        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: 14, fontSize: 13, color: '#166534' }}>
-          Admin: buka <strong>Kelola Dokter → Hubungkan Akun</strong>
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: 14, fontSize: 13, color: '#166534', marginBottom: 20 }}>
+          Admin: buka <strong>Kelola Dokter → Tambah Dokter</strong> dan masukkan email akun Anda
         </div>
+        <button
+          onClick={fetchData}
+          style={{ background: '#059669', border: 'none', borderRadius: 10, padding: '10px 24px', fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+          ↻ Cek Ulang
+        </button>
       </div>
     </div>
   );
 
   const statusMap = {
-    paid:              { color: '#1d4ed8', bg: '#dbeafe', label: 'Menunggu Mulai' },
-    scheduled:         { color: '#6d28d9', bg: '#ede9fe', label: 'Terjadwal' },
-    ongoing:           { color: '#065f46', bg: '#d1fae5', label: 'Berlangsung' },
-    completed:         { color: '#374151', bg: '#f3f4f6', label: 'Selesai' },
-    cancelled:         { color: '#991b1b', bg: '#fee2e2', label: 'Dibatalkan' },
-    pending_payment:   { color: '#92400e', bg: '#fef3c7', label: 'Menunggu Bayar' },
-    no_show:           { color: '#92400e', bg: '#fef3c7', label: 'Tidak Hadir' },
+    paid:            { color: '#1d4ed8', bg: '#dbeafe', label: 'Menunggu Mulai' },
+    scheduled:       { color: '#6d28d9', bg: '#ede9fe', label: 'Terjadwal' },
+    ongoing:         { color: '#065f46', bg: '#d1fae5', label: 'Berlangsung' },
+    completed:       { color: '#374151', bg: '#f3f4f6', label: 'Selesai' },
+    cancelled:       { color: '#991b1b', bg: '#fee2e2', label: 'Dibatalkan' },
+    pending_payment: { color: '#92400e', bg: '#fef3c7', label: 'Menunggu Bayar' },
+    no_show:         { color: '#92400e', bg: '#fef3c7', label: 'Tidak Hadir' },
   };
 
   return (
@@ -147,13 +184,13 @@ const DoctorHome = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14, marginBottom: 28 }}>
           {[
             { label: 'Janji Hari Ini', value: stats.todayAppointments, icon: '📅', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
-            { label: 'Menunggu Konfirmasi', value: stats.pendingAppointments, icon: '⏳', color: '#d97706', bg: '#fffbeb', border: '#fde68a', urgent: stats.pendingAppointments > 0 },
+            { label: 'Menunggu Konfirmasi', value: stats.pendingAppointments, icon: '⏳', color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
             { label: 'Total Pasien', value: stats.totalPatients, icon: '👥', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
-            { label: 'Konsultasi Aktif', value: stats.ongoingConsultations, icon: '💬', color: '#059669', bg: '#f0fdf4', border: '#6ee7b7', urgent: stats.ongoingConsultations > 0 },
+            { label: 'Konsultasi Aktif', value: stats.ongoingConsultations, icon: '💬', color: '#059669', bg: '#f0fdf4', border: '#6ee7b7' },
           ].map((s, i) => (
             <div key={i} style={{ background: s.bg, borderRadius: 14, padding: '18px 20px', border: `1px solid ${s.border}` }}>
               <div style={{ fontSize: 22, marginBottom: 8 }}>{s.icon}</div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: s.color, lineHeight: 1 }}>{loading ? '…' : s.value}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, fontWeight: 500 }}>{s.label}</div>
             </div>
           ))}
@@ -190,9 +227,7 @@ const DoctorHome = () => {
               <div style={{ fontWeight: 700, fontSize: 15, color: '#064e3b' }}>📋 Jadwal Hari Ini</div>
               <Link to="/doctor/appointments" style={{ fontSize: 12, color: '#059669', textDecoration: 'none', fontWeight: 600 }}>Lihat semua →</Link>
             </div>
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8' }}>Memuat...</div>
-            ) : schedule.length === 0 ? (
+            {schedule.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '32px 0' }}>
                 <div style={{ fontSize: 40, marginBottom: 8 }}>📭</div>
                 <div style={{ color: '#94a3b8', fontSize: 13 }}>Tidak ada jadwal hari ini</div>

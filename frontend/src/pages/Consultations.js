@@ -27,18 +27,18 @@ const StarRating = ({ value = 0 }) => {
 
 const StatusBadge = ({ status }) => {
   const cfg = {
-    draft:              { color: '#8b949e', bg: '#21262d', label: 'Draft' },
-    pending_payment:    { color: '#f0883e', bg: '#3d1f00', label: 'Menunggu Pembayaran' },
-    paid:               { color: '#58a6ff', bg: '#0c2d6b', label: 'Dibayar' },
-    scheduled:          { color: '#a371f7', bg: '#2d1b69', label: 'Terjadwal' },
-    ongoing:            { color: '#3fb950', bg: '#0a3d1e', label: 'Berlangsung' },
-    completed:          { color: '#58a6ff', bg: '#0c2d6b', label: 'Selesai' },
-    cancelled:          { color: '#f85149', bg: '#3d0c09', label: 'Dibatalkan' },
-    expired:            { color: '#8b949e', bg: '#21262d', label: 'Kadaluarsa' },
-    rejected_payment:   { color: '#f85149', bg: '#3d0c09', label: 'Pembayaran Ditolak' },
-    no_show:            { color: '#f0883e', bg: '#3d1f00', label: 'Tidak Hadir' },
+    draft:              { color: '#6b7280', bg: '#f3f4f6', label: 'Draft' },
+    pending_payment:    { color: '#b45309', bg: '#fffbeb', label: 'Menunggu Pembayaran' },
+    paid:               { color: '#1d4ed8', bg: '#eff6ff', label: 'Dibayar' },
+    scheduled:          { color: '#7e22ce', bg: '#f5f3ff', label: 'Terjadwal' },
+    ongoing:            { color: '#15803d', bg: '#f0fdf4', label: 'Berlangsung' },
+    completed:          { color: '#1d4ed8', bg: '#eff6ff', label: 'Selesai' },
+    cancelled:          { color: '#b91c1c', bg: '#fef2f2', label: 'Dibatalkan' },
+    expired:            { color: '#6b7280', bg: '#f3f4f6', label: 'Kadaluarsa' },
+    rejected_payment:   { color: '#b91c1c', bg: '#fef2f2', label: 'Pembayaran Ditolak' },
+    no_show:            { color: '#b45309', bg: '#fffbeb', label: 'Tidak Hadir' },
   };
-  const c = cfg[status] || { color: '#8b949e', bg: '#21262d', label: status };
+  const c = cfg[status] || { color: '#6b7280', bg: '#f3f4f6', label: status };
   return (
     <span style={{
       background: c.bg, color: c.color, border: `1px solid ${c.color}40`,
@@ -68,7 +68,7 @@ const Countdown = ({ deadline, onExpired }) => {
   }, [deadline, onExpired]);
   const isUrgent = sisa && parseInt(sisa.split(':')[0]) < 5;
   return (
-    <span style={{ color: isUrgent ? '#f85149' : '#f0883e', fontWeight: 700, fontFamily: 'monospace', fontSize: 18 }}>
+    <span style={{ color: isUrgent ? '#b91c1c' : '#b45309', fontWeight: 700, fontFamily: 'monospace', fontSize: 18 }}>
       ⏱ {sisa}
     </span>
   );
@@ -125,61 +125,61 @@ const PaymentForm = ({ consultation, amount, deadline, onSuccess, onClose }) => 
     finally { setUploading(false); }
   };
 
-  const s = { fontFamily: "'DM Sans', sans-serif" };
+  const s = { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" };
 
   if (step === 1) return (
     <div style={s} className="p-2">
       {deadline && (
-        <div style={{ background: '#1a1a2e', border: '1px solid #f0883e40', borderRadius: 12, padding: '12px 16px', marginBottom: 20, textAlign: 'center' }}>
-          <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 4 }}>Selesaikan pembayaran dalam</div>
+        <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 16px', marginBottom: 20, textAlign: 'center' }}>
+          <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 4 }}>Selesaikan pembayaran dalam</div>
           <Countdown deadline={deadline} />
         </div>
       )}
-      <h6 style={{ color: '#e6edf3', fontWeight: 700, marginBottom: 16 }}>Pilih Metode Pembayaran</h6>
+      <h6 style={{ color: '#111827', fontWeight: 700, marginBottom: 16 }}>Pilih Metode Pembayaran</h6>
       <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
         {banks.map(bank => (
           <div key={bank.id} onClick={() => setSelectedBank({ ...bank, isQRIS: false })}
             style={{
-              border: `2px solid ${selectedBank?.id === bank.id && !selectedBank?.isQRIS ? '#58a6ff' : '#30363d'}`,
-              borderRadius: 12, padding: '12px 16px', cursor: 'pointer', background: '#161b22',
+              border: `2px solid ${selectedBank?.id === bank.id && !selectedBank?.isQRIS ? '#2563eb' : '#e5e7eb'}`,
+              borderRadius: 12, padding: '12px 16px', cursor: 'pointer', background: '#ffffff',
               display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.2s'
             }}>
             <span style={{ fontSize: 28 }}>🏦</span>
             <div>
-              <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>{bank.bankName}</div>
-              <div style={{ color: '#8b949e', fontSize: 12 }}>a.n. {bank.accountName}</div>
+              <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{bank.bankName}</div>
+              <div style={{ color: '#6b7280', fontSize: 12 }}>a.n. {bank.accountName}</div>
             </div>
           </div>
         ))}
         {qris && (
           <div onClick={() => setSelectedBank({ id: 999, bankName: 'QRIS', accountName: qris.merchantName, isQRIS: true, qrCode: qris.qrCode })}
             style={{
-              border: `2px solid ${selectedBank?.isQRIS ? '#3fb950' : '#30363d'}`,
-              borderRadius: 12, padding: '12px 16px', cursor: 'pointer', background: '#161b22',
+              border: `2px solid ${selectedBank?.isQRIS ? '#16a34a' : '#e5e7eb'}`,
+              borderRadius: 12, padding: '12px 16px', cursor: 'pointer', background: '#ffffff',
               display: 'flex', alignItems: 'center', gap: 12
             }}>
             <span style={{ fontSize: 28 }}>📱</span>
             <div>
-              <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>QRIS</div>
-              <div style={{ color: '#8b949e', fontSize: 12 }}>OVO · GoPay · Dana · ShopeePay</div>
+              <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>QRIS</div>
+              <div style={{ color: '#6b7280', fontSize: 12 }}>OVO · GoPay · Dana · ShopeePay</div>
             </div>
           </div>
         )}
       </div>
-      <div style={{ background: '#161b22', borderRadius: 12, padding: '12px 16px', marginBottom: 16, textAlign: 'center' }}>
-        <div style={{ color: '#8b949e', fontSize: 12 }}>Total Pembayaran</div>
-        <div style={{ color: '#58a6ff', fontWeight: 800, fontSize: 22 }}>{fmtRupiah(amount)}</div>
+      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 16px', marginBottom: 16, textAlign: 'center' }}>
+        <div style={{ color: '#6b7280', fontSize: 12 }}>Total Pembayaran</div>
+        <div style={{ color: '#2563eb', fontWeight: 800, fontSize: 22 }}>{fmtRupiah(amount)}</div>
       </div>
       <button onClick={() => selectedBank && createTrx(selectedBank.id)}
         disabled={!selectedBank || loading}
         style={{
           width: '100%', padding: '12px', borderRadius: 10, border: 'none', fontWeight: 700,
-          background: selectedBank ? 'linear-gradient(135deg,#1f6feb,#388bfd)' : '#21262d',
-          color: selectedBank ? '#fff' : '#8b949e', cursor: selectedBank ? 'pointer' : 'not-allowed', fontSize: 15
+          background: selectedBank ? 'linear-gradient(135deg,#2563eb,#3b82f6)' : '#e5e7eb',
+          color: selectedBank ? '#fff' : '#9ca3af', cursor: selectedBank ? 'pointer' : 'not-allowed', fontSize: 15
         }}>
         {loading ? 'Memproses...' : 'Lanjutkan →'}
       </button>
-      <button onClick={onClose} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>
+      <button onClick={onClose} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>
         Batal
       </button>
     </div>
@@ -188,44 +188,44 @@ const PaymentForm = ({ consultation, amount, deadline, onSuccess, onClose }) => 
   if (step === 2) return (
     <div style={s} className="p-2">
       {deadline && (
-        <div style={{ background: '#1a1a2e', border: '1px solid #f0883e40', borderRadius: 12, padding: '12px 16px', marginBottom: 20, textAlign: 'center' }}>
-          <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 4 }}>Sisa waktu pembayaran</div>
+        <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 16px', marginBottom: 20, textAlign: 'center' }}>
+          <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 4 }}>Sisa waktu pembayaran</div>
           <Countdown deadline={deadline} />
         </div>
       )}
-      <div style={{ background: '#161b22', border: '1px solid #388bfd40', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 8 }}>Detail Transfer</div>
+      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 8 }}>Detail Transfer</div>
         {transaction?.bank?.accountNumber && (
           <div style={{ marginBottom: 6 }}>
-            <span style={{ color: '#8b949e', fontSize: 12 }}>No. Rekening: </span>
-            <span style={{ color: '#e6edf3', fontWeight: 700, fontFamily: 'monospace' }}>{transaction.bank.accountNumber}</span>
+            <span style={{ color: '#6b7280', fontSize: 12 }}>No. Rekening: </span>
+            <span style={{ color: '#111827', fontWeight: 700, fontFamily: 'monospace' }}>{transaction.bank.accountNumber}</span>
             <button onClick={() => { navigator.clipboard.writeText(transaction.bank.accountNumber); toast.success('Disalin!'); }}
-              style={{ marginLeft: 8, background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: 12 }}>salin</button>
+              style={{ marginLeft: 8, background: 'transparent', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 12 }}>salin</button>
           </div>
         )}
         <div style={{ marginBottom: 6 }}>
-          <span style={{ color: '#8b949e', fontSize: 12 }}>Bank: </span>
-          <span style={{ color: '#e6edf3', fontWeight: 600 }}>{selectedBank?.bankName}</span>
+          <span style={{ color: '#6b7280', fontSize: 12 }}>Bank: </span>
+          <span style={{ color: '#111827', fontWeight: 600 }}>{selectedBank?.bankName}</span>
         </div>
         <div>
-          <span style={{ color: '#8b949e', fontSize: 12 }}>Nominal: </span>
-          <span style={{ color: '#58a6ff', fontWeight: 800, fontSize: 18 }}>{fmtRupiah(amount)}</span>
+          <span style={{ color: '#6b7280', fontSize: 12 }}>Nominal: </span>
+          <span style={{ color: '#2563eb', fontWeight: 800, fontSize: 18 }}>{fmtRupiah(amount)}</span>
         </div>
       </div>
       <div style={{ marginBottom: 12 }}>
-        <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>Tanggal Transfer</label>
+        <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>Tanggal Transfer</label>
         <input type="date" value={transferDate} max={new Date().toISOString().split('T')[0]}
           onChange={e => setTransferDate(e.target.value)}
-          style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', color: '#e6edf3', fontSize: 14 }} />
+          style={{ width: '100%', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', color: '#111827', fontSize: 14 }} />
       </div>
       <div style={{ marginBottom: 16 }}>
-        <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>Bukti Transfer</label>
+        <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>Bukti Transfer</label>
         <label style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-          background: '#161b22', border: '1px dashed #30363d', borderRadius: 8, cursor: 'pointer'
+          background: '#ffffff', border: '1px dashed #e5e7eb', borderRadius: 8, cursor: 'pointer'
         }}>
-          <FaImage style={{ color: '#58a6ff' }} />
-          <span style={{ color: file ? '#3fb950' : '#8b949e', fontSize: 13 }}>
+          <FaImage style={{ color: '#2563eb' }} />
+          <span style={{ color: file ? '#16a34a' : '#6b7280', fontSize: 13 }}>
             {file ? file.name : 'Klik untuk pilih file (JPG/PNG/PDF, maks 5MB)'}
           </span>
           <input type="file" accept="image/*,.pdf" style={{ display: 'none' }}
@@ -239,12 +239,12 @@ const PaymentForm = ({ consultation, amount, deadline, onSuccess, onClose }) => 
       <button onClick={uploadProof} disabled={!file || !transferDate || uploading}
         style={{
           width: '100%', padding: '12px', borderRadius: 10, border: 'none', fontWeight: 700,
-          background: 'linear-gradient(135deg,#1a7f37,#2ea043)', color: '#fff', cursor: 'pointer', fontSize: 15,
+          background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', cursor: 'pointer', fontSize: 15,
           opacity: (!file || !transferDate || uploading) ? 0.5 : 1
         }}>
         {uploading ? 'Mengupload...' : '✓ Upload & Konfirmasi'}
       </button>
-      <button onClick={() => setStep(1)} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>
+      <button onClick={() => setStep(1)} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>
         ← Kembali
       </button>
     </div>
@@ -253,14 +253,14 @@ const PaymentForm = ({ consultation, amount, deadline, onSuccess, onClose }) => 
   return (
     <div style={{ ...s, textAlign: 'center', padding: '24px 0' }}>
       <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
-      <div style={{ color: '#3fb950', fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Bukti Terkirim!</div>
-      <div style={{ color: '#8b949e', fontSize: 14, marginBottom: 24 }}>
+      <div style={{ color: '#16a34a', fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Bukti Terkirim!</div>
+      <div style={{ color: '#6b7280', fontSize: 14, marginBottom: 24 }}>
         Pembayaran Anda sedang diverifikasi admin.<br />Proses maksimal 1×24 jam.
       </div>
-      <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#8b949e', marginBottom: 20 }}>
-        ID: <code style={{ color: '#58a6ff' }}>{transaction?.id}</code>
+      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+        ID: <code style={{ color: '#2563eb' }}>{transaction?.id}</code>
       </div>
-      <button onClick={onClose} style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: '#1f6feb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+      <button onClick={onClose} style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
         Tutup
       </button>
     </div>
@@ -327,12 +327,12 @@ const NewConsultationWizard = ({ onCreated }) => {
   };
 
   const s = {
-    card: { background: '#0d1117', border: '1px solid #30363d', borderRadius: 16 },
-    h: { color: '#e6edf3', fontFamily: "'DM Sans',sans-serif", fontWeight: 700 },
-    sub: { color: '#8b949e', fontSize: 13 },
-    inp: { background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', width: '100%', fontSize: 14, outline: 'none' },
-    btn: { background: 'linear-gradient(135deg,#1f6feb,#388bfd)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 24px', fontWeight: 700, cursor: 'pointer', fontSize: 15 },
-    btnGhost: { background: 'transparent', color: '#8b949e', border: '1px solid #30363d', borderRadius: 10, padding: '10px 24px', cursor: 'pointer', fontSize: 14 },
+    card: { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+    h: { color: '#111827', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontWeight: 700 },
+    sub: { color: '#6b7280', fontSize: 13 },
+    inp: { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', color: '#111827', width: '100%', fontSize: 14, outline: 'none' },
+    btn: { background: 'linear-gradient(135deg,#2563eb,#3b82f6)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 24px', fontWeight: 700, cursor: 'pointer', fontSize: 15 },
+    btnGhost: { background: 'transparent', color: '#6b7280', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 24px', cursor: 'pointer', fontSize: 14 },
   };
 
   return (
@@ -344,14 +344,14 @@ const NewConsultationWizard = ({ onCreated }) => {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12,
-                background: i < step ? '#1a7f37' : i === step ? '#1f6feb' : '#21262d',
-                color: i <= step ? '#fff' : '#8b949e', border: `2px solid ${i < step ? '#2ea043' : i === step ? '#388bfd' : '#30363d'}`
+                background: i < step ? '#16a34a' : i === step ? '#2563eb' : '#f3f4f6',
+                color: i <= step ? '#fff' : '#9ca3af', border: `2px solid ${i < step ? '#22c55e' : i === step ? '#3b82f6' : '#e5e7eb'}`
               }}>
                 {i < step ? '✓' : i + 1}
               </div>
-              <div style={{ fontSize: 10, color: i === step ? '#58a6ff' : '#8b949e', marginTop: 4, whiteSpace: 'nowrap' }}>{label}</div>
+              <div style={{ fontSize: 10, color: i === step ? '#2563eb' : '#6b7280', marginTop: 4, whiteSpace: 'nowrap' }}>{label}</div>
             </div>
-            {i < STEPS.length - 1 && <div style={{ flex: 1, height: 2, background: i < step ? '#2ea043' : '#30363d', minWidth: 12 }} />}
+            {i < STEPS.length - 1 && <div style={{ flex: 1, height: 2, background: i < step ? '#22c55e' : '#e5e7eb', minWidth: 12 }} />}
           </React.Fragment>
         ))}
       </div>
@@ -363,7 +363,7 @@ const NewConsultationWizard = ({ onCreated }) => {
           <p style={s.sub}>Cari berdasarkan nama atau spesialisasi</p>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             <div style={{ flex: 1, position: 'relative' }}>
-              <FaSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontSize: 13 }} />
+              <FaSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 13 }} />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari dokter..."
                 style={{ ...s.inp, paddingLeft: 32 }} />
             </div>
@@ -374,41 +374,41 @@ const NewConsultationWizard = ({ onCreated }) => {
             </select>
           </div>
           {loadingDoctors ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#8b949e' }}>Memuat dokter...</div>
+            <div style={{ textAlign: 'center', padding: 32, color: '#6b7280' }}>Memuat dokter...</div>
           ) : (
             <div style={{ display: 'grid', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
               {filteredDoctors.map(doc => (
                 <div key={doc._id} onClick={() => setForm(f => ({ ...f, doctorId: doc._id }))}
                   style={{
-                    border: `2px solid ${form.doctorId === doc._id ? '#388bfd' : '#30363d'}`,
-                    borderRadius: 12, padding: '12px 14px', cursor: 'pointer', background: '#161b22',
+                    border: `2px solid ${form.doctorId === doc._id ? '#3b82f6' : '#e5e7eb'}`,
+                    borderRadius: 12, padding: '12px 14px', cursor: 'pointer', background: '#ffffff',
                     display: 'flex', alignItems: 'center', gap: 14, transition: 'all 0.15s',
-                    boxShadow: form.doctorId === doc._id ? '0 0 0 2px #1f6feb40' : 'none'
+                    boxShadow: form.doctorId === doc._id ? '0 0 0 2px #2563eb40' : 'none'
                   }}>
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
                     {doc.photo ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : '👨‍⚕️'}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>dr. {doc.name}</div>
-                    <div style={{ color: '#58a6ff', fontSize: 12 }}>{doc.specialization}</div>
+                    <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>dr. {doc.name}</div>
+                    <div style={{ color: '#2563eb', fontSize: 12 }}>{doc.specialization}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
                       <StarRating value={doc.rating} />
-                      <span style={{ color: '#8b949e', fontSize: 11 }}>({doc.totalReviews || 0} ulasan)</span>
-                      {doc.experience && <span style={{ color: '#8b949e', fontSize: 11 }}>· {doc.experience} thn</span>}
+                      <span style={{ color: '#6b7280', fontSize: 11 }}>({doc.totalReviews || 0} ulasan)</span>
+                      {doc.experience && <span style={{ color: '#6b7280', fontSize: 11 }}>· {doc.experience} thn</span>}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ color: '#58a6ff', fontWeight: 700, fontSize: 13 }}>{fmtRupiah(doc.consultationFee)}</div>
+                    <div style={{ color: '#2563eb', fontWeight: 700, fontSize: 13 }}>{fmtRupiah(doc.consultationFee)}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', marginTop: 2 }}>
-                      <FaCircle style={{ fontSize: 7, color: doc.isOnline ? '#3fb950' : '#8b949e' }} />
-                      <span style={{ fontSize: 11, color: doc.isOnline ? '#3fb950' : '#8b949e' }}>
+                      <FaCircle style={{ fontSize: 7, color: doc.isOnline ? '#16a34a' : '#9ca3af' }} />
+                      <span style={{ fontSize: 11, color: doc.isOnline ? '#16a34a' : '#9ca3af' }}>
                         {doc.isOnline ? 'Online' : 'Offline'}
                       </span>
                     </div>
                   </div>
                 </div>
               ))}
-              {filteredDoctors.length === 0 && <div style={{ textAlign: 'center', padding: 24, color: '#8b949e' }}>Dokter tidak ditemukan</div>}
+              {filteredDoctors.length === 0 && <div style={{ textAlign: 'center', padding: 24, color: '#6b7280' }}>Dokter tidak ditemukan</div>}
             </div>
           )}
         </div>
@@ -427,16 +427,16 @@ const NewConsultationWizard = ({ onCreated }) => {
             ].map(opt => (
               <div key={opt.val} onClick={() => setForm(f => ({ ...f, consultationType: opt.val }))}
                 style={{
-                  border: `2px solid ${form.consultationType === opt.val ? '#388bfd' : '#30363d'}`,
-                  borderRadius: 12, padding: '14px 18px', cursor: 'pointer', background: '#161b22',
+                  border: `2px solid ${form.consultationType === opt.val ? '#3b82f6' : '#e5e7eb'}`,
+                  borderRadius: 12, padding: '14px 18px', cursor: 'pointer', background: '#ffffff',
                   display: 'flex', alignItems: 'center', gap: 16, transition: 'all 0.15s'
                 }}>
                 <span style={{ fontSize: 32 }}>{opt.icon}</span>
                 <div>
-                  <div style={{ color: '#e6edf3', fontWeight: 600 }}>{opt.label}</div>
-                  <div style={{ color: '#8b949e', fontSize: 13 }}>{opt.desc}</div>
+                  <div style={{ color: '#111827', fontWeight: 600 }}>{opt.label}</div>
+                  <div style={{ color: '#6b7280', fontSize: 13 }}>{opt.desc}</div>
                 </div>
-                {form.consultationType === opt.val && <span style={{ marginLeft: 'auto', color: '#388bfd', fontSize: 20 }}>✓</span>}
+                {form.consultationType === opt.val && <span style={{ marginLeft: 'auto', color: '#3b82f6', fontSize: 20 }}>✓</span>}
               </div>
             ))}
           </div>
@@ -449,27 +449,27 @@ const NewConsultationWizard = ({ onCreated }) => {
           <h6 style={s.h}>Isi Keluhan</h6>
           <p style={s.sub}>Informasi ini akan dilihat dokter sebelum konsultasi dimulai</p>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>Gejala / Keluhan <span style={{ color: '#f85149' }}>*</span></label>
+            <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>Gejala / Keluhan <span style={{ color: '#b91c1c' }}>*</span></label>
             <textarea value={form.symptoms} rows={4}
               onChange={e => setForm(f => ({ ...f, symptoms: e.target.value }))}
               placeholder="Ceritakan gejala yang Anda alami secara detail..."
               style={{ ...s.inp, resize: 'vertical', minHeight: 90 }} />
           </div>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>Riwayat Penyakit</label>
+            <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>Riwayat Penyakit</label>
             <textarea value={form.medicalHistory} rows={3}
               onChange={e => setForm(f => ({ ...f, medicalHistory: e.target.value }))}
               placeholder="Penyakit sebelumnya, alergi obat, dll. (opsional)"
               style={{ ...s.inp, resize: 'vertical', minHeight: 70 }} />
           </div>
           <div>
-            <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>Lampiran Foto (opsional, maks 5 file, 5MB)</label>
+            <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>Lampiran Foto (opsional, maks 5 file, 5MB)</label>
             <label style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-              background: '#161b22', border: '1px dashed #30363d', borderRadius: 8, cursor: 'pointer'
+              background: '#ffffff', border: '1px dashed #e5e7eb', borderRadius: 8, cursor: 'pointer'
             }}>
-              <FaImage style={{ color: '#58a6ff' }} />
-              <span style={{ color: '#8b949e', fontSize: 13 }}>
+              <FaImage style={{ color: '#2563eb' }} />
+              <span style={{ color: '#6b7280', fontSize: 13 }}>
                 {form.attachments.length > 0 ? `${form.attachments.length} file dipilih` : 'Pilih foto keluhan...'}
               </span>
               <input type="file" accept="image/*" multiple style={{ display: 'none' }}
@@ -481,7 +481,7 @@ const NewConsultationWizard = ({ onCreated }) => {
             {form.attachments.length > 0 && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
                 {form.attachments.map((f, i) => (
-                  <span key={i} style={{ background: '#21262d', color: '#8b949e', fontSize: 11, padding: '2px 8px', borderRadius: 20 }}>
+                  <span key={i} style={{ background: '#f3f4f6', color: '#6b7280', fontSize: 11, padding: '2px 8px', borderRadius: 20 }}>
                     {f.name}
                   </span>
                 ))}
@@ -503,23 +503,23 @@ const NewConsultationWizard = ({ onCreated }) => {
             ].map(opt => (
               <div key={opt.val} onClick={() => setForm(f => ({ ...f, scheduleType: opt.val }))}
                 style={{
-                  border: `2px solid ${form.scheduleType === opt.val ? '#388bfd' : '#30363d'}`,
-                  borderRadius: 12, padding: '14px 18px', cursor: 'pointer', background: '#161b22',
+                  border: `2px solid ${form.scheduleType === opt.val ? '#3b82f6' : '#e5e7eb'}`,
+                  borderRadius: 12, padding: '14px 18px', cursor: 'pointer', background: '#ffffff',
                   display: 'flex', alignItems: 'flex-start', gap: 14, transition: 'all 0.15s'
                 }}>
                 <span style={{ fontSize: 28, marginTop: 2 }}>{opt.icon}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ color: '#e6edf3', fontWeight: 600 }}>{opt.label}</div>
-                  <div style={{ color: '#8b949e', fontSize: 13 }}>{opt.desc}</div>
+                  <div style={{ color: '#111827', fontWeight: 600 }}>{opt.label}</div>
+                  <div style={{ color: '#6b7280', fontSize: 13 }}>{opt.desc}</div>
                 </div>
-                {form.scheduleType === opt.val && <span style={{ color: '#388bfd', fontSize: 20 }}>✓</span>}
+                {form.scheduleType === opt.val && <span style={{ color: '#3b82f6', fontSize: 20 }}>✓</span>}
               </div>
             ))}
           </div>
           {form.scheduleType === 'scheduled' && (
             <div>
-              <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>
-                Pilih Tanggal & Waktu <span style={{ color: '#f85149' }}>*</span>
+              <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>
+                Pilih Tanggal & Waktu <span style={{ color: '#b91c1c' }}>*</span>
               </label>
               <input type="datetime-local" value={form.scheduledAt}
                 min={new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)}
@@ -528,8 +528,8 @@ const NewConsultationWizard = ({ onCreated }) => {
             </div>
           )}
           {/* Summary */}
-          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 12, padding: 14, marginTop: 20 }}>
-            <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>RINGKASAN</div>
+          <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 14, marginTop: 20 }}>
+            <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>RINGKASAN</div>
             {[
               ['Dokter', `dr. ${selectedDoctor?.name} (${selectedDoctor?.specialization})`],
               ['Tipe', form.consultationType === 'chat' ? 'Chat' : form.consultationType === 'voice_call' ? 'Voice Call' : 'Video Call'],
@@ -537,8 +537,8 @@ const NewConsultationWizard = ({ onCreated }) => {
               ['Biaya', fmtRupiah(selectedDoctor?.consultationFee)],
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ color: '#8b949e', fontSize: 13 }}>{k}</span>
-                <span style={{ color: '#e6edf3', fontSize: 13, fontWeight: 600 }}>{v}</span>
+                <span style={{ color: '#6b7280', fontSize: 13 }}>{k}</span>
+                <span style={{ color: '#111827', fontSize: 13, fontWeight: 600 }}>{v}</span>
               </div>
             ))}
           </div>
@@ -574,40 +574,40 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate }) => {
 
   return (
     <div style={{
-      background: '#161b22', border: '1px solid #30363d', borderRadius: 14,
-      marginBottom: 12, overflow: 'hidden', transition: 'all 0.2s',
-      fontFamily: "'DM Sans', sans-serif"
+      background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14,
+      marginBottom: 12, overflow: 'hidden', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
     }}>
       <div style={{ padding: '14px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ width: 42, height: 42, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👨‍⚕️</div>
+          <div style={{ width: 42, height: 42, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👨‍⚕️</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>dr. {cons.doctorId?.name}</span>
-              <span style={{ color: '#58a6ff', fontSize: 12 }}>{cons.doctorId?.specialization}</span>
+              <span style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>dr. {cons.doctorId?.name}</span>
+              <span style={{ color: '#2563eb', fontSize: 12 }}>{cons.doctorId?.specialization}</span>
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
               <StatusBadge status={cons.status} />
               {cons.consultationType && (
-                <span style={{ fontSize: 11, color: '#8b949e', background: '#21262d', padding: '1px 8px', borderRadius: 20 }}>
+                <span style={{ fontSize: 11, color: '#6b7280', background: '#f3f4f6', padding: '1px 8px', borderRadius: 20 }}>
                   {cons.consultationType === 'chat' ? '💬 Chat' : cons.consultationType === 'voice_call' ? '📞 Suara' : '📹 Video'}
                 </span>
               )}
             </div>
-            <div style={{ color: '#8b949e', fontSize: 12, marginTop: 4 }}>
+            <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>
               {fmtDate(cons.createdAt)}
               {cons.scheduledAt && ` · Jadwal: ${fmtDateTime(cons.scheduledAt)}`}
             </div>
           </div>
           <button onClick={() => setExpanded(e => !e)}
-            style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: 6, padding: '4px 8px', color: '#8b949e', cursor: 'pointer', fontSize: 12 }}>
+            style={{ background: 'transparent', border: '1px solid #e5e7eb', borderRadius: 6, padding: '4px 8px', color: '#6b7280', cursor: 'pointer', fontSize: 12 }}>
             {expanded ? '▲' : '▼'}
           </button>
         </div>
 
         {needsPay && cons.paymentDeadline && (
-          <div style={{ marginTop: 10, background: '#1a1a2e', border: '1px solid #f0883e30', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#8b949e', fontSize: 12 }}>Batas pembayaran:</span>
+          <div style={{ marginTop: 10, background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#6b7280', fontSize: 12 }}>Batas pembayaran:</span>
             <Countdown deadline={cons.paymentDeadline} />
           </div>
         )}
@@ -621,7 +621,7 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate }) => {
           )}
           {canChat && (
             <button onClick={onChat}
-              style={{ background: 'linear-gradient(135deg,#1f6feb,#388bfd)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              style={{ background: 'linear-gradient(135deg,#2563eb,#3b82f6)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
               💬 {cons.status === 'ongoing' ? 'Lanjutkan Chat' : 'Buka Room'}
             </button>
           )}
@@ -633,22 +633,22 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate }) => {
           )}
           {hasSickLetter && (
             <button onClick={onDownload}
-              style={{ background: '#1a7f37', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
               📄 Unduh Surat Sakit
             </button>
           )}
         </div>
       </div>
       {expanded && (
-        <div style={{ borderTop: '1px solid #21262d', padding: '12px 16px', background: '#0d1117' }}>
-          {cons.symptoms && <div style={{ marginBottom: 8 }}><span style={{ color: '#8b949e', fontSize: 12 }}>Keluhan: </span><span style={{ color: '#c9d1d9', fontSize: 13 }}>{cons.symptoms}</span></div>}
-          {cons.medicalHistory && <div style={{ marginBottom: 8 }}><span style={{ color: '#8b949e', fontSize: 12 }}>Riwayat: </span><span style={{ color: '#c9d1d9', fontSize: 13 }}>{cons.medicalHistory}</span></div>}
-          {cons.prescription && <div style={{ marginBottom: 8 }}><span style={{ color: '#8b949e', fontSize: 12 }}>Resep: </span><span style={{ color: '#3fb950', fontSize: 13 }}>{cons.prescription}</span></div>}
+        <div style={{ borderTop: '1px solid #f3f4f6', padding: '12px 16px', background: '#fafafa' }}>
+          {cons.symptoms && <div style={{ marginBottom: 8 }}><span style={{ color: '#6b7280', fontSize: 12 }}>Keluhan: </span><span style={{ color: '#111827', fontSize: 13 }}>{cons.symptoms}</span></div>}
+          {cons.medicalHistory && <div style={{ marginBottom: 8 }}><span style={{ color: '#6b7280', fontSize: 12 }}>Riwayat: </span><span style={{ color: '#111827', fontSize: 13 }}>{cons.medicalHistory}</span></div>}
+          {cons.prescription && <div style={{ marginBottom: 8 }}><span style={{ color: '#6b7280', fontSize: 12 }}>Resep: </span><span style={{ color: '#16a34a', fontSize: 13 }}>{cons.prescription}</span></div>}
           {cons.rating && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: '#8b949e', fontSize: 12 }}>Rating: </span>
+              <span style={{ color: '#6b7280', fontSize: 12 }}>Rating: </span>
               <StarRating value={cons.rating} />
-              {cons.ratingComment && <span style={{ color: '#c9d1d9', fontSize: 12 }}>"{cons.ratingComment}"</span>}
+              {cons.ratingComment && <span style={{ color: '#111827', fontSize: 12 }}>"{cons.ratingComment}"</span>}
             </div>
           )}
         </div>
@@ -678,10 +678,10 @@ const RatingModal = ({ consultationId, doctorName, onClose, onSuccess }) => {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, padding: 28, width: '90%', maxWidth: 420, fontFamily: "'DM Sans', sans-serif" }}>
-        <h5 style={{ color: '#e6edf3', fontWeight: 700, marginBottom: 6 }}>Beri Rating</h5>
-        <p style={{ color: '#8b949e', fontSize: 13, marginBottom: 20 }}>Bagaimana pengalaman konsultasi dengan dr. {doctorName}?</p>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, padding: 28, width: '90%', maxWidth: 420, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+        <h5 style={{ color: '#111827', fontWeight: 700, marginBottom: 6 }}>Beri Rating</h5>
+        <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 20 }}>Bagaimana pengalaman konsultasi dengan dr. {doctorName}?</p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 20 }}>
           {[1, 2, 3, 4, 5].map(i => (
             <span key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(0)}
@@ -692,9 +692,9 @@ const RatingModal = ({ consultationId, doctorName, onClose, onSuccess }) => {
         </div>
         <textarea value={comment} rows={3} onChange={e => setComment(e.target.value)}
           placeholder="Tambahkan komentar (opsional)..."
-          style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14, resize: 'vertical', marginBottom: 16 }} />
+          style={{ width: '100%', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', color: '#111827', fontSize: 14, resize: 'vertical', marginBottom: 16 }} />
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
+          <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>Batal</button>
           <button onClick={handleSubmit} disabled={!rating || submitting}
             style={{ flex: 1, padding: 10, borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#854d0e,#ca8a04)', color: '#fff', fontWeight: 700, cursor: rating ? 'pointer' : 'not-allowed', opacity: rating ? 1 : 0.5 }}>
             {submitting ? 'Mengirim...' : 'Kirim Rating'}
@@ -750,25 +750,25 @@ const Consultations = () => {
   const active = consultations.filter(c => ['pending_payment', 'paid', 'scheduled', 'ongoing'].includes(c.status));
   const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show'].includes(c.status));
 
-  const s = { fontFamily: "'DM Sans', sans-serif" };
+  const s = { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" };
 
   return (
-    <div style={{ ...s, minHeight: '100vh', background: '#0d1117', padding: '32px 16px' }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <div style={{ ...s, minHeight: '100vh', background: '#ffffff', padding: '32px 16px' }}>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h4 style={{ color: '#e6edf3', fontWeight: 800, marginBottom: 2 }}>Konsultasi Online</h4>
-            <p style={{ color: '#8b949e', fontSize: 13, margin: 0 }}>Konsultasi dengan dokter berpengalaman dari rumah</p>
+            <h4 style={{ color: '#111827', fontWeight: 800, marginBottom: 2 }}>Konsultasi Online</h4>
+            <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>Konsultasi dengan dokter berpengalaman dari rumah</p>
           </div>
-          <div style={{ display: 'flex', background: '#161b22', border: '1px solid #30363d', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
             {[['history', '📋 Riwayat'], ['new', '➕ Konsultasi Baru']].map(([v, label]) => (
               <button key={v} onClick={() => setView(v)}
                 style={{
                   padding: '9px 18px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                  background: view === v ? '#1f6feb' : 'transparent',
-                  color: view === v ? '#fff' : '#8b949e', transition: 'all 0.2s'
+                  background: view === v ? '#2563eb' : 'transparent',
+                  color: view === v ? '#fff' : '#6b7280', transition: 'all 0.2s'
                 }}>{label}</button>
             ))}
           </div>
@@ -781,7 +781,7 @@ const Consultations = () => {
             {/* Active */}
             {active.length > 0 && (
               <div style={{ marginBottom: 28 }}>
-                <h6 style={{ color: '#58a6ff', fontWeight: 700, marginBottom: 12, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>⚡ Aktif ({active.length})</h6>
+                <h6 style={{ color: '#2563eb', fontWeight: 700, marginBottom: 12, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>⚡ Aktif ({active.length})</h6>
                 {active.map(cons => (
                   <ConsultationCard key={cons._id} cons={cons}
                     onPay={() => setPayModal({ consultation: cons, amount: cons.doctorId?.consultationFee, deadline: cons.paymentDeadline })}
@@ -795,17 +795,17 @@ const Consultations = () => {
 
             {/* History */}
             <div>
-              <h6 style={{ color: '#8b949e', fontWeight: 700, marginBottom: 12, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>
+              <h6 style={{ color: '#6b7280', fontWeight: 700, marginBottom: 12, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>
                 📂 Riwayat ({history.length})
               </h6>
               {loading ? (
-                <div style={{ textAlign: 'center', padding: 48, color: '#8b949e' }}>Memuat...</div>
+                <div style={{ textAlign: 'center', padding: 48, color: '#6b7280' }}>Memuat...</div>
               ) : history.length === 0 && active.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 48, color: '#8b949e', background: '#161b22', borderRadius: 14 }}>
+                <div style={{ textAlign: 'center', padding: 48, color: '#6b7280', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14 }}>
                   <div style={{ fontSize: 48, marginBottom: 12 }}>🏥</div>
                   <div style={{ fontWeight: 600 }}>Belum ada konsultasi</div>
                   <div style={{ fontSize: 13, marginTop: 4 }}>Mulai konsultasi pertama Anda</div>
-                  <button onClick={() => setView('new')} style={{ marginTop: 16, padding: '10px 24px', background: '#1f6feb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}>
+                  <button onClick={() => setView('new')} style={{ marginTop: 16, padding: '10px 24px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}>
                     Mulai Sekarang
                   </button>
                 </div>
@@ -826,11 +826,11 @@ const Consultations = () => {
 
       {/* Payment Modal */}
       {payModal && (
-        <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #21262d' }}>
-              <span style={{ color: '#e6edf3', fontWeight: 700, fontFamily: "'DM Sans', sans-serif" }}>💳 Pembayaran Konsultasi</span>
-              <button onClick={() => setPayModal(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 20, cursor: 'pointer' }}>×</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ color: '#111827', fontWeight: 700, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>💳 Pembayaran Konsultasi</span>
+              <button onClick={() => setPayModal(null)} style={{ background: 'transparent', border: 'none', color: '#6b7280', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ padding: '16px 20px' }}>
               <PaymentForm

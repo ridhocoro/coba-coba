@@ -17,7 +17,8 @@ const DoctorDashboard = () => {
     const [pendingConsultations, setPendingConsultations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [noProfile, setNoProfile] = useState(false);
+    // ✅ FIX: default null (belum dicek), bukan false
+    const [noProfile, setNoProfile] = useState(null);
 
     useEffect(() => {
         if (authLoading) return;
@@ -29,23 +30,15 @@ const DoctorDashboard = () => {
     const fetchDoctorData = async () => {
         setLoading(true);
         setError(null);
-        setNoProfile(false);
+        setNoProfile(null); // reset tiap fetch
+
         try {
-            // Cek apakah dokter punya Doctor record
-            try {
-                const profileRes = await api.get('/api/doctors/my/profile');
-                if (profileRes.data?.needsProfile) {
-                    setNoProfile(true);
-                    setLoading(false);
-                    return;
-                }
-            } catch (profileErr) {
-                if (profileErr.response?.status === 404) {
-                    setNoProfile(true);
-                    setLoading(false);
-                    return;
-                }
-            }
+            // ✅ FIX UTAMA: panggil endpoint yang kini sudah ada di backend
+            // Sebelumnya endpoint ini tidak ada → selalu 404 → noProfile = true
+            await api.get('/api/doctors/my/profile');
+            
+            // Profil ada, lanjut ambil data dashboard
+            setNoProfile(false);
 
             const [apptRes, consRes] = await Promise.allSettled([
                 api.get('/api/appointments/doctor/stats'),
@@ -61,8 +54,6 @@ const DoctorDashboard = () => {
                     totalPatients: d.stats?.totalPatients ?? 0
                 }));
                 setTodaySchedule(d.todaySchedule || []);
-            } else {
-                console.error('Appointments stats error:', apptRes.reason?.response?.data || apptRes.reason?.message);
             }
 
             if (consRes.status === 'fulfilled') {
@@ -70,17 +61,20 @@ const DoctorDashboard = () => {
                 const ongoing = consultations.filter(c => c.status === 'ongoing').length;
                 setStats(prev => ({ ...prev, ongoingConsultations: ongoing }));
                 setPendingConsultations(consultations.slice(0, 5));
-            } else {
-                console.error('Consultations error:', consRes.reason?.response?.data || consRes.reason?.message);
             }
 
-            // Jika KEDUA request gagal, tampilkan error
             if (apptRes.status === 'rejected' && consRes.status === 'rejected') {
                 setError('Gagal memuat data dashboard. Pastikan server berjalan.');
             }
         } catch (err) {
-            console.error('Dashboard error:', err);
-            setError('Gagal memuat data dashboard');
+            // ✅ FIX: 404 dari /my/profile berarti profil dokter belum dibuat admin
+            if (err.response?.status === 404) {
+                setNoProfile(true);
+            } else {
+                console.error('Dashboard error:', err);
+                setError('Gagal memuat data dashboard');
+                setNoProfile(false);
+            }
         } finally {
             setLoading(false);
         }
@@ -106,46 +100,44 @@ const DoctorDashboard = () => {
 
     const getConsBadge = (status) => {
         const map = {
-            paid:             ['info',      'Menunggu Mulai'],
-            scheduled:        ['primary',   'Terjadwal'],
-            ongoing:          ['success',   'Berlangsung'],
-            completed:        ['secondary', 'Selesai'],
-            cancelled:        ['danger',    'Dibatalkan'],
-            pending_payment:  ['warning',   'Menunggu Bayar'],
-            expired:          ['secondary', 'Kadaluarsa'],
-            no_show:          ['warning',   'Tidak Hadir'],
+            paid:            ['info',      'Menunggu Mulai'],
+            scheduled:       ['primary',   'Terjadwal'],
+            ongoing:         ['success',   'Berlangsung'],
+            completed:       ['secondary', 'Selesai'],
+            cancelled:       ['danger',    'Dibatalkan'],
+            pending_payment: ['warning',   'Menunggu Bayar'],
+            expired:         ['secondary', 'Kadaluarsa'],
+            no_show:         ['warning',   'Tidak Hadir'],
         };
         const [bg, label] = map[status] || ['secondary', status];
         return <Badge bg={bg} className="small">{label}</Badge>;
     };
 
-    if (noProfile) return (
+    // ✅ Tampilkan loading dulu sebelum tahu status profil
+    if (authLoading || loading) return (
+        <Container className="py-5 text-center">
+            <Spinner animation="border" variant="primary" />
+            <p className="mt-2 text-muted">{authLoading ? 'Memeriksa akses...' : 'Memuat dashboard...'}</p>
+        </Container>
+    );
+
+    // ✅ Tampilkan pesan HANYA jika sudah pasti noProfile = true
+    if (noProfile === true) return (
         <Container className="py-5">
             <Alert variant="warning" className="text-center">
                 <FaExclamationTriangle size={40} className="mb-3 d-block mx-auto" />
                 <h5>Profil Dokter Belum Terdaftar</h5>
                 <p className="mb-3">
                     Akun Anda terdaftar sebagai <strong>dokter</strong>, tetapi profil dokter belum dibuat oleh admin.
-                    Hubungi administrator untuk menghubungkan akun Anda ke profil dokter.
+                    Hubungi administrator untuk membuat profil dokter dan menghubungkan akun Anda.
                 </p>
                 <p className="text-muted small">
-                    Admin dapat melakukan ini melalui menu <strong>Kelola Dokter → Hubungkan Akun</strong>
+                    Admin dapat melakukan ini melalui menu <strong>Kelola Dokter → Tambah Dokter</strong> dengan email akun Anda
                 </p>
+                <Button variant="outline-warning" size="sm" onClick={fetchDoctorData} className="mt-2">
+                    <FaSync className="me-1" /> Cek Ulang
+                </Button>
             </Alert>
-        </Container>
-    );
-
-    if (authLoading) return (
-        <Container className="py-5 text-center">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2 text-muted">Memeriksa akses...</p>
-        </Container>
-    );
-
-    if (loading) return (
-        <Container className="py-5 text-center">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2 text-muted">Memuat dashboard...</p>
         </Container>
     );
 
@@ -218,8 +210,7 @@ const DoctorDashboard = () => {
                                             to={action.link}
                                             variant={`outline-${action.color}`}
                                             className="w-100 py-3 position-relative"
-                                            style={{ borderRadius: 10 }}
-                                        >
+                                            style={{ borderRadius: 10 }}>
                                             <div className="fs-4 mb-1">{action.icon}</div>
                                             <div className="small">{action.title}</div>
                                             {action.badge > 0 && (
