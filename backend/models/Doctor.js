@@ -21,7 +21,13 @@ const doctorSchema = new mongoose.Schema({
   // Status online/offline yang di-set admin
   isOnline: { type: Boolean, default: false },
   bio: String,
-  photo: String
+  photo: String,
+  // Setting fitur konsultasi yang tersedia
+  consultationSettings: {
+    allowChat:      { type: Boolean, default: true },
+    allowVoiceCall: { type: Boolean, default: true },
+    allowVideoCall: { type: Boolean, default: true },
+  }
 });
 
 module.exports = mongoose.model('Doctor', doctorSchema);

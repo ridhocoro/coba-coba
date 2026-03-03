@@ -56,15 +56,17 @@ const orderSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
-// Generate order number before save
+// Generate order number before save (collision-resistant)
 orderSchema.pre('save', async function(next) {
     if (!this.orderNumber) {
-        const date = new Date();
-        const year = date.getFullYear().toString().slice(-2);
+        const date  = new Date();
+        const year  = date.getFullYear().toString().slice(-2);
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const day = date.getDate().toString().padStart(2, '0');
-        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        this.orderNumber = `INV/${year}${month}${day}/${random}`;
+        const day   = date.getDate().toString().padStart(2, '0');
+        // Gabungkan timestamp ms + 4 digit random → sangat kecil kemungkinan collision
+        const suffix = (Date.now() % 100000).toString().padStart(5, '0') +
+                       Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        this.orderNumber = `INV/${year}${month}${day}/${suffix}`;
     }
     next();
 });

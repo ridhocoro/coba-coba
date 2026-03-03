@@ -1,11 +1,38 @@
 // routes/pharmacy.js
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const Medicine = require('../models/Medicine');
 const Order = require('../models/Order');
 const ManualPayment = require('../models/ManualPayment');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
+
+// ─── Multer: upload gambar obat ───────────────────────────────────────────────
+const medicineImageDir = path.join(__dirname, '../uploads/medicines');
+if (!fs.existsSync(medicineImageDir)) fs.mkdirSync(medicineImageDir, { recursive: true });
+
+const medicineImageStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, medicineImageDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `medicine-${req.params.id}-${Date.now()}${ext}`);
+    }
+});
+
+const uploadMedicineImage = multer({
+    storage: medicineImageStorage,
+    limits: { fileSize: 3 * 1024 * 1024 }, // maks 3MB
+    fileFilter: (req, file, cb) => {
+        const allowed = /jpeg|jpg|png|webp/;
+        if (allowed.test(path.extname(file.originalname).toLowerCase()) && allowed.test(file.mimetype)) {
+            return cb(null, true);
+        }
+        cb(new Error('Hanya file gambar (jpg, png, webp) yang diperbolehkan'));
+    }
+});
 
 // ========== PUBLIC ROUTES ==========
 // GET all medicines
@@ -142,24 +169,8 @@ router.post('/orders', auth, async (req, res) => {
 
         await order.save();
 
-        // Schedule auto-expire setelah 15 menit
-        setTimeout(async () => {
-            try {
-                const currentOrder = await Order.findById(order._id);
-                if (currentOrder && currentOrder.status === 'awaiting_payment') {
-                    // Release locked stock
-                    for (const item of currentOrder.items) {
-                        await Medicine.findByIdAndUpdate(item.medicineId, {
-                            $inc: { lockedStock: -item.quantity }
-                        });
-                    }
-                    currentOrder.status = 'expired';
-                    await currentOrder.save();
-                }
-            } catch (error) {
-                console.error('Error in auto-expire:', error);
-            }
-        }, 15 * 60000);
+        // ℹ️ Auto-expire ditangani oleh ExpiredOrderCron (bukan setTimeout)
+        // agar tetap berjalan meski server restart
 
         res.json({
             success: true,
@@ -337,6 +348,42 @@ router.get('/orders/:id', auth, async (req, res) => {
 });
 
 // ========== ADMIN ROUTES ==========
+
+// ADMIN: Get all medicines (termasuk yang nonaktif)
+router.get('/admin/medicines', auth, adminAuth, async (req, res) => {
+    try {
+        const { search, category, page = 1, limit = 50 } = req.query;
+        let query = {};
+
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { genericName: { $regex: search, $options: 'i' } },
+                { category: { $regex: search, $options: 'i' } }
+            ];
+        }
+        if (category) query.category = category;
+
+        const medicines = await Medicine.find(query)
+            .limit(limit * 1)
+            .skip((page - 1) * limit)
+            .sort('-createdAt');
+
+        const total = await Medicine.countDocuments(query);
+
+        res.json({
+            success: true,
+            medicines,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            total
+        });
+    } catch (error) {
+        console.error('Admin get medicines error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 // ADMIN: Get all orders
 router.get('/admin/orders', auth, adminAuth, async (req, res) => {
     try {
@@ -467,6 +514,31 @@ router.delete('/admin/medicines/:id', auth, adminAuth, async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ADMIN: Upload gambar obat
+router.post('/admin/medicines/:id/image', auth, adminAuth, uploadMedicineImage.single('image'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'File gambar diperlukan' });
+
+        const medicine = await Medicine.findById(req.params.id);
+        if (!medicine) return res.status(404).json({ error: 'Obat tidak ditemukan' });
+
+        // Hapus gambar lama jika ada
+        if (medicine.image) {
+            const oldPath = path.join(__dirname, '..', medicine.image);
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        }
+
+        const imageUrl = `/uploads/medicines/${req.file.filename}`;
+        medicine.image = imageUrl;
+        await medicine.save();
+
+        res.json({ success: true, image: imageUrl });
+    } catch (error) {
+        console.error('Upload medicine image error:', error);
+        res.status(500).json({ error: error.message || 'Server error' });
     }
 });
 

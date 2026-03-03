@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { toast } from 'react-hot-toast';
+import io from 'socket.io-client';
 import {
   FaStar, FaStarHalfAlt, FaRegStar, FaCircle,
   FaImage, FaSearch
@@ -320,9 +321,17 @@ const NewConsultationWizard = ({ onCreated }) => {
 
   const canNext = () => {
     if (step === 0) return !!form.doctorId;
-    if (step === 1) return !!form.consultationType;
+    if (step === 1) {
+      if (!form.consultationType) return false;
+      const settings = selectedDoctor?.consultationSettings || {};
+      const keyMap = { chat: 'allowChat', voice_call: 'allowVoiceCall', video_call: 'allowVideoCall' };
+      return settings[keyMap[form.consultationType]] !== false;
+    }
     if (step === 2) return form.symptoms.trim().length > 5;
-    if (step === 3) return form.scheduleType === 'instant' || !!form.scheduledAt;
+    if (step === 3) {
+      if (form.scheduleType === 'instant' && !selectedDoctor?.isOnline) return false;
+      return form.scheduleType === 'instant' || !!form.scheduledAt;
+    }
     return true;
   };
 
@@ -421,24 +430,36 @@ const NewConsultationWizard = ({ onCreated }) => {
           <p style={s.sub}>Dengan dr. {selectedDoctor?.name} — {fmtRupiah(selectedDoctor?.consultationFee)}</p>
           <div style={{ display: 'grid', gap: 12 }}>
             {[
-              { val: 'chat', icon: '💬', label: 'Chat', desc: 'Konsultasi via pesan teks & foto' },
-              { val: 'voice_call', icon: '📞', label: 'Voice Call', desc: 'Konsultasi via panggilan suara' },
-              { val: 'video_call', icon: '📹', label: 'Video Call', desc: 'Konsultasi tatap muka virtual' },
-            ].map(opt => (
-              <div key={opt.val} onClick={() => setForm(f => ({ ...f, consultationType: opt.val }))}
-                style={{
-                  border: `2px solid ${form.consultationType === opt.val ? '#3b82f6' : '#e5e7eb'}`,
-                  borderRadius: 12, padding: '14px 18px', cursor: 'pointer', background: '#ffffff',
-                  display: 'flex', alignItems: 'center', gap: 16, transition: 'all 0.15s'
-                }}>
-                <span style={{ fontSize: 32 }}>{opt.icon}</span>
-                <div>
-                  <div style={{ color: '#111827', fontWeight: 600 }}>{opt.label}</div>
-                  <div style={{ color: '#6b7280', fontSize: 13 }}>{opt.desc}</div>
+              { val: 'chat',       icon: '💬', label: 'Chat',       desc: 'Konsultasi via pesan teks & foto',     key: 'allowChat' },
+              { val: 'voice_call', icon: '📞', label: 'Voice Call', desc: 'Konsultasi via panggilan suara',       key: 'allowVoiceCall' },
+              { val: 'video_call', icon: '📹', label: 'Video Call', desc: 'Konsultasi tatap muka virtual',        key: 'allowVideoCall' },
+            ].map(opt => {
+              const settings = selectedDoctor?.consultationSettings || {};
+              // default true jika field tidak ada (dokter lama)
+              const isAllowed = settings[opt.key] !== false;
+              return (
+                <div key={opt.val}
+                  onClick={() => isAllowed && setForm(f => ({ ...f, consultationType: opt.val }))}
+                  style={{
+                    border: `2px solid ${form.consultationType === opt.val ? '#3b82f6' : isAllowed ? '#e5e7eb' : '#f3f4f6'}`,
+                    borderRadius: 12, padding: '14px 18px',
+                    cursor: isAllowed ? 'pointer' : 'not-allowed',
+                    background: isAllowed ? '#ffffff' : '#f9fafb',
+                    display: 'flex', alignItems: 'center', gap: 16, transition: 'all 0.15s',
+                    opacity: isAllowed ? 1 : 0.5
+                  }}>
+                  <span style={{ fontSize: 32 }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#111827', fontWeight: 600 }}>
+                      {opt.label}
+                      {!isAllowed && <span style={{ marginLeft: 8, fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>— Tidak tersedia</span>}
+                    </div>
+                    <div style={{ color: '#6b7280', fontSize: 13 }}>{opt.desc}</div>
+                  </div>
+                  {form.consultationType === opt.val && isAllowed && <span style={{ marginLeft: 'auto', color: '#3b82f6', fontSize: 20 }}>✓</span>}
                 </div>
-                {form.consultationType === opt.val && <span style={{ marginLeft: 'auto', color: '#3b82f6', fontSize: 20 }}>✓</span>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -498,23 +519,33 @@ const NewConsultationWizard = ({ onCreated }) => {
           <p style={s.sub}>Tentukan kapan konsultasi akan berlangsung</p>
           <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
             {[
-              { val: 'instant', icon: '⚡', label: 'Langsung (Instant)', desc: 'Konsultasi dimulai segera setelah pembayaran dikonfirmasi admin' },
-              { val: 'scheduled', icon: '📅', label: 'Terjadwal', desc: 'Tentukan waktu konsultasi, dokter dikonfirmasi oleh admin' },
-            ].map(opt => (
-              <div key={opt.val} onClick={() => setForm(f => ({ ...f, scheduleType: opt.val }))}
-                style={{
-                  border: `2px solid ${form.scheduleType === opt.val ? '#3b82f6' : '#e5e7eb'}`,
-                  borderRadius: 12, padding: '14px 18px', cursor: 'pointer', background: '#ffffff',
-                  display: 'flex', alignItems: 'flex-start', gap: 14, transition: 'all 0.15s'
-                }}>
-                <span style={{ fontSize: 28, marginTop: 2 }}>{opt.icon}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: '#111827', fontWeight: 600 }}>{opt.label}</div>
-                  <div style={{ color: '#6b7280', fontSize: 13 }}>{opt.desc}</div>
+              { val: 'instant',   icon: '⚡', label: 'Langsung (Instant)', desc: 'Konsultasi dimulai segera setelah pembayaran dikonfirmasi admin' },
+              { val: 'scheduled', icon: '📅', label: 'Terjadwal',           desc: 'Tentukan waktu konsultasi, dokter dikonfirmasi oleh admin' },
+            ].map(opt => {
+              const isDisabled = opt.val === 'instant' && !selectedDoctor?.isOnline;
+              return (
+                <div key={opt.val}
+                  onClick={() => !isDisabled && setForm(f => ({ ...f, scheduleType: opt.val }))}
+                  style={{
+                    border: `2px solid ${form.scheduleType === opt.val && !isDisabled ? '#3b82f6' : isDisabled ? '#f3f4f6' : '#e5e7eb'}`,
+                    borderRadius: 12, padding: '14px 18px',
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                    background: isDisabled ? '#f9fafb' : '#ffffff',
+                    display: 'flex', alignItems: 'flex-start', gap: 14, transition: 'all 0.15s',
+                    opacity: isDisabled ? 0.5 : 1
+                  }}>
+                  <span style={{ fontSize: 28, marginTop: 2 }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#111827', fontWeight: 600 }}>
+                      {opt.label}
+                      {isDisabled && <span style={{ marginLeft: 8, fontSize: 11, color: '#ef4444', fontWeight: 400 }}>— Dokter sedang offline</span>}
+                    </div>
+                    <div style={{ color: '#6b7280', fontSize: 13 }}>{opt.desc}</div>
+                  </div>
+                  {form.scheduleType === opt.val && !isDisabled && <span style={{ color: '#3b82f6', fontSize: 20 }}>✓</span>}
                 </div>
-                {form.scheduleType === opt.val && <span style={{ color: '#3b82f6', fontSize: 20 }}>✓</span>}
-              </div>
-            ))}
+              );
+            })}
           </div>
           {form.scheduleType === 'scheduled' && (
             <div>
@@ -730,6 +761,36 @@ const Consultations = () => {
     if (!user) { navigate('/login'); return; }
     fetchConsultations();
   }, [user, fetchConsultations, navigate]);
+
+  // ── Auto-refresh via polling (30 detik) jika ada konsultasi pending_payment
+  // Ini memastikan status update ketika admin memverifikasi pembayaran
+  useEffect(() => {
+    const hasPending = consultations.some(c => c.status === 'pending_payment');
+    if (!hasPending) return;
+
+    const interval = setInterval(() => {
+      fetchConsultations();
+    }, 30000); // 30 detik
+
+    return () => clearInterval(interval);
+  }, [consultations, fetchConsultations]);
+
+  // ── Auto-refresh via Socket notifikasi payment_verified
+  useEffect(() => {
+    if (!user) return;
+    const sock = io(API_URL, {
+      auth: { token: localStorage.getItem('token') },
+      query: { userId: user.id }
+    });
+    sock.emit('join-user', user.id);
+    sock.on('new-notification', (notif) => {
+      // Refresh daftar konsultasi saat ada notifikasi payment
+      if (['payment_verified', 'payment_rejected', 'consultation_started'].includes(notif.type)) {
+        fetchConsultations();
+      }
+    });
+    return () => sock.close();
+  }, [user, fetchConsultations]);
 
   const handleCreated = (data) => {
     setView('history');

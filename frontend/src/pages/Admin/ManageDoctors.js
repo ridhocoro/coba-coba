@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import api from '../../utils/api';
+import React, { useState, useEffect, useRef } from 'react';
+import api, { API_URL } from '../../utils/api';
 import {
     Container, Row, Col, Card, Table, Badge, Button,
     Modal, Form, Spinner, Alert, InputGroup
@@ -9,14 +9,16 @@ import { Link } from 'react-router-dom';
 import {
     FaUserMd, FaPlus, FaEdit, FaToggleOn, FaToggleOff,
     FaArrowLeft, FaExclamationTriangle, FaLink,
-    FaSearch, FaSync, FaTrash, FaClock, FaDollarSign,
-    FaGraduationCap, FaBriefcase, FaEnvelope, FaLock,
-    FaPhone, FaInfoCircle
+    FaSearch, FaSync, FaTrash, FaCamera, FaUpload
 } from 'react-icons/fa';
 
 const defaultForm = {
     name: '', specialization: '', consultationFee: '', qualification: '',
     experience: '', bio: '', email: '', password: '', phone: ''
+};
+
+const defaultSettings = {
+    allowChat: true, allowVoiceCall: true, allowVideoCall: true
 };
 
 const ManageDoctors = () => {
@@ -29,6 +31,20 @@ const ManageDoctors = () => {
     const [showDoctorModal, setShowDoctorModal] = useState(false);
     const [editingDoctor, setEditingDoctor] = useState(null);
     const [form, setForm] = useState(defaultForm);
+    const [settings, setSettings] = useState(defaultSettings); // consultation settings
+
+    // State upload foto
+    const [photoFile, setPhotoFile] = useState(null);
+    const [photoPreview, setPhotoPreview] = useState(null);
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
+    const photoInputRef = useRef();
+
+    // State modal khusus ganti foto (untuk dokter yang sudah ada)
+    const [showPhotoModal, setShowPhotoModal] = useState(false);
+    const [photoDoctor, setPhotoDoctor] = useState(null);
+    const [photoFileModal, setPhotoFileModal] = useState(null);
+    const [photoPreviewModal, setPhotoPreviewModal] = useState(null);
+    const photoInputModalRef = useRef();
 
     const [showLinkModal, setShowLinkModal] = useState(false);
     const [linkDoctor, setLinkDoctor] = useState(null);
@@ -57,24 +73,100 @@ const ManageDoctors = () => {
         }
     };
 
+    // Pilih foto di modal tambah/edit
+    const handlePhotoChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 3 * 1024 * 1024) { toast.error('Ukuran foto maksimal 3MB'); return; }
+        setPhotoFile(file);
+        setPhotoPreview(URL.createObjectURL(file));
+    };
+
+    // Pilih foto di modal upload foto terpisah
+    const handlePhotoModalChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 3 * 1024 * 1024) { toast.error('Ukuran foto maksimal 3MB'); return; }
+        setPhotoFileModal(file);
+        setPhotoPreviewModal(URL.createObjectURL(file));
+    };
+
+    // Upload foto ke server (dipanggil setelah doctor tersimpan, atau dari modal foto)
+    const uploadPhoto = async (doctorId, file) => {
+        const formData = new FormData();
+        formData.append('photo', file);
+        const res = await api.post(`/api/admin/doctors/${doctorId}/photo`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return res.data.photo;
+    };
+
     const handleSave = async (e) => {
         e.preventDefault();
         setProcessing(true);
         try {
+            let savedDoctorId = editingDoctor?._id;
+
             if (editingDoctor) {
                 await api.put(`/api/admin/doctors/${editingDoctor._id}`, form);
+                // Simpan consultation settings via route baru
+                await api.put(`/api/doctors/${editingDoctor._id}/settings`, settings);
                 toast.success('Data dokter diperbarui');
             } else {
-                await api.post('/api/admin/doctors', form);
+                const res = await api.post('/api/admin/doctors', form);
+                savedDoctorId = res.data.doctor?._id;
+                // Settings default sudah ditetapkan di model, update jika berbeda
+                if (savedDoctorId) await api.put(`/api/doctors/${savedDoctorId}/settings`, settings);
                 toast.success('Dokter berhasil ditambahkan');
             }
+
+            // Upload foto jika ada
+            if (photoFile && savedDoctorId) {
+                setUploadingPhoto(true);
+                try {
+                    await uploadPhoto(savedDoctorId, photoFile);
+                    toast.success('Foto dokter berhasil diupload');
+                } catch {
+                    toast.error('Data tersimpan, tapi gagal upload foto. Coba upload ulang lewat tombol kamera.');
+                } finally {
+                    setUploadingPhoto(false);
+                }
+            }
+
             setShowDoctorModal(false);
+            setPhotoFile(null);
+            setPhotoPreview(null);
             fetchData();
         } catch (err) {
             toast.error(err.response?.data?.error || 'Gagal menyimpan');
         } finally {
             setProcessing(false);
         }
+    };
+
+    // Simpan foto dari modal terpisah
+    const handleSavePhoto = async () => {
+        if (!photoFileModal || !photoDoctor) return;
+        setUploadingPhoto(true);
+        try {
+            await uploadPhoto(photoDoctor._id, photoFileModal);
+            toast.success('Foto berhasil diperbarui');
+            setShowPhotoModal(false);
+            setPhotoFileModal(null);
+            setPhotoPreviewModal(null);
+            fetchData();
+        } catch {
+            toast.error('Gagal upload foto');
+        } finally {
+            setUploadingPhoto(false);
+        }
+    };
+
+    const openPhotoModal = (doctor) => {
+        setPhotoDoctor(doctor);
+        setPhotoFileModal(null);
+        setPhotoPreviewModal(doctor.photo ? `${API_URL}${doctor.photo}` : null);
+        setShowPhotoModal(true);
     };
 
     const handleToggleOnline = async (doctor) => {
@@ -112,10 +204,7 @@ const ManageDoctors = () => {
         if (!linkUserId) { toast.error('Pilih user terlebih dahulu'); return; }
         setProcessing(true);
         try {
-            await api.post('/api/doctors/admin/link-user', {
-                doctorId: linkDoctor._id,
-                userId: linkUserId
-            });
+            await api.post('/api/doctors/admin/link-user', { doctorId: linkDoctor._id, userId: linkUserId });
             toast.success('Dokter berhasil dihubungkan ke user!');
             setShowLinkModal(false);
             setLinkUserId('');
@@ -129,6 +218,13 @@ const ManageDoctors = () => {
 
     const openEdit = (doctor) => {
         setEditingDoctor(doctor);
+        setPhotoFile(null);
+        setPhotoPreview(doctor.photo ? `${API_URL}${doctor.photo}` : null);
+        setSettings({
+            allowChat:      doctor.consultationSettings?.allowChat      !== false,
+            allowVoiceCall: doctor.consultationSettings?.allowVoiceCall !== false,
+            allowVideoCall: doctor.consultationSettings?.allowVideoCall !== false,
+        });
         setForm({
             name: doctor.name || '',
             specialization: doctor.specialization || '',
@@ -143,6 +239,9 @@ const ManageDoctors = () => {
 
     const openAdd = () => {
         setEditingDoctor(null);
+        setPhotoFile(null);
+        setPhotoPreview(null);
+        setSettings(defaultSettings);
         setForm(defaultForm);
         setShowDoctorModal(true);
     };
@@ -155,726 +254,412 @@ const ManageDoctors = () => {
 
     const unlinkedDoctors = doctors.filter(d => !d.userId);
 
-    const formatCurrency = (amount) => `Rp ${(amount || 0).toLocaleString('id-ID')}`;
-
     if (loading) return (
-        <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ textAlign: 'center' }}>
-                <Spinner animation="border" variant="primary" />
-                <p style={{ marginTop: 16, color: '#64748b' }}>Memuat data dokter...</p>
-            </div>
-        </div>
+        <Container className="py-5 text-center">
+            <Spinner animation="border" variant="primary" />
+            <p className="mt-2 text-muted">Memuat data dokter...</p>
+        </Container>
     );
 
     return (
-        <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", padding: '24px' }}>
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-            
-            <style>{`
-                .page-header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    margin-bottom: 24px;
-                    flex-wrap: wrap;
-                    gap: 16px;
-                }
-                .header-left {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                }
-                .header-icon {
-                    width: 44px;
-                    height: 44px;
-                    background: #dbeafe;
-                    border-radius: 12px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: #2563eb;
-                }
-                .header-title h1 {
-                    font-size: 24px;
-                    font-weight: 600;
-                    color: #0f172a;
-                    margin-bottom: 4px;
-                }
-                .header-title p {
-                    font-size: 14px;
-                    color: #64748b;
-                    margin-bottom: 0;
-                }
-                .search-container {
-                    position: relative;
-                    width: 100%;
-                    max-width: 400px;
-                }
-                .search-icon {
-                    position: absolute;
-                    left: 12px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    color: #94a3b8;
-                    font-size: 14px;
-                }
-                .search-input {
-                    width: 100%;
-                    padding: 10px 16px 10px 40px;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    font-size: 14px;
-                    background: #ffffff;
-                }
-                .search-input:focus {
-                    outline: none;
-                    border-color: #2563eb;
-                    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
-                }
-                .stats-card {
-                    background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 12px;
-                    padding: 20px;
-                    transition: all 0.2s ease;
-                }
-                .stats-card:hover {
-                    box-shadow: 0 8px 16px -4px rgba(0,0,0,0.05);
-                    transform: translateY(-2px);
-                }
-                .alert-custom {
-                    background: #fff7ed;
-                    border: 1px solid #fed7aa;
-                    border-radius: 12px;
-                    padding: 16px 20px;
-                    margin-bottom: 24px;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    color: #b45309;
-                }
-                .table-container {
-                    background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 16px;
-                    overflow: hidden;
-                    margin-top: 24px;
-                }
-                .table-container table {
-                    width: 100%;
-                    border-collapse: collapse;
-                }
-                .table-container th {
-                    background: #f8fafc;
-                    padding: 16px;
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: #475569;
-                    text-align: left;
-                    border-bottom: 1px solid #e2e8f0;
-                }
-                .table-container td {
-                    padding: 16px;
-                    font-size: 14px;
-                    color: #0f172a;
-                    border-bottom: 1px solid #e2e8f0;
-                    vertical-align: middle;
-                }
-                .table-container tr:last-child td {
-                    border-bottom: none;
-                }
-                .badge-custom {
-                    padding: 4px 10px;
-                    border-radius: 20px;
-                    font-size: 12px;
-                    font-weight: 500;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 4px;
-                }
-                .badge-success { background: #dcfce7; color: #166534; }
-                .badge-warning { background: #fef3c7; color: #b45309; }
-                .badge-danger { background: #fee2e2; color: #b91c1c; }
-                .badge-info { background: #dbeafe; color: #1e40af; }
-                .badge-secondary { background: #f1f5f9; color: #475569; }
-                
-                /* Button Styles */
-                .btn-custom {
-                    padding: 6px 12px;
-                    border-radius: 8px;
-                    font-size: 13px;
-                    font-weight: 500;
-                    border: 1px solid #e2e8f0;
-                    background: #ffffff;
-                    color: #475569;
-                    transition: all 0.2s ease;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    cursor: pointer;
-                }
-                .btn-custom:hover {
-                    background: #f1f5f9;
-                }
-                .btn-custom-primary {
-                    background: #2563eb;
-                    border-color: #2563eb;
-                    color: white;
-                }
-                .btn-custom-primary:hover {
-                    background: #1d4ed8;
-                }
-                
-                /* Status Button Styles - Fixed */
-                .status-btn {
-                    padding: 6px 24px;
-                    border-radius: 30px;
-                    font-size: 13px;
-                    font-weight: 500;
-                    border: none;
-                    cursor: pointer;
-                    min-width: 100px;
-                    text-align: center;
-                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    transition: all 0.2s ease;
-                    line-height: 1.5;
-                    display: inline-block;
-                    letter-spacing: 0.3px;
-                }
-                .status-btn.online {
-                    background-color: #16a34a;
-                    color: white;
-                }
-                .status-btn.online:hover {
-                    background-color: #15803d;
-                }
-                .status-btn.offline {
-                    background-color: #f1f5f9;
-                    color: #475569;
-                }
-                .status-btn.offline:hover {
-                    background-color: #e2e8f0;
-                }
-                
-                /* Action Buttons */
-                .action-btn {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 8px;
-                    border: none;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    font-size: 16px;
-                }
-                .action-btn.edit {
-                    background: #dbeafe;
-                    color: #2563eb;
-                }
-                .action-btn.edit:hover {
-                    background: #bfdbfe;
-                }
-                .action-btn.link {
-                    background: #fef3c7;
-                    color: #b45309;
-                }
-                .action-btn.link:hover {
-                    background: #fde68a;
-                }
-                .action-btn.toggle-active {
-                    background: #fee2e2;
-                    color: #b91c1c;
-                }
-                .action-btn.toggle-inactive {
-                    background: #dcfce7;
-                    color: #166534;
-                }
-                .action-btn.delete {
-                    background: #fee2e2;
-                    color: #b91c1c;
-                }
-                .action-btn.delete:hover {
-                    background: #fecaca;
-                }
-                .action-group {
-                    display: flex;
-                    gap: 6px;
-                    justify-content: center;
-                    flex-wrap: wrap;
-                }
-                
-                /* Column Alignment */
-                .text-center-col {
-                    text-align: center;
-                }
-                .action-header {
-                    text-align: center;
-                }
-                
-                .modal-custom .modal-content {
-                    border-radius: 20px;
-                    border: none;
-                    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.15);
-                }
-                .modal-header-custom {
-                    padding: 20px 24px;
-                    border-bottom: 1px solid #e2e8f0;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }
-                .modal-body-custom {
-                    padding: 24px;
-                }
-                .modal-footer-custom {
-                    padding: 16px 24px;
-                    border-top: 1px solid #e2e8f0;
-                    display: flex;
-                    justify-content: flex-end;
-                    gap: 8px;
-                }
-                .form-label-custom {
-                    font-size: 13px;
-                    font-weight: 500;
-                    color: #475569;
-                    margin-bottom: 6px;
-                }
-                .form-control-custom {
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    padding: 10px 14px;
-                    font-size: 14px;
-                    width: 100%;
-                }
-                .form-control-custom:focus {
-                    border-color: #2563eb;
-                    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
-                    outline: none;
-                }
-            `}</style>
+        <Container fluid className="py-4">
+            <Row className="mb-4 align-items-center">
+                <Col>
+                    <Button as={Link} to="/admin" variant="link" className="p-0 text-muted mb-1">
+                        <FaArrowLeft className="me-1" /> Dashboard Admin
+                    </Button>
+                    <h4 className="fw-bold mb-0">
+                        <FaUserMd className="me-2 text-primary" />
+                        Kelola Dokter
+                    </h4>
+                </Col>
+                <Col xs="auto" className="d-flex gap-2">
+                    <Button variant="outline-secondary" size="sm" onClick={fetchData}>
+                        <FaSync className="me-1" /> Refresh
+                    </Button>
+                    <Button variant="primary" onClick={openAdd}>
+                        <FaPlus className="me-1" /> Tambah Dokter
+                    </Button>
+                </Col>
+            </Row>
 
-            <Container fluid style={{ maxWidth: 1400, margin: '0 auto' }}>
-                {/* Header */}
-                <div className="page-header">
-                    <div className="header-left">
-                        <div className="header-icon">
-                            <FaUserMd size={24} />
-                        </div>
-                        <div className="header-title">
-                            <h1>Kelola Dokter</h1>
-                            <p>Manajemen data dokter dan jadwal praktek</p>
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn-custom" onClick={fetchData}>
-                            <FaSync /> Refresh
-                        </button>
-                        <button className="btn-custom btn-custom-primary" onClick={openAdd}>
-                            <FaPlus /> Tambah Dokter
-                        </button>
-                    </div>
-                </div>
+            {unlinkedDoctors.length > 0 && (
+                <Alert variant="warning" className="d-flex align-items-center gap-2 mb-3">
+                    <FaExclamationTriangle />
+                    <span>
+                        <strong>{unlinkedDoctors.length} dokter</strong> belum terhubung ke akun user.
+                        Klik tombol <strong>Hubungkan</strong> untuk memperbaiki.
+                    </span>
+                </Alert>
+            )}
 
-                {/* Stats Cards */}
-                <Row className="g-3 mb-4">
-                    <Col md={3}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                                <div style={{ color: '#2563eb', fontSize: 14 }}>Total Dokter</div>
-                                <div style={{ color: '#2563eb', opacity: 0.5 }}><FaUserMd size={20} /></div>
-                            </div>
-                            <div style={{ fontSize: 32, fontWeight: 600, color: '#0f172a' }}>{doctors.length}</div>
-                        </div>
-                    </Col>
-                    <Col md={3}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                                <div style={{ color: '#16a34a', fontSize: 14 }}>Online</div>
-                                <div style={{ color: '#16a34a', opacity: 0.5 }}><FaToggleOn size={20} /></div>
-                            </div>
-                            <div style={{ fontSize: 32, fontWeight: 600, color: '#0f172a' }}>{doctors.filter(d => d.isOnline).length}</div>
-                        </div>
-                    </Col>
-                    <Col md={3}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                                <div style={{ color: '#b45309', fontSize: 14 }}>Perlu Link</div>
-                                <div style={{ color: '#b45309', opacity: 0.5 }}><FaLink size={20} /></div>
-                            </div>
-                            <div style={{ fontSize: 32, fontWeight: 600, color: '#0f172a' }}>{unlinkedDoctors.length}</div>
-                        </div>
-                    </Col>
-                    <Col md={3}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                                <div style={{ color: '#1e40af', fontSize: 14 }}>Spesialisasi</div>
-                                <div style={{ color: '#1e40af', opacity: 0.5 }}><FaGraduationCap size={20} /></div>
-                            </div>
-                            <div style={{ fontSize: 32, fontWeight: 600, color: '#0f172a' }}>
-                                {[...new Set(doctors.map(d => d.specialization))].length}
-                            </div>
-                        </div>
-                    </Col>
-                </Row>
-
-                {/* Warning Alert */}
-                {unlinkedDoctors.length > 0 && (
-                    <div className="alert-custom">
-                        <FaExclamationTriangle size={20} />
-                        <span>
-                            <strong>{unlinkedDoctors.length} dokter</strong> belum terhubung ke akun user. 
-                            Dokter tersebut tidak bisa login! Klik tombol <strong>Hubungkan</strong> untuk memperbaiki.
-                        </span>
-                    </div>
-                )}
-
-                {/* Search */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <div className="search-container">
-                        <FaSearch className="search-icon" />
-                        <input
-                            type="text"
-                            className="search-input"
+            <Row className="mb-3 g-2">
+                <Col md={5}>
+                    <InputGroup>
+                        <InputGroup.Text><FaSearch /></InputGroup.Text>
+                        <Form.Control
                             placeholder="Cari nama atau spesialisasi..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                         />
-                    </div>
-                    <div style={{ fontSize: 14, color: '#64748b' }}>
-                        {filtered.length} dokter ditemukan
-                    </div>
-                </div>
+                    </InputGroup>
+                </Col>
+                <Col className="d-flex align-items-center">
+                    <span className="text-muted small">{filtered.length} dokter</span>
+                </Col>
+            </Row>
 
-                {/* Table */}
-                <div className="table-container">
-                    <table>
-                        <thead>
+            <Card className="border-0 shadow-sm">
+                <Card.Body className="p-0">
+                    <Table hover responsive className="mb-0">
+                        <thead className="bg-light">
                             <tr>
-                                <th>Nama & Kualifikasi</th>
+                                <th style={{ width: 56 }}>Foto</th>
+                                <th>Nama</th>
                                 <th>Spesialisasi</th>
                                 <th>Biaya</th>
-                                <th>Akun User</th>
-                                <th>Jadwal</th>
+                                <th>Akun</th>
                                 <th>Status</th>
                                 <th>Online</th>
-                                <th className="action-header">Aksi</th>
+                                <th>Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filtered.length === 0 ? (
-                                <tr>
-                                    <td colSpan={8} style={{ textAlign: 'center', padding: '48px' }}>
-                                        <div style={{ width: 60, height: 60, background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                                            <FaUserMd size={24} style={{ color: '#94a3b8' }} />
-                                        </div>
-                                        <h6 style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada dokter</h6>
-                                        <p style={{ color: '#64748b', fontSize: 13 }}>Tambahkan dokter baru untuk memulai</p>
-                                    </td>
-                                </tr>
+                                <tr><td colSpan={8} className="text-center py-4 text-muted">Tidak ada dokter</td></tr>
                             ) : filtered.map(d => (
                                 <tr key={d._id}>
-                                    <td>
-                                        <div style={{ fontWeight: 500 }}>dr. {d.name}</div>
-                                        <div style={{ fontSize: 12, color: '#64748b' }}>{d.qualification || '-'}</div>
-                                    </td>
-                                    <td>
-                                        <span className="badge-custom badge-info">{d.specialization}</span>
-                                    </td>
-                                    <td style={{ fontWeight: 500 }}>{formatCurrency(d.consultationFee)}</td>
-                                    <td>
-                                        {d.userId ? (
-                                            <span className="badge-custom badge-success">
-                                                <FaLink size={10} /> Terhubung
-                                            </span>
+                                    {/* Foto dokter */}
+                                    <td className="text-center align-middle">
+                                        {d.photo ? (
+                                            <img
+                                                src={`${API_URL}${d.photo}`}
+                                                alt={d.name}
+                                                style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '2px solid #dee2e6' }}
+                                            />
                                         ) : (
-                                            <span className="badge-custom badge-danger">
-                                                <FaExclamationTriangle size={10} /> Belum terhubung
-                                            </span>
+                                            <div style={{
+                                                width: 40, height: 40, borderRadius: '50%',
+                                                background: '#e9ecef', display: 'inline-flex',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                color: '#adb5bd', fontSize: 18, border: '2px solid #dee2e6'
+                                            }}>
+                                                <FaUserMd />
+                                            </div>
                                         )}
                                     </td>
                                     <td>
-                                        {d.availableDays?.length > 0 ? (
-                                            <span className="badge-custom badge-success">
-                                                <FaClock size={10} /> {d.availableDays.length} hari
-                                            </span>
-                                        ) : (
-                                            <span className="badge-custom badge-warning">
-                                                <FaClock size={10} /> Belum diset
-                                            </span>
-                                        )}
+                                        <div className="fw-semibold">dr. {d.name}</div>
+                                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>{d.qualification}</div>
+                                        <div style={{ fontSize: '0.7rem', marginTop: 2 }}>
+                                            {d.consultationSettings?.allowChat      !== false && <span title="Chat aktif" style={{ marginRight: 3 }}>💬</span>}
+                                            {d.consultationSettings?.allowVoiceCall !== false && <span title="Voice aktif" style={{ marginRight: 3 }}>📞</span>}
+                                            {d.consultationSettings?.allowVideoCall !== false && <span title="Video aktif">📹</span>}
+                                        </div>
+                                    </td>
+                                    <td className="small">{d.specialization}</td>
+                                    <td className="small">Rp {Number(d.consultationFee || 0).toLocaleString('id-ID')}</td>
+                                    <td>
+                                        {d.userId
+                                            ? <Badge bg="success">✓ Terhubung</Badge>
+                                            : <Badge bg="danger">✗ Belum</Badge>}
                                     </td>
                                     <td>
-                                        <span className={`badge-custom ${d.isActive ? 'badge-success' : 'badge-secondary'}`}>
+                                        <Badge bg={d.isActive ? 'success' : 'secondary'}>
                                             {d.isActive ? 'Aktif' : 'Nonaktif'}
-                                        </span>
+                                        </Badge>
                                     </td>
                                     <td>
-                                        <button
-                                            className={`status-btn ${d.isOnline ? 'online' : 'offline'}`}
+                                        <Button
+                                            variant={d.isOnline ? 'success' : 'outline-secondary'}
+                                            size="sm"
                                             onClick={() => handleToggleOnline(d)}
                                         >
-                                            {d.isOnline ? 'Online' : 'Offline'}
-                                        </button>
+                                            {d.isOnline ? '🟢 Online' : '⚫ Offline'}
+                                        </Button>
                                     </td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        <div className="action-group">
-                                            <button 
-                                                className="action-btn edit" 
-                                                title="Edit"
-                                                onClick={() => openEdit(d)}
-                                            >
+                                    <td>
+                                        <div className="d-flex gap-1 flex-wrap">
+                                            <Button variant="outline-primary" size="sm" title="Edit Data" onClick={() => openEdit(d)}>
                                                 <FaEdit />
-                                            </button>
-                                            
+                                            </Button>
+                                            <Button variant="outline-info" size="sm" title="Ganti Foto" onClick={() => openPhotoModal(d)}>
+                                                <FaCamera />
+                                            </Button>
                                             {!d.userId && (
-                                                <button 
-                                                    className="action-btn link" 
-                                                    title="Hubungkan ke User"
-                                                    onClick={() => { setLinkDoctor(d); setLinkUserId(''); setShowLinkModal(true); }}
-                                                >
+                                                <Button variant="warning" size="sm" title="Hubungkan ke User"
+                                                    onClick={() => { setLinkDoctor(d); setLinkUserId(''); setShowLinkModal(true); }}>
                                                     <FaLink />
-                                                </button>
+                                                </Button>
                                             )}
-                                            
-                                            <button
-                                                className={`action-btn ${d.isActive ? 'toggle-active' : 'toggle-inactive'}`}
-                                                title={d.isActive ? 'Nonaktifkan' : 'Aktifkan'}
-                                                onClick={() => handleToggle(d)}
-                                            >
+                                            <Button
+                                                variant={d.isActive ? 'outline-danger' : 'outline-success'}
+                                                size="sm"
+                                                onClick={() => handleToggle(d)}>
                                                 {d.isActive ? <FaToggleOff /> : <FaToggleOn />}
-                                            </button>
-                                            
-                                            <button
-                                                className="action-btn delete"
-                                                title="Hapus Dokter"
-                                                onClick={() => handleDelete(d)}
-                                            >
+                                            </Button>
+                                            <Button variant="danger" size="sm" onClick={() => handleDelete(d)}>
                                                 <FaTrash />
-                                            </button>
+                                            </Button>
                                         </div>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
-                    </table>
-                </div>
+                    </Table>
+                </Card.Body>
+            </Card>
 
-                {/* Modal Tambah/Edit Dokter */}
-                <Modal show={showDoctorModal} onHide={() => setShowDoctorModal(false)} size="lg" centered dialogClassName="modal-custom">
-                    <div className="modal-header-custom">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 40, height: 40, background: '#dbeafe', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                <FaUserMd size={20} />
-                            </div>
-                            <h5 style={{ fontWeight: 600, marginBottom: 0 }}>
-                                {editingDoctor ? `Edit dr. ${editingDoctor.name}` : 'Tambah Dokter Baru'}
-                            </h5>
-                        </div>
-                        <button onClick={() => setShowDoctorModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
-                    </div>
-                    
-                    <Form onSubmit={handleSave}>
-                        <div className="modal-body-custom">
-                            <Row className="g-3">
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Nama Dokter <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            value={form.name}
-                                            required
-                                            onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                                            placeholder="Contoh: Ahmad Fauzi"
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Spesialisasi <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            value={form.specialization}
-                                            required
-                                            onChange={e => setForm(p => ({ ...p, specialization: e.target.value }))}
-                                            placeholder="Contoh: Umum, Anak, THT"
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Biaya Konsultasi (Rp) <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            type="number"
-                                            min="0"
-                                            value={form.consultationFee}
-                                            required
-                                            onChange={e => setForm(p => ({ ...p, consultationFee: e.target.value }))}
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Kualifikasi</Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            value={form.qualification}
-                                            onChange={e => setForm(p => ({ ...p, qualification: e.target.value }))}
-                                            placeholder="Contoh: dr., Sp.A, M.Kes"
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Pengalaman (tahun)</Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            type="number"
-                                            min="0"
-                                            value={form.experience}
-                                            onChange={e => setForm(p => ({ ...p, experience: e.target.value }))}
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={12}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Bio / Deskripsi</Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            as="textarea"
-                                            rows={2}
-                                            value={form.bio}
-                                            onChange={e => setForm(p => ({ ...p, bio: e.target.value }))}
-                                            placeholder="Deskripsi singkat dokter..."
-                                        />
-                                    </Form.Group>
-                                </Col>
+            {/* ═══ Modal Tambah/Edit Dokter ═══════════════════════════════════ */}
+            <Modal show={showDoctorModal} onHide={() => setShowDoctorModal(false)} size="lg">
+                <Modal.Header closeButton>
+                    <Modal.Title>
+                        <FaUserMd className="me-2 text-primary" />
+                        {editingDoctor ? `Edit dr. ${editingDoctor.name}` : 'Tambah Dokter Baru'}
+                    </Modal.Title>
+                </Modal.Header>
+                <Form onSubmit={handleSave}>
+                    <Modal.Body>
+                        <Row className="g-3">
 
-                                {/* Akun Login - hanya untuk tambah baru */}
-                                {!editingDoctor && (
-                                    <>
-                                        <Col md={12}>
-                                            <hr style={{ margin: '8px 0', borderColor: '#e2e8f0' }} />
-                                            <p style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', marginBottom: 12 }}>
-                                                <FaEnvelope style={{ marginRight: 6 }} /> Akun Login Dokter
-                                            </p>
-                                        </Col>
-                                        <Col md={6}>
-                                            <Form.Group>
-                                                <Form.Label className="form-label-custom">Email <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                                <Form.Control
-                                                    className="form-control-custom"
-                                                    type="email"
-                                                    value={form.email}
-                                                    required
-                                                    onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                                                    placeholder="email@klinik.com"
-                                                />
-                                            </Form.Group>
-                                        </Col>
-                                        <Col md={6}>
-                                            <Form.Group>
-                                                <Form.Label className="form-label-custom">Password <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                                <Form.Control
-                                                    className="form-control-custom"
-                                                    type="password"
-                                                    value={form.password}
-                                                    required
-                                                    minLength={6}
-                                                    onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                                                    placeholder="Min. 6 karakter"
-                                                />
-                                            </Form.Group>
-                                        </Col>
-                                        <Col md={6}>
-                                            <Form.Group>
-                                                <Form.Label className="form-label-custom">No. Telepon</Form.Label>
-                                                <Form.Control
-                                                    className="form-control-custom"
-                                                    value={form.phone}
-                                                    onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                                                    placeholder="08xxxxxxxxxx"
-                                                />
-                                            </Form.Group>
-                                        </Col>
-                                        <Col md={12}>
-                                            <Alert variant="info" style={{ fontSize: 13, borderRadius: 8, padding: '12px 16px', background: '#dbeafe', border: 'none', color: '#1e40af' }}>
-                                                <FaInfoCircle style={{ marginRight: 8 }} />
-                                                Akun login akan dibuat otomatis. Dokter dapat login menggunakan email dan password di atas.
-                                            </Alert>
-                                        </Col>
-                                    </>
+                            {/* ── Bagian Foto ── */}
+                            <Col md={12}>
+                                <Form.Label className="fw-semibold small d-block">
+                                    <FaCamera className="me-1 text-muted" /> Foto Dokter
+                                </Form.Label>
+                                <div className="d-flex align-items-center gap-3">
+                                    {/* Preview foto */}
+                                    <div style={{
+                                        width: 80, height: 80, borderRadius: '50%',
+                                        overflow: 'hidden', border: '2px dashed #dee2e6',
+                                        background: '#f8f9fa', flexShrink: 0,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        {photoPreview ? (
+                                            <img src={photoPreview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <FaUserMd size={28} color="#adb5bd" />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <input
+                                            ref={photoInputRef}
+                                            type="file"
+                                            accept="image/jpeg,image/jpg,image/png,image/webp"
+                                            style={{ display: 'none' }}
+                                            onChange={handlePhotoChange}
+                                        />
+                                        <Button
+                                            variant="outline-secondary"
+                                            size="sm"
+                                            onClick={() => photoInputRef.current.click()}
+                                        >
+                                            <FaUpload className="me-1" />
+                                            {photoPreview ? 'Ganti Foto' : 'Pilih Foto'}
+                                        </Button>
+                                        {photoFile && (
+                                            <Button variant="link" size="sm" className="text-danger ms-1 p-0"
+                                                onClick={() => { setPhotoFile(null); setPhotoPreview(editingDoctor?.photo ? `${API_URL}${editingDoctor.photo}` : null); }}>
+                                                Hapus
+                                            </Button>
+                                        )}
+                                        <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>
+                                            JPG, PNG, WebP · Maks. 3MB
+                                        </div>
+                                    </div>
+                                </div>
+                            </Col>
+
+                            <Col md={12}><hr className="my-1" /></Col>
+
+                            {/* ── Data Dokter ── */}
+                            <Col md={6}>
+                                <Form.Group>
+                                    <Form.Label className="fw-semibold small">Nama Dokter <span className="text-danger">*</span></Form.Label>
+                                    <Form.Control value={form.name} required
+                                        onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                                        placeholder="Contoh: Ahmad Fauzi" />
+                                </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Group>
+                                    <Form.Label className="fw-semibold small">Spesialisasi <span className="text-danger">*</span></Form.Label>
+                                    <Form.Control value={form.specialization} required
+                                        onChange={e => setForm(p => ({ ...p, specialization: e.target.value }))}
+                                        placeholder="Contoh: Umum, Anak, THT" />
+                                </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Group>
+                                    <Form.Label className="fw-semibold small">Biaya Konsultasi (Rp) <span className="text-danger">*</span></Form.Label>
+                                    <Form.Control type="number" min="0" value={form.consultationFee} required
+                                        onChange={e => setForm(p => ({ ...p, consultationFee: e.target.value }))} />
+                                </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Group>
+                                    <Form.Label className="fw-semibold small">Kualifikasi</Form.Label>
+                                    <Form.Control value={form.qualification}
+                                        onChange={e => setForm(p => ({ ...p, qualification: e.target.value }))}
+                                        placeholder="Contoh: dr., Sp.A, M.Kes" />
+                                </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Group>
+                                    <Form.Label className="fw-semibold small">Pengalaman (tahun)</Form.Label>
+                                    <Form.Control type="number" min="0" value={form.experience}
+                                        onChange={e => setForm(p => ({ ...p, experience: e.target.value }))} />
+                                </Form.Group>
+                            </Col>
+                            <Col md={12}>
+                                <Form.Group>
+                                    <Form.Label className="fw-semibold small">Bio / Deskripsi</Form.Label>
+                                    <Form.Control as="textarea" rows={2} value={form.bio}
+                                        onChange={e => setForm(p => ({ ...p, bio: e.target.value }))}
+                                        placeholder="Deskripsi singkat dokter..." />
+                                </Form.Group>
+                            </Col>
+
+                            {/* ── Consultation Settings ── */}
+                            <Col md={12}><hr className="my-1" /></Col>
+                            <Col md={12}>
+                                <Form.Label className="fw-semibold small d-block mb-2">
+                                    ⚙️ Fitur Konsultasi yang Tersedia
+                                </Form.Label>
+                                <div className="d-flex gap-4 flex-wrap">
+                                    {[
+                                        { key: 'allowChat',       icon: '💬', label: 'Chat' },
+                                        { key: 'allowVoiceCall',  icon: '📞', label: 'Voice Call' },
+                                        { key: 'allowVideoCall',  icon: '📹', label: 'Video Call' },
+                                    ].map(opt => (
+                                        <Form.Check
+                                            key={opt.key}
+                                            type="switch"
+                                            id={`setting-${opt.key}`}
+                                            label={<span>{opt.icon} {opt.label}</span>}
+                                            checked={settings[opt.key]}
+                                            onChange={e => setSettings(s => ({ ...s, [opt.key]: e.target.checked }))}
+                                        />
+                                    ))}
+                                </div>
+                                {!settings.allowChat && !settings.allowVoiceCall && !settings.allowVideoCall && (
+                                    <div className="text-danger small mt-1">⚠️ Minimal satu fitur harus diaktifkan</div>
                                 )}
-                            </Row>
-                        </div>
-                        <div className="modal-footer-custom">
-                            <button type="button" className="btn-custom" onClick={() => setShowDoctorModal(false)}>
-                                Batal
-                            </button>
-                            <button type="submit" className="btn-custom btn-custom-primary" disabled={processing}>
-                                {processing ? 'Menyimpan...' : (editingDoctor ? 'Simpan Perubahan' : 'Tambah Dokter')}
-                            </button>
-                        </div>
-                    </Form>
-                </Modal>
+                            </Col>
 
-                {/* Modal Link User ke Dokter */}
-                <Modal show={showLinkModal} onHide={() => setShowLinkModal(false)} centered dialogClassName="modal-custom">
-                    <div className="modal-header-custom">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 40, height: 40, background: '#fef3c7', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b45309' }}>
-                                <FaLink size={20} />
-                            </div>
-                            <h5 style={{ fontWeight: 600, marginBottom: 0 }}>Hubungkan Dokter ke Akun User</h5>
-                        </div>
-                        <button onClick={() => setShowLinkModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
+                            {/* Akun Login - hanya untuk tambah baru */}
+                            {!editingDoctor && (
+                                <>
+                                    <Col md={12}><hr className="my-1" /><p className="fw-semibold small text-primary mb-0">Akun Login Dokter</p></Col>
+                                    <Col md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="fw-semibold small">Email <span className="text-danger">*</span></Form.Label>
+                                            <Form.Control type="email" value={form.email} required
+                                                onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                                                placeholder="email@klinik.com" />
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="fw-semibold small">Password <span className="text-danger">*</span></Form.Label>
+                                            <Form.Control type="password" value={form.password} required minLength={6}
+                                                onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                                                placeholder="Min. 6 karakter" />
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="fw-semibold small">No. Telepon</Form.Label>
+                                            <Form.Control value={form.phone}
+                                                onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
+                                                placeholder="08xxxxxxxxxx" />
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={12}>
+                                        <Alert variant="info" className="small py-2 mb-0">
+                                            Akun login akan dibuat otomatis. Dokter dapat login menggunakan email dan password di atas.
+                                        </Alert>
+                                    </Col>
+                                </>
+                            )}
+                        </Row>
+                    </Modal.Body>
+                    <Modal.Footer>
+                        <Button variant="secondary" onClick={() => setShowDoctorModal(false)}>Batal</Button>
+                        <Button type="submit" variant="primary" disabled={processing || uploadingPhoto || (!settings.allowChat && !settings.allowVoiceCall && !settings.allowVideoCall)}>
+                            {(processing || uploadingPhoto) ? <><Spinner size="sm" className="me-1" />Menyimpan...</> : editingDoctor ? 'Simpan Perubahan' : 'Tambah Dokter'}
+                        </Button>
+                    </Modal.Footer>
+                </Form>
+            </Modal>
+
+            {/* ═══ Modal Ganti Foto (dari tombol kamera di tabel) ═════════════ */}
+            <Modal show={showPhotoModal} onHide={() => setShowPhotoModal(false)} centered>
+                <Modal.Header closeButton>
+                    <Modal.Title><FaCamera className="me-2 text-info" />Foto Dokter — dr. {photoDoctor?.name}</Modal.Title>
+                </Modal.Header>
+                <Modal.Body className="text-center">
+                    {/* Preview */}
+                    <div style={{
+                        width: 120, height: 120, borderRadius: '50%', overflow: 'hidden',
+                        border: '3px solid #dee2e6', background: '#f8f9fa',
+                        margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        {photoPreviewModal ? (
+                            <img src={photoPreviewModal} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                            <FaUserMd size={44} color="#adb5bd" />
+                        )}
                     </div>
-                    
-                    <div className="modal-body-custom">
-                        <Alert variant="warning" style={{ fontSize: 13, borderRadius: 8, padding: '12px 16px', background: '#fef3c7', border: 'none', color: '#b45309', marginBottom: 16 }}>
-                            <FaExclamationTriangle style={{ marginRight: 8 }} />
-                            Dokter <strong>dr. {linkDoctor?.name}</strong> belum memiliki akun login.
-                            Hubungkan ke akun user yang sudah ada, atau buat akun baru melalui menu Tambah Dokter.
-                        </Alert>
-                        
-                        <Form.Group>
-                            <Form.Label className="form-label-custom">Pilih Akun User (role: doctor)</Form.Label>
-                            <select 
-                                className="form-control-custom"
-                                value={linkUserId} 
-                                onChange={e => setLinkUserId(e.target.value)}
-                                style={{ width: '100%' }}
-                            >
-                                <option value="">-- Pilih User --</option>
-                                {users.map(u => (
-                                    <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                                ))}
-                            </select>
-                            <Form.Text style={{ fontSize: 12, color: '#64748b', marginTop: 6, display: 'block' }}>
-                                Hanya menampilkan user dengan role 'doctor'. Jika tidak ada, buat dokter baru dengan email/password.
-                            </Form.Text>
-                        </Form.Group>
-                    </div>
-                    
-                    <div className="modal-footer-custom">
-                        <button type="button" className="btn-custom" onClick={() => setShowLinkModal(false)}>
-                            Batal
-                        </button>
-                        <button 
-                            type="button" 
-                            className="btn-custom" 
-                            style={{ background: '#b45309', color: 'white', border: 'none' }}
-                            disabled={processing || !linkUserId} 
-                            onClick={handleLinkUser}
-                        >
-                            {processing ? 'Menghubungkan...' : 'Hubungkan Sekarang'}
-                        </button>
-                    </div>
-                </Modal>
-            </Container>
-        </div>
+
+                    <input
+                        ref={photoInputModalRef}
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={handlePhotoModalChange}
+                    />
+                    <Button variant="outline-secondary" onClick={() => photoInputModalRef.current.click()}>
+                        <FaUpload className="me-1" />
+                        {photoPreviewModal ? 'Ganti Foto' : 'Pilih Foto'}
+                    </Button>
+                    <div className="text-muted mt-2" style={{ fontSize: '0.8rem' }}>JPG, PNG, WebP · Maks. 3MB</div>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowPhotoModal(false)}>Batal</Button>
+                    <Button variant="primary" disabled={!photoFileModal || uploadingPhoto} onClick={handleSavePhoto}>
+                        {uploadingPhoto ? <><Spinner size="sm" className="me-1" />Mengupload...</> : 'Simpan Foto'}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* ═══ Modal Hubungkan Dokter ke User ═════════════════════════════ */}
+            <Modal show={showLinkModal} onHide={() => setShowLinkModal(false)}>
+                <Modal.Header closeButton>
+                    <Modal.Title><FaLink className="me-2 text-warning" />Hubungkan Dokter ke Akun User</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Alert variant="warning" className="small">
+                        Dokter <strong>dr. {linkDoctor?.name}</strong> belum memiliki akun login.
+                    </Alert>
+                    <Form.Group>
+                        <Form.Label className="fw-semibold">Pilih Akun User (role: doctor)</Form.Label>
+                        <Form.Select value={linkUserId} onChange={e => setLinkUserId(e.target.value)}>
+                            <option value="">-- Pilih User --</option>
+                            {users.map(u => (
+                                <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
+                            ))}
+                        </Form.Select>
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowLinkModal(false)}>Batal</Button>
+                    <Button variant="warning" disabled={processing || !linkUserId} onClick={handleLinkUser}>
+                        {processing ? 'Menghubungkan...' : 'Hubungkan Sekarang'}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+        </Container>
     );
 };
 

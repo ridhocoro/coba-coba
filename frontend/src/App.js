@@ -36,6 +36,7 @@ import DoctorConsultations from './pages/doctor/Consultations';
 // Role-specific Home Pages
 import AdminHome from './pages/Admin/Home';
 import DoctorHome from './pages/doctor/Home';
+import DoctorSettings from './pages/doctor/Settings';
 
 // Admin Pages
 import AdminDashboard from './pages/Admin/index';
@@ -45,6 +46,7 @@ import ManageUsers from './pages/Admin/ManageUsers';
 import ManageConsultations from './pages/Admin/ManageConsultations';
 import ManageAppointments from './pages/Admin/ManageAppointments';
 import ManagePharmacy from './pages/Admin/ManagePharmacy';
+import AdminManualPayment from './pages/Admin/ManualPayment';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -146,6 +148,11 @@ function AppContent() {
                             <DoctorDashboard />
                         </ProtectedRoute>
                     } />
+                    <Route path="/doctor/settings" element={
+                        <ProtectedRoute allowedRoles={['doctor']}>
+                            <DoctorSettings />
+                        </ProtectedRoute>
+                    } />
                     <Route path="/doctor/sick-letters" element={
                         <ProtectedRoute allowedRoles={['doctor']}>
                             <DoctorSickLetters />
@@ -201,6 +208,11 @@ function AppContent() {
                     <Route path="/admin/pharmacy" element={
                         <ProtectedRoute allowedRoles={['admin']}>
                             <ManagePharmacy />
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/admin/manual-payments" element={
+                        <ProtectedRoute allowedRoles={['admin']}>
+                            <AdminManualPayment />
                         </ProtectedRoute>
                     } />
 

@@ -27,7 +27,10 @@ export const NotificationProvider = ({ children }) => {
 
     useEffect(() => {
         if (!user) return;
-        const newSocket = io(API_URL);
+        const newSocket = io(API_URL, {
+            auth: { token: localStorage.getItem('token') },
+            query: { userId: user.id }
+        });
         setSocket(newSocket);
         newSocket.emit('join-user', user.id);
 

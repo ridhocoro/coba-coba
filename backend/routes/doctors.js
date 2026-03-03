@@ -80,7 +80,7 @@ router.post('/admin/link-user', auth, async (req, res) => {
 router.get('/', async (req, res) => {
     try {
         const doctors = await Doctor.find({ isActive: true })
-            .select('name specialization consultationFee rating availableDays photo bio isOnline');
+            .select('name specialization consultationFee rating availableDays photo bio isOnline consultationSettings');
         res.json(doctors);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
@@ -166,8 +166,52 @@ router.put('/:id/schedule', auth, async (req, res) => {
 });
 
 // ADMIN: Toggle status online/offline dokter
-router.put('/:id/online-status', auth, async (req, res) => {
+// PUT update consultation settings (dokter sendiri)
+router.put('/my/settings', auth, doctorAuth, async (req, res) => {
     try {
+        const { allowChat, allowVoiceCall, allowVideoCall } = req.body;
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
+
+        // Minimal satu fitur harus aktif
+        if (!allowChat && !allowVoiceCall && !allowVideoCall) {
+            return res.status(400).json({ message: 'Minimal satu fitur konsultasi harus diaktifkan' });
+        }
+
+        doctor.consultationSettings = { allowChat, allowVoiceCall, allowVideoCall };
+        await doctor.save();
+
+        res.json({ success: true, consultationSettings: doctor.consultationSettings });
+    } catch (err) {
+        console.error('Update settings error:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// PUT update consultation settings oleh admin (target dokter tertentu via :id)
+router.put('/:id/settings', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Unauthorized' });
+        const { allowChat, allowVoiceCall, allowVideoCall } = req.body;
+
+        if (!allowChat && !allowVoiceCall && !allowVideoCall) {
+            return res.status(400).json({ message: 'Minimal satu fitur konsultasi harus diaktifkan' });
+        }
+
+        const doctor = await Doctor.findByIdAndUpdate(
+            req.params.id,
+            { $set: { consultationSettings: { allowChat, allowVoiceCall, allowVideoCall } } },
+            { new: true }
+        );
+        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+
+        res.json({ success: true, consultationSettings: doctor.consultationSettings });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+router.put('/:id/online-status', auth, async (req, res) => {    try {
         if (req.userRole !== 'admin') {
             return res.status(403).json({ message: 'Akses ditolak' });
         }

@@ -222,7 +222,10 @@ const ConsultationChat = () => {
   // Socket
   useEffect(() => {
     if (!user) return;
-    const sock = io(API_URL, { query: { userId: user.id } });
+    const sock = io(API_URL, {
+      auth: { token: localStorage.getItem('token') },
+      query: { userId: user.id }
+    });
     setSocket(sock);
     return () => sock.close();
   }, [user]);

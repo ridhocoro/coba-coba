@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const ManualPayment = require('../models/ManualPayment');
-const Payment = require('../models/Payment');
 const User = require('../models/User');
 const Consultation = require('../models/Consultation');
 const Doctor = require('../models/Doctor');
@@ -9,21 +11,45 @@ const SickLetter = require('../models/SickLetter');
 const Appointment = require('../models/Appointment');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
+const Payment = require('../models/Payment');
+
+// ─── Multer: upload foto dokter ──────────────────────────────────────────────
+const doctorPhotoDir = path.join(__dirname, '../uploads/doctors');
+if (!fs.existsSync(doctorPhotoDir)) fs.mkdirSync(doctorPhotoDir, { recursive: true });
+
+const doctorPhotoStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, doctorPhotoDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `doctor-${req.params.id}-${Date.now()}${ext}`);
+    }
+});
+
+const uploadDoctorPhoto = multer({
+    storage: doctorPhotoStorage,
+    limits: { fileSize: 3 * 1024 * 1024 }, // maks 3MB
+    fileFilter: (req, file, cb) => {
+        const allowed = /jpeg|jpg|png|webp/;
+        if (allowed.test(path.extname(file.originalname).toLowerCase()) && allowed.test(file.mimetype)) {
+            return cb(null, true);
+        }
+        cb(new Error('Hanya file gambar (jpg, png, webp) yang diperbolehkan'));
+    }
+});
 
 // ══════════════════════════════════════════════════════════════════
-// DASHBOARD STATS dengan data harian untuk grafik
+// BUG FIX: Route ini sebelumnya bernama '/stats' saja dan terdaftar
+// di dalam sub-router payments. Frontend memanggil /api/admin/stats
+// jadi route harus ada di level root router ini.
 // ══════════════════════════════════════════════════════════════════
 router.get('/stats', auth, adminAuth, async (req, res) => {
     try {
         const totalPatients = await User.countDocuments({ role: 'user' });
         const totalDoctors  = await Doctor.countDocuments({ isActive: true });
 
-        const today    = new Date(); 
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today); 
-        tomorrow.setDate(tomorrow.getDate() + 1);
+        const today    = new Date(); today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
 
-        // Data untuk hari ini
         const todayConsultations = await Consultation.countDocuments({
             createdAt: { $gte: today, $lt: tomorrow }
         });
@@ -34,56 +60,15 @@ router.get('/stats', auth, adminAuth, async (req, res) => {
         });
         const todayRevenue = todayPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-        const pendingSickLetters = await SickLetter.countDocuments({ status: 'draft' });
-
-        // ═══════════════════════════════════════════════════════════
-        // DATA HARIAN UNTUK 7 HARI TERAKHIR
-        // ═══════════════════════════════════════════════════════════
-        const dailyRevenue = {};
-        const dailyConsultations = {};
-        
-        // Loop untuk 7 hari terakhir
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-            date.setHours(0, 0, 0, 0);
-            
-            const nextDate = new Date(date);
-            nextDate.setDate(nextDate.getDate() + 1);
-            
-            const dateStr = date.toISOString().split('T')[0]; // Format YYYY-MM-DD
-            
-            // Hitung pendapatan per hari dari ManualPayment
-            const dailyPayments = await ManualPayment.find({
-                status: 'verified',
-                verifiedAt: { $gte: date, $lt: nextDate }
-            });
-            
-            dailyRevenue[dateStr] = dailyPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-            
-            // Hitung jumlah konsultasi per hari
-            dailyConsultations[dateStr] = await Consultation.countDocuments({
-                createdAt: { $gte: date, $lt: nextDate }
-            });
-        }
-
-        // Data tambahan untuk statistik lainnya
-        const pendingPayments = await ManualPayment.countDocuments({ status: 'pending' });
-        const totalRevenue = await ManualPayment.aggregate([
-            { $match: { status: 'verified' } },
-            { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]);
+        // ✅ FIX: enum SickLetter hanya 'draft' | 'issued', tidak ada 'pending'
+        const pendingSickLetters = await SickLetter.countDocuments({ status: 'draft' }); // 'draft' = belum diterbitkan
 
         res.json({
             totalPatients,
             totalDoctors,
             todayConsultations,
             todayRevenue,
-            pendingSickLetters,
-            pendingPayments,
-            totalRevenue: totalRevenue[0]?.total || 0,
-            dailyRevenue,        // Object dengan format { "2026-03-03": 500000, ... }
-            dailyConsultations   // Object dengan format { "2026-03-03": 5, ... }
+            pendingSickLetters
         });
     } catch (error) {
         console.error('Error fetching stats:', error);
@@ -92,7 +77,7 @@ router.get('/stats', auth, adminAuth, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// PAYMENT ROUTES
+// PAYMENT ROUTES — urutan penting: spesifik dulu, :id belakangan
 // ══════════════════════════════════════════════════════════════════
 
 // GET pembayaran pending
@@ -160,6 +145,7 @@ router.get('/payments/stats', auth, adminAuth, async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching payment stats:', error);
+        // Kembalikan nilai default agar frontend tidak crash
         res.json({
             success: true,
             stats: { pending: 0, verified: 0, rejected: 0, totalVerified: 0, totalAmount: 0 }
@@ -177,7 +163,7 @@ router.get('/payments/pending-count', auth, adminAuth, async (req, res) => {
     }
 });
 
-// GET detail satu pembayaran
+// GET detail satu pembayaran — letakkan PALING BAWAH dari GET /payments/...
 router.get('/payments/:id', auth, adminAuth, async (req, res) => {
     try {
         const payment = await ManualPayment.findById(req.params.id)
@@ -211,6 +197,7 @@ router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
         // Update status konsultasi / order setelah verified
         if (status === 'verified') {
             if (payment.paymentType === 'consultation') {
+                // Cek scheduleType untuk tentukan status berikutnya
                 const consultation = await Consultation.findById(payment.referenceId);
                 if (consultation) {
                     consultation.paymentVerified = true;
@@ -223,6 +210,12 @@ router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
                     }
                     await consultation.save();
                 }
+            }
+            if (payment.paymentType === 'medicine') {
+                const Order = require('../models/Order');
+                await Order.findByIdAndUpdate(payment.referenceId, {
+                    status: 'processing', paymentVerified: true
+                });
             }
         }
 
@@ -313,9 +306,33 @@ router.put('/doctors/:id', auth, adminAuth, async (req, res) => {
     }
 });
 
-// PUT toggle aktif/nonaktif dokter
+// PUT toggle aktif/nonaktif dokter (lebih aman dari DELETE)
 router.put('/doctors/:id/toggle-status', auth, adminAuth, async (req, res) => {
+
+// POST upload foto dokter
+router.post('/doctors/:id/photo', auth, adminAuth, uploadDoctorPhoto.single('photo'), async (req, res) => {
     try {
+        if (!req.file) return res.status(400).json({ error: 'File foto diperlukan' });
+
+        const doctor = await Doctor.findById(req.params.id);
+        if (!doctor) return res.status(404).json({ error: 'Dokter tidak ditemukan' });
+
+        // Hapus foto lama jika ada
+        if (doctor.photo) {
+            const oldPath = path.join(__dirname, '..', doctor.photo);
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        }
+
+        const photoUrl = `/uploads/doctors/${req.file.filename}`;
+        doctor.photo = photoUrl;
+        await doctor.save();
+
+        res.json({ success: true, photo: photoUrl });
+    } catch (error) {
+        console.error('Upload photo error:', error);
+        res.status(500).json({ error: error.message || 'Server error' });
+    }
+});    try {
         const doctor = await Doctor.findById(req.params.id);
         if (!doctor) return res.status(404).json({ error: 'Dokter tidak ditemukan' });
 
@@ -333,7 +350,7 @@ router.put('/doctors/:id/toggle-status', auth, adminAuth, async (req, res) => {
     }
 });
 
-// DELETE hapus dokter permanen
+// DELETE hapus dokter permanen (beserta akun user)
 router.delete('/doctors/:id', auth, adminAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findById(req.params.id);
@@ -381,6 +398,8 @@ router.put('/consultations/:id/end', auth, adminAuth, async (req, res) => {
 
 router.get('/sick-letters', auth, adminAuth, async (req, res) => {
     try {
+        // ✅ FIX: hapus populate paymentId (tidak ada di SickLetter schema)
+        // enum status hanya 'draft' | 'issued'
         const sickLetters = await SickLetter.find({})
             .populate('userId', 'name email')
             .populate('doctorId', 'name')
@@ -395,6 +414,9 @@ router.get('/sick-letters', auth, adminAuth, async (req, res) => {
 
 router.put('/sick-letters/:id/approve', auth, adminAuth, async (req, res) => {
     try {
+        // ✅ FIX 1: status 'approved' tidak ada di enum — nilai valid: 'draft' | 'issued'
+        // ✅ FIX 2: pakai findByIdAndUpdate (bukan .save()) agar tidak
+        //           trigger validasi required field lain (consultationId, dll)
         const sickLetter = await SickLetter.findByIdAndUpdate(
             req.params.id,
             { status: 'issued', issuedAt: new Date() },
@@ -410,6 +432,7 @@ router.put('/sick-letters/:id/approve', auth, adminAuth, async (req, res) => {
 
 router.get('/appointments', auth, adminAuth, async (req, res) => {
     try {
+        // ✅ FIX: hapus populate paymentId — pastikan field ini ada di model Appointment kamu
         const appointments = await Appointment.find({})
             .populate('userId', 'name email phone')
             .populate('doctorId', 'name specialization')

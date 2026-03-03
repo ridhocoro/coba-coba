@@ -13,7 +13,7 @@ const messageSchema = new mongoose.Schema({
 const consultationSchema = new mongoose.Schema({
     userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User',   required: true },
     doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
-    paymentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' },
+    paymentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'ManualPayment' },
     sickLetter: { type: mongoose.Schema.Types.ObjectId, ref: 'SickLetter' },
 
     // Tipe konsultasi

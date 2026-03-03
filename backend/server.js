@@ -53,7 +53,10 @@ app.use('/api/notifications', require('./routes/notifications'));
 require('./socket/chat')(io);
 
 // Cron: expired consultation checker (setiap 1 menit)
-require('./utils/expiredConsultationCron').startCron(io);
+require('./utils/Expiredconsultationcron').startCron(io);
+
+// Cron: expired order checker (setiap 1 menit)
+require('./utils/ExpiredOrderCron').startCron();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

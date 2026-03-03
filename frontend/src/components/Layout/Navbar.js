@@ -84,6 +84,9 @@ const Navigation = () => {
                                     <Badge bg="danger" className="ms-1">{unreadCount}</Badge>
                                 )}
                             </Nav.Link>
+                            <Nav.Link as={Link} to="/doctor/settings">
+                                <FaCog className="me-1" /> Pengaturan
+                            </Nav.Link>
                         </Nav>
                     )}
 

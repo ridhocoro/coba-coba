@@ -27,7 +27,17 @@ import {
     FaCopy,
     FaHistory,
     FaArrowRight,
-    FaExclamationTriangle
+    FaExclamationTriangle,
+    FaTimes,
+    FaChevronLeft,
+    FaChevronRight,
+    FaStar,
+    FaMapMarkerAlt,
+    FaPhone,
+    FaUser,
+    FaCreditCard,
+    FaUniversity,
+    FaImage
 } from 'react-icons/fa';
 
 const Pharmacy = () => {
@@ -392,20 +402,27 @@ const Pharmacy = () => {
 
     const getStatusBadge = (status) => {
         const variants = {
-            awaiting_payment: { bg: '#fff3cd', text: '#856404', icon: FaClock, label: 'Menunggu Bayar' },
-            paid: { bg: '#cce5ff', text: '#004085', icon: FaCheckCircle, label: 'Lunas' },
-            processing: { bg: '#d4edda', text: '#155724', icon: FaBox, label: 'Diproses' },
-            shipped: { bg: '#d4edda', text: '#155724', icon: FaTruck, label: 'Dikirim' },
-            delivered: { bg: '#d4edda', text: '#155724', icon: FaCheckCircle, label: 'Diterima ✓' },
-            expired: { bg: '#f8d7da', text: '#721c24', icon: FaExclamationTriangle, label: 'Kadaluarsa' },
-            cancelled: { bg: '#f8d7da', text: '#721c24', icon: FaTrash, label: 'Dibatalkan' }
+            awaiting_payment: { bg: '#fef3c7', color: '#b45309', icon: FaClock, label: 'Menunggu Bayar' },
+            paid: { bg: '#dbeafe', color: '#1e40af', icon: FaCheckCircle, label: 'Lunas' },
+            processing: { bg: '#dcfce7', color: '#166534', icon: FaBox, label: 'Diproses' },
+            shipped: { bg: '#ede9fe', color: '#6d28d9', icon: FaTruck, label: 'Dikirim' },
+            delivered: { bg: '#dcfce7', color: '#166534', icon: FaCheckCircle, label: 'Diterima' },
+            expired: { bg: '#fee2e2', color: '#b91c1c', icon: FaExclamationTriangle, label: 'Kadaluarsa' },
+            cancelled: { bg: '#f1f5f9', color: '#475569', icon: FaTrash, label: 'Dibatalkan' }
         };
         const v = variants[status] || variants.awaiting_payment;
         return (
-            <span 
-                className="d-inline-flex align-items-center gap-1 px-3 py-1 rounded-pill small fw-medium"
-                style={{ backgroundColor: v.bg, color: v.text }}
-            >
+            <span style={{
+                background: v.bg,
+                color: v.color,
+                padding: '4px 12px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: 500,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+            }}>
                 <v.icon size={12} />
                 {v.label}
             </span>
@@ -413,220 +430,504 @@ const Pharmacy = () => {
     };
 
     return (
-        <div className="pharmacy-page bg-light min-vh-100 py-5">
-            <Container>
+        <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", padding: '24px' }}>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+            
+            <style>{`
+                .page-header {
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 24px;
+                    gap: 16px;
+                }
+                .header-icon {
+                    width: 52px;
+                    height: 52px;
+                    background: #dcfce7;
+                    border-radius: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #16a34a;
+                }
+                .header-title h1 {
+                    font-size: 24px;
+                    font-weight: 600;
+                    color: #0f172a;
+                    margin-bottom: 4px;
+                }
+                .header-title p {
+                    font-size: 14px;
+                    color: #64748b;
+                    margin-bottom: 0;
+                }
+                .tab-container {
+                    display: flex;
+                    gap: 8px;
+                    margin-bottom: 24px;
+                    background: #ffffff;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    padding: 4px;
+                }
+                .tab-button {
+                    padding: 10px 20px;
+                    border-radius: 10px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    border: none;
+                    background: transparent;
+                    color: #64748b;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex: 1;
+                    justify-content: center;
+                }
+                .tab-button:hover {
+                    background: #f1f5f9;
+                    color: #0f172a;
+                }
+                .tab-button.active {
+                    background: #2563eb;
+                    color: white;
+                }
+                .search-container {
+                    position: relative;
+                    flex: 1;
+                }
+                .search-icon {
+                    position: absolute;
+                    left: 14px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    color: #94a3b8;
+                    font-size: 14px;
+                }
+                .search-input {
+                    width: 100%;
+                    padding: 12px 16px 12px 45px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    font-size: 14px;
+                    background: #ffffff;
+                }
+                .search-input:focus {
+                    outline: none;
+                    border-color: #2563eb;
+                    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+                }
+                .filter-select {
+                    padding: 12px 16px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    font-size: 14px;
+                    background: #ffffff;
+                    width: 100%;
+                }
+                .filter-select:focus {
+                    outline: none;
+                    border-color: #2563eb;
+                    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+                }
+                .cart-button {
+                    background: #2563eb;
+                    border: none;
+                    border-radius: 12px;
+                    padding: 12px 20px;
+                    color: white;
+                    font-weight: 500;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    height: 100%;
+                }
+                .cart-button:hover {
+                    background: #1d4ed8;
+                }
+                .cart-badge {
+                    position: absolute;
+                    top: -5px;
+                    right: -5px;
+                    background: #b91c1c;
+                    color: white;
+                    border-radius: 20px;
+                    padding: 2px 6px;
+                    font-size: 10px;
+                    font-weight: 600;
+                }
+                .product-card {
+                    background: #ffffff;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 16px;
+                    overflow: hidden;
+                    transition: all 0.2s ease;
+                    cursor: pointer;
+                    height: 100%;
+                }
+                .product-card:hover {
+                    transform: translateY(-4px);
+                    box-shadow: 0 12px 24px -8px rgba(0,0,0,0.1);
+                }
+                .product-image {
+                    height: 180px;
+                    object-fit: cover;
+                    width: 100%;
+                    background: #f8fafc;
+                }
+                .product-badge {
+                    padding: 4px 10px;
+                    border-radius: 20px;
+                    font-size: 11px;
+                    font-weight: 500;
+                }
+                .modal-custom .modal-content {
+                    border-radius: 20px;
+                    border: none;
+                    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.15);
+                }
+                .modal-header-custom {
+                    padding: 20px 24px;
+                    border-bottom: 1px solid #e2e8f0;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                .modal-body-custom {
+                    padding: 24px;
+                }
+                .modal-footer-custom {
+                    padding: 16px 24px;
+                    border-top: 1px solid #e2e8f0;
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 8px;
+                }
+                .btn-custom {
+                    padding: 12px 24px;
+                    border-radius: 12px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    border: none;
+                    transition: all 0.2s ease;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                }
+                .btn-custom-primary {
+                    background: #2563eb;
+                    color: white;
+                }
+                .btn-custom-primary:hover {
+                    background: #1d4ed8;
+                }
+                .btn-custom-success {
+                    background: #16a34a;
+                    color: white;
+                }
+                .btn-custom-success:hover {
+                    background: #15803d;
+                }
+                .btn-custom-outline {
+                    background: transparent;
+                    border: 1px solid #e2e8f0;
+                    color: #475569;
+                }
+                .btn-custom-outline:hover {
+                    background: #f1f5f9;
+                }
+                .cart-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 16px;
+                    border-bottom: 1px solid #f1f5f9;
+                }
+                .cart-item:last-child {
+                    border-bottom: none;
+                }
+                .quantity-btn {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 8px;
+                    border: 1px solid #e2e8f0;
+                    background: #ffffff;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                .quantity-btn:hover {
+                    background: #f1f5f9;
+                }
+                .order-card {
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 16px;
+                    padding: 20px;
+                    margin-bottom: 16px;
+                }
+                .payment-option {
+                    border: 2px solid #e2e8f0;
+                    border-radius: 16px;
+                    padding: 16px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                .payment-option:hover {
+                    border-color: #2563eb;
+                    background: #f8fafc;
+                }
+                .payment-option.selected {
+                    border-color: #2563eb;
+                    background: #eff6ff;
+                }
+                .qris-image {
+                    width: 160px;
+                    height: 160px;
+                    object-fit: contain;
+                    margin: 0 auto 16px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 16px;
+                    padding: 8px;
+                }
+                .orders-list {
+                    max-height: 500px;
+                    overflow-y: auto;
+                    padding-right: 8px;
+                }
+                .orders-list::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .orders-list::-webkit-scrollbar-track {
+                    background: #f1f5f9;
+                    border-radius: 10px;
+                }
+                .orders-list::-webkit-scrollbar-thumb {
+                    background: #cbd5e1;
+                    border-radius: 10px;
+                }
+            `}</style>
+
+            <Container fluid style={{ maxWidth: 1200, margin: '0 auto' }}>
                 {/* Header */}
-                <Row className="mb-4">
-                    <Col>
-                        <div className="d-flex align-items-center">
-                            <div className="bg-primary bg-opacity-10 rounded-3 p-3 me-3">
-                                <FaPrescriptionBottle size={24} className="text-primary" />
-                            </div>
-                            <div>
-                                <h4 className="fw-bold mb-1">Farmasi Online</h4>
-                                <p className="text-secondary mb-0">Beli obat dengan mudah, aman, dan terpercaya</p>
-                            </div>
-                        </div>
-                    </Col>
-                </Row>
+                <div className="page-header">
+                    <div className="header-icon">
+                        <FaPrescriptionBottle size={24} />
+                    </div>
+                    <div className="header-title">
+                        <h1>Farmasi Online</h1>
+                        <p>Beli obat dengan mudah, aman, dan terpercaya</p>
+                    </div>
+                </div>
 
                 {/* Tabs */}
-                <Card className="border-0 shadow-sm mb-4">
-                    <Card.Body className="p-3">
-                        <div className="d-flex gap-2">
-                            <Button
-                                variant={activeTab === 'shop' ? 'primary' : 'light'}
-                                onClick={() => setActiveTab('shop')}
-                                className="rounded-pill px-4"
-                                size="sm"
-                            >
-                                <FaSearch className="me-2" />
-                                Belanja
-                            </Button>
-                            <Button
-                                variant={activeTab === 'orders' ? 'primary' : 'light'}
-                                onClick={() => setActiveTab('orders')}
-                                className="rounded-pill px-4"
-                                size="sm"
-                            >
-                                <FaHistory className="me-2" />
-                                Pesanan Saya
-                            </Button>
-                        </div>
-                    </Card.Body>
-                </Card>
+                <div className="tab-container">
+                    <button
+                        className={`tab-button ${activeTab === 'shop' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('shop')}
+                    >
+                        <FaSearch /> Belanja
+                    </button>
+                    <button
+                        className={`tab-button ${activeTab === 'orders' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('orders')}
+                    >
+                        <FaHistory /> Pesanan Saya
+                    </button>
+                </div>
 
                 {/* SHOP TAB */}
                 {activeTab === 'shop' && (
                     <>
                         {/* Search and Filter */}
-                        <Row className="mb-4 g-3">
+                        <Row className="g-3 mb-4">
                             <Col md={6}>
-                                <InputGroup className="shadow-sm">
-                                    <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '10px 0 0 10px' }}>
-                                        <FaSearch className="text-secondary" size={14} />
-                                    </InputGroup.Text>
-                                    <Form.Control
+                                <div className="search-container">
+                                    <FaSearch className="search-icon" />
+                                    <input
+                                        type="text"
+                                        className="search-input"
                                         placeholder="Cari obat, vitamin, atau suplemen..."
                                         value={searchTerm}
                                         onChange={(e) => {
                                             setSearchTerm(e.target.value);
                                             setCurrentPage(1);
                                         }}
-                                        className="border-start-0 bg-white"
-                                        style={{ borderRadius: '0 10px 10px 0' }}
                                     />
-                                </InputGroup>
+                                </div>
                             </Col>
                             <Col md={4}>
-                                <InputGroup className="shadow-sm">
-                                    <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '10px 0 0 10px' }}>
-                                        <FaFilter className="text-secondary" size={14} />
-                                    </InputGroup.Text>
-                                    <Form.Select
-                                        value={selectedCategory}
-                                        onChange={(e) => {
-                                            setSelectedCategory(e.target.value);
-                                            setCurrentPage(1);
-                                        }}
-                                        className="border-start-0 bg-white"
-                                        style={{ borderRadius: '0 10px 10px 0' }}
-                                    >
-                                        {categories.map(cat => (
-                                            <option key={cat.value} value={cat.value}>
-                                                {cat.label}
-                                            </option>
-                                        ))}
-                                    </Form.Select>
-                                </InputGroup>
+                                <select
+                                    className="filter-select"
+                                    value={selectedCategory}
+                                    onChange={(e) => {
+                                        setSelectedCategory(e.target.value);
+                                        setCurrentPage(1);
+                                    }}
+                                >
+                                    {categories.map(cat => (
+                                        <option key={cat.value} value={cat.value}>
+                                            {cat.label}
+                                        </option>
+                                    ))}
+                                </select>
                             </Col>
                             <Col md={2}>
-                                <Button 
-                                    variant="primary"
-                                    className="position-relative w-100 h-100 d-flex align-items-center justify-content-center"
-                                    style={{ borderRadius: '10px' }}
-                                    onClick={() => setShowCart(true)}
-                                >
-                                    <FaShoppingCart size={18} />
-                                    {cart.length > 0 && (
-                                        <Badge 
-                                            bg="danger" 
-                                            className="position-absolute top-0 start-100 translate-middle rounded-pill"
-                                            style={{ fontSize: '10px' }}
-                                        >
-                                            {cart.length}
-                                        </Badge>
-                                    )}
-                                </Button>
+                                <div style={{ position: 'relative', height: '100%' }}>
+                                    <button className="cart-button" onClick={() => setShowCart(true)}>
+                                        <FaShoppingCart />
+                                        <span>Keranjang</span>
+                                        {cart.length > 0 && (
+                                            <span className="cart-badge">{cart.length}</span>
+                                        )}
+                                    </button>
+                                </div>
                             </Col>
                         </Row>
 
                         {/* Medicine Grid */}
                         {loading ? (
-                            <div className="text-center py-5">
+                            <div style={{ textAlign: 'center', padding: '60px' }}>
                                 <Spinner animation="border" variant="primary" />
                             </div>
                         ) : medicines.length === 0 ? (
-                            <div className="text-center py-5">
-                                <div className="bg-light rounded-circle d-inline-flex p-4 mb-3">
-                                    <FaPrescriptionBottle size={40} className="text-secondary" />
+                            <div style={{ textAlign: 'center', padding: '60px' }}>
+                                <div style={{ width: 80, height: 80, background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                                    <FaPrescriptionBottle size={32} style={{ color: '#94a3b8' }} />
                                 </div>
-                                <h6 className="fw-bold mb-2">Tidak Ada Obat Ditemukan</h6>
-                                <p className="text-secondary small">
-                                    Coba gunakan kata kunci atau filter yang berbeda
-                                </p>
+                                <h6 style={{ fontWeight: 600, marginBottom: 8 }}>Tidak Ada Obat Ditemukan</h6>
+                                <p style={{ color: '#64748b', fontSize: 13 }}>Coba gunakan kata kunci atau filter yang berbeda</p>
                             </div>
                         ) : (
                             <>
                                 <Row className="g-4">
                                     {medicines.map((medicine) => (
                                         <Col xl={3} lg={4} md={6} key={medicine._id}>
-                                            <Card className="h-100 border-0 shadow-sm hover-card">
-                                                <Card.Img 
-                                                    variant="top" 
-                                                    src={medicine.image || '/images/medicine-placeholder.jpg'}
-                                                    style={{ height: '180px', objectFit: 'cover' }}
-                                                    className="bg-light"
+                                            <div className="product-card">
+                                                <img 
+                                                    src={medicine.image || '/images/medicine-placeholder.jpg'} 
+                                                    alt={medicine.name}
+                                                    className="product-image"
                                                     onClick={() => {
                                                         setSelectedMedicine(medicine);
                                                         setShowDetailModal(true);
                                                     }}
-                                                    role="button"
                                                 />
-                                                <Card.Body className="p-3">
-                                                    <div className="d-flex justify-content-between align-items-start mb-2">
+                                                <div style={{ padding: '16px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                                                         <div>
-                                                            <Card.Title className="h6 fw-bold mb-1">
-                                                                {medicine.name}
-                                                            </Card.Title>
-                                                            <Card.Text className="small text-secondary mb-2">
-                                                                {medicine.genericName}
-                                                            </Card.Text>
+                                                            <h6 style={{ fontWeight: 600, marginBottom: 2, fontSize: 14 }}>{medicine.name}</h6>
+                                                            <p style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>{medicine.genericName}</p>
                                                         </div>
                                                         {medicine.prescription && (
-                                                            <Badge bg="danger" className="ms-2 small" style={{ fontSize: '10px' }}>
+                                                            <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 600 }}>
                                                                 Resep
-                                                            </Badge>
+                                                            </span>
                                                         )}
                                                     </div>
                                                     
-                                                    <div className="mb-3">
-                                                        <Badge bg="light" text="dark" className="me-1 small">
+                                                    <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+                                                        <span style={{ background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '12px', fontSize: '10px' }}>
                                                             {categories.find(c => c.value === medicine.category)?.label || medicine.category}
-                                                        </Badge>
-                                                        <Badge 
-                                                            bg={medicine.availableStock > 10 ? 'success' : medicine.availableStock > 0 ? 'warning' : 'danger'} 
-                                                            className="small"
-                                                            style={{ fontSize: '10px' }}
-                                                        >
+                                                        </span>
+                                                        <span style={{
+                                                            background: medicine.availableStock > 10 ? '#dcfce7' : medicine.availableStock > 0 ? '#fef3c7' : '#fee2e2',
+                                                            color: medicine.availableStock > 10 ? '#166534' : medicine.availableStock > 0 ? '#b45309' : '#b91c1c',
+                                                            padding: '2px 8px',
+                                                            borderRadius: '12px',
+                                                            fontSize: '10px',
+                                                            fontWeight: 500
+                                                        }}>
                                                             Stok: {medicine.availableStock || 0}
-                                                        </Badge>
+                                                        </span>
                                                     </div>
 
-                                                    <div className="d-flex justify-content-between align-items-center">
-                                                        <span className="fw-bold text-primary">
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span style={{ fontWeight: 700, color: '#2563eb', fontSize: 16 }}>
                                                             {formatCurrency(medicine.price)}
                                                         </span>
-                                                        <Button
-                                                            variant="primary"
-                                                            size="sm"
+                                                        <button
+                                                            style={{
+                                                                background: medicine.availableStock === 0 ? '#e2e8f0' : '#2563eb',
+                                                                color: medicine.availableStock === 0 ? '#94a3b8' : 'white',
+                                                                border: 'none',
+                                                                borderRadius: '30px',
+                                                                padding: '6px 16px',
+                                                                fontSize: '12px',
+                                                                fontWeight: 500,
+                                                                cursor: medicine.availableStock === 0 ? 'not-allowed' : 'pointer'
+                                                            }}
                                                             onClick={() => addToCart(medicine)}
                                                             disabled={medicine.availableStock === 0}
-                                                            className="rounded-pill px-3"
-                                                            style={{ fontSize: '12px' }}
                                                         >
-                                                            <FaPlus className="me-1" size={10} />
-                                                            Keranjang
-                                                        </Button>
+                                                            <FaPlus style={{ marginRight: 4 }} /> Keranjang
+                                                        </button>
                                                     </div>
-                                                </Card.Body>
-                                            </Card>
+                                                </div>
+                                            </div>
                                         </Col>
                                     ))}
                                 </Row>
 
                                 {/* Pagination */}
                                 {totalPages > 1 && (
-                                    <div className="d-flex justify-content-center mt-5">
-                                        <Pagination size="sm">
-                                            <Pagination.Prev 
-                                                disabled={currentPage === 1}
-                                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                            />
-                                            {[...Array(totalPages)].map((_, i) => (
-                                                <Pagination.Item
-                                                    key={i + 1}
-                                                    active={i + 1 === currentPage}
-                                                    onClick={() => setCurrentPage(i + 1)}
-                                                >
-                                                    {i + 1}
-                                                </Pagination.Item>
-                                            ))}
-                                            <Pagination.Next
-                                                disabled={currentPage === totalPages}
-                                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                            />
-                                        </Pagination>
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 32 }}>
+                                        <button
+                                            style={{
+                                                width: 36,
+                                                height: 36,
+                                                borderRadius: 8,
+                                                border: '1px solid #e2e8f0',
+                                                background: '#ffffff',
+                                                color: '#475569',
+                                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                                opacity: currentPage === 1 ? 0.5 : 1
+                                            }}
+                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                            disabled={currentPage === 1}
+                                        >
+                                            <FaChevronLeft size={12} />
+                                        </button>
+                                        {[...Array(totalPages)].map((_, i) => (
+                                            <button
+                                                key={i + 1}
+                                                style={{
+                                                    width: 36,
+                                                    height: 36,
+                                                    borderRadius: 8,
+                                                    border: '1px solid #e2e8f0',
+                                                    background: i + 1 === currentPage ? '#2563eb' : '#ffffff',
+                                                    color: i + 1 === currentPage ? 'white' : '#475569',
+                                                    fontWeight: i + 1 === currentPage ? 600 : 400,
+                                                    cursor: 'pointer'
+                                                }}
+                                                onClick={() => setCurrentPage(i + 1)}
+                                            >
+                                                {i + 1}
+                                            </button>
+                                        ))}
+                                        <button
+                                            style={{
+                                                width: 36,
+                                                height: 36,
+                                                borderRadius: 8,
+                                                border: '1px solid #e2e8f0',
+                                                background: '#ffffff',
+                                                color: '#475569',
+                                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                                opacity: currentPage === totalPages ? 0.5 : 1
+                                            }}
+                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                            disabled={currentPage === totalPages}
+                                        >
+                                            <FaChevronRight size={12} />
+                                        </button>
                                     </div>
                                 )}
                             </>
@@ -636,728 +937,629 @@ const Pharmacy = () => {
 
                 {/* ORDERS TAB */}
                 {activeTab === 'orders' && (
-                    <Card className="border-0 shadow-sm">
-                        <Card.Body className="p-4">
-                            <h5 className="fw-bold mb-4 d-flex align-items-center">
-                                <div className="bg-info bg-opacity-10 rounded-circle p-2 me-2">
-                                    <FaBox className="text-info" size={16} />
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px' }}>
+                        <h5 style={{ fontWeight: 600, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 36, height: 36, background: '#cffafe', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0e7490' }}>
+                                <FaBox size={16} />
+                            </div>
+                            Riwayat Pesanan
+                        </h5>
+                        
+                        {loadingOrders ? (
+                            <div style={{ textAlign: 'center', padding: 40 }}>
+                                <Spinner animation="border" variant="primary" />
+                            </div>
+                        ) : orders.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: 40 }}>
+                                <div style={{ width: 60, height: 60, background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                                    <FaBox size={24} style={{ color: '#94a3b8' }} />
                                 </div>
-                                Riwayat Pesanan
-                            </h5>
-                            
-                            {loadingOrders ? (
-                                <div className="text-center py-5">
-                                    <Spinner animation="border" variant="primary" />
-                                </div>
-                            ) : orders.length === 0 ? (
-                                <div className="text-center py-5">
-                                    <div className="bg-light rounded-circle d-inline-flex p-4 mb-3">
-                                        <FaBox size={30} className="text-secondary" />
-                                    </div>
-                                    <h6 className="fw-bold mb-2">Belum Ada Pesanan</h6>
-                                    <p className="text-secondary small mb-4">
-                                        Anda belum melakukan pemesanan obat
-                                    </p>
-                                    <Button 
-                                        variant="primary"
-                                        size="sm"
-                                        className="rounded-pill px-4"
-                                        onClick={() => setActiveTab('shop')}
-                                    >
-                                        Mulai Belanja
-                                    </Button>
-                                </div>
-                            ) : (
-                                <div className="orders-list">
-                                    {orders.map(order => (
-                                        <Card key={order._id} className="mb-3 border-0 bg-light">
-                                            <Card.Body className="p-3">
-                                                <Row>
-                                                    <Col md={8}>
-                                                        <div className="d-flex align-items-center mb-2">
-                                                            <Badge bg="primary" className="me-2 small">
-                                                                {order.orderNumber}
-                                                            </Badge>
-                                                            {getStatusBadge(order.status)}
-                                                        </div>
-                                                        
-                                                        <div className="ms-2">
-                                                            {order.items?.map((item, idx) => (
-                                                                <div key={idx} className="d-flex justify-content-between mb-1 small">
-                                                                    <span>
-                                                                        {item.name}
-                                                                        <span className="text-secondary ms-2">
-                                                                            x{item.quantity}
-                                                                        </span>
-                                                                    </span>
-                                                                    <span className="fw-medium">
-                                                                        {formatCurrency(item.subtotal)}
-                                                                    </span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        
-                                                        <div className="mt-2 text-secondary small">
-                                                            <FaTruck className="me-1" size={10} />
-                                                            {order.courier} {order.courierService} - {formatCurrency(order.shippingCost)}
-                                                        </div>
-                                                        
-                                                        <div className="mt-1 text-secondary small">
-                                                            <FaInfoCircle className="me-1" size={10} />
-                                                            {order.shippingAddress?.street || 'Alamat tidak lengkap'}
-                                                        </div>
-                                                    </Col>
-                                                    
-                                                    <Col md={4} className="text-md-end mt-3 mt-md-0">
-                                                        <div className="mb-2">
-                                                            <span className="fw-bold text-primary">
-                                                                {formatCurrency(order.totalAmount)}
+                                <h6 style={{ fontWeight: 600, marginBottom: 8 }}>Belum Ada Pesanan</h6>
+                                <p style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>Anda belum melakukan pemesanan obat</p>
+                                <button className="btn-custom btn-custom-primary" onClick={() => setActiveTab('shop')}>
+                                    Mulai Belanja
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="orders-list">
+                                {orders.map(order => (
+                                    <div key={order._id} className="order-card">
+                                        <Row>
+                                            <Col md={8}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                                    <span style={{ background: '#f1f5f9', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, color: '#475569' }}>
+                                                        {order.orderNumber}
+                                                    </span>
+                                                    {getStatusBadge(order.status)}
+                                                </div>
+                                                
+                                                <div style={{ marginBottom: 12 }}>
+                                                    {order.items?.map((item, idx) => (
+                                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                                                            <span>
+                                                                {item.name}
+                                                                <span style={{ color: '#64748b', marginLeft: 8 }}>x{item.quantity}</span>
                                                             </span>
+                                                            <span style={{ fontWeight: 500 }}>{formatCurrency(item.subtotal)}</span>
                                                         </div>
-                                                        
-                                                        {order.trackingNumber && (
-                                                            <Badge bg="info" className="mb-2 small">
-                                                                No. Resi: {order.trackingNumber}
-                                                            </Badge>
-                                                        )}
-                                                        
-                                                        {order.status === 'awaiting_payment' && (
-                                                            <>
-                                                                <Button 
-                                                                    variant="warning"
-                                                                    size="sm"
-                                                                    className="rounded-pill px-3 w-100 mb-2"
-                                                                    onClick={() => {
-                                                                        setCurrentOrder(order);
-                                                                        setPaymentAmount(order.totalAmount);
-                                                                        setPaymentExpiry(order.paymentExpiry ? new Date(order.paymentExpiry) : null);
-                                                                        setShowPaymentModal(true);
-                                                                        setStep(1);
-                                                                    }}
-                                                                >
-                                                                    Bayar Sekarang
-                                                                </Button>
-                                                                <Button 
-                                                                    variant="outline-danger"
-                                                                    size="sm"
-                                                                    className="rounded-pill px-3 w-100"
-                                                                    onClick={() => cancelOrder(order._id)}
-                                                                >
-                                                                    Batalkan
-                                                                </Button>
-                                                            </>
-                                                        )}
-                                                        
-                                                        {order.status === 'shipped' && (
-                                                            <Button 
-                                                                variant="success"
-                                                                size="sm"
-                                                                className="rounded-pill px-3 w-100"
-                                                                onClick={() => confirmReceipt(order._id)}
-                                                            >
-                                                                Terima Pesanan
-                                                            </Button>
-                                                        )}
-                                                    </Col>
-                                                </Row>
-                                            </Card.Body>
-                                        </Card>
-                                    ))}
-                                </div>
-                            )}
-                        </Card.Body>
-                    </Card>
+                                                    ))}
+                                                </div>
+                                                
+                                                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#64748b' }}>
+                                                    <span><FaTruck style={{ marginRight: 4 }} /> {order.courier} {order.courierService}</span>
+                                                    <span>{formatCurrency(order.shippingCost)}</span>
+                                                </div>
+                                            </Col>
+                                            
+                                            <Col md={4} style={{ textAlign: 'right' }}>
+                                                <div style={{ marginBottom: 12 }}>
+                                                    <span style={{ fontSize: 18, fontWeight: 700, color: '#2563eb' }}>{formatCurrency(order.totalAmount)}</span>
+                                                </div>
+                                                
+                                                {order.status === 'awaiting_payment' && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                        <button
+                                                            className="btn-custom btn-custom-primary"
+                                                            style={{ padding: '8px 16px' }}
+                                                            onClick={() => {
+                                                                setCurrentOrder(order);
+                                                                setPaymentAmount(order.totalAmount);
+                                                                setPaymentExpiry(order.paymentExpiry ? new Date(order.paymentExpiry) : null);
+                                                                setShowPaymentModal(true);
+                                                                setStep(1);
+                                                            }}
+                                                        >
+                                                            Bayar Sekarang
+                                                        </button>
+                                                        <button
+                                                            className="btn-custom btn-custom-outline"
+                                                            style={{ padding: '8px 16px', borderColor: '#b91c1c', color: '#b91c1c' }}
+                                                            onClick={() => cancelOrder(order._id)}
+                                                        >
+                                                            Batalkan
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                
+                                                {order.status === 'shipped' && (
+                                                    <button
+                                                        className="btn-custom btn-custom-success"
+                                                        style={{ padding: '8px 16px' }}
+                                                        onClick={() => confirmReceipt(order._id)}
+                                                    >
+                                                        Terima Pesanan
+                                                    </button>
+                                                )}
+                                            </Col>
+                                        </Row>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* CART MODAL */}
-                <Modal show={showCart} onHide={() => setShowCart(false)} size="lg" centered>
-                    <Modal.Header closeButton className="border-0 pb-0">
-                        <Modal.Title className="h5 fw-bold">
-                            <FaShoppingCart className="me-2 text-primary" />
-                            Keranjang Belanja
-                        </Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body className="pt-2">
-                        {cart.length === 0 ? (
-                            <div className="text-center py-4">
-                                <div className="bg-light rounded-circle d-inline-flex p-3 mb-3">
-                                    <FaShoppingCart size={24} className="text-secondary" />
-                                </div>
-                                <p className="text-secondary small mb-0">Keranjang belanja kosong</p>
-                            </div>
-                        ) : (
-                            <>
-                                {cart.map((item) => (
-                                    <div key={item._id} className="d-flex align-items-center mb-3 pb-3 border-bottom">
-                                        <img 
-                                            src={item.image || '/images/medicine-placeholder.jpg'}
-                                            alt={item.name}
-                                            style={{ width: '50px', height: '50px', objectFit: 'cover' }}
-                                            className="rounded me-3"
-                                        />
-                                        <div className="flex-grow-1">
-                                            <h6 className="fw-bold mb-1 small">{item.name}</h6>
-                                            <small className="text-secondary">
-                                                {formatCurrency(item.price)} / item
-                                            </small>
-                                        </div>
-                                        <div className="d-flex align-items-center">
-                                            <Button
-                                                size="sm"
-                                                variant="light"
-                                                onClick={() => updateQuantity(item._id, item.quantity - 1)}
-                                                className="rounded-circle p-1"
-                                                style={{ width: '28px', height: '28px' }}
-                                            >
-                                                <FaMinus size={10} />
-                                            </Button>
-                                            <span className="mx-2 fw-medium small">{item.quantity}</span>
-                                            <Button
-                                                size="sm"
-                                                variant="light"
-                                                onClick={() => updateQuantity(item._id, item.quantity + 1)}
-                                                className="rounded-circle p-1"
-                                                style={{ width: '28px', height: '28px' }}
-                                                disabled={item.quantity >= (item.availableStock || item.stock)}
-                                            >
-                                                <FaPlus size={10} />
-                                            </Button>
-                                        </div>
-                                        <div className="ms-3 text-end" style={{ minWidth: '80px' }}>
-                                            <div className="fw-bold text-primary small">
-                                                {formatCurrency(item.price * item.quantity)}
-                                            </div>
-                                            <Button
-                                                variant="link"
-                                                className="text-danger p-0 mt-1"
-                                                onClick={() => removeFromCart(item._id)}
-                                            >
-                                                <FaTrash size={12} />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-
-                                <hr />
-                                
-                                <div className="d-flex justify-content-between align-items-center mb-3">
-                                    <span className="fw-medium">Subtotal</span>
-                                    <h5 className="text-primary fw-bold mb-0">
-                                        {formatCurrency(getCartTotal())}
+                {showCart && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                        <div style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 600, maxHeight: '80vh', overflow: 'auto' }}>
+                            <div style={{ padding: 24 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                    <h5 style={{ fontWeight: 600, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <FaShoppingCart style={{ color: '#2563eb' }} /> Keranjang Belanja
                                     </h5>
+                                    <button onClick={() => setShowCart(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
                                 </div>
-                            </>
-                        )}
-                    </Modal.Body>
-                    <Modal.Footer className="border-0 pt-0">
-                        <Button variant="light" onClick={() => setShowCart(false)} className="rounded-pill px-4">
-                            Lanjut Belanja
-                        </Button>
-                        {cart.length > 0 && (
-                            <>
-                                <Button variant="outline-danger" onClick={clearCart} className="rounded-pill px-4">
-                                    <FaTrash className="me-1" />
-                                    Hapus Semua
-                                </Button>
-                                <Button 
-                                    variant="primary" 
-                                    onClick={() => {
-                                        setShowCart(false);
-                                        setShowCheckout(true);
-                                    }}
-                                    className="rounded-pill px-4"
-                                >
-                                    Checkout
-                                    <FaArrowRight className="ms-2" />
-                                </Button>
-                            </>
-                        )}
-                    </Modal.Footer>
-                </Modal>
+                                
+                                {cart.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: 40 }}>
+                                        <div style={{ width: 60, height: 60, background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                                            <FaShoppingCart size={24} style={{ color: '#94a3b8' }} />
+                                        </div>
+                                        <p style={{ color: '#64748b' }}>Keranjang belanja kosong</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {cart.map((item) => (
+                                            <div key={item._id} className="cart-item">
+                                                <img 
+                                                    src={item.image || '/images/medicine-placeholder.jpg'}
+                                                    alt={item.name}
+                                                    style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: 8, marginRight: 12 }}
+                                                />
+                                                <div style={{ flex: 1 }}>
+                                                    <h6 style={{ fontWeight: 500, marginBottom: 2, fontSize: 13 }}>{item.name}</h6>
+                                                    <div style={{ fontSize: 11, color: '#64748b' }}>{formatCurrency(item.price)} / item</div>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <button className="quantity-btn" onClick={() => updateQuantity(item._id, item.quantity - 1)}>
+                                                        <FaMinus size={10} />
+                                                    </button>
+                                                    <span style={{ minWidth: 20, textAlign: 'center', fontSize: 13 }}>{item.quantity}</span>
+                                                    <button className="quantity-btn" onClick={() => updateQuantity(item._id, item.quantity + 1)}>
+                                                        <FaPlus size={10} />
+                                                    </button>
+                                                </div>
+                                                <div style={{ marginLeft: 16, minWidth: 80, textAlign: 'right' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#2563eb' }}>{formatCurrency(item.price * item.quantity)}</div>
+                                                    <button style={{ background: 'none', border: 'none', color: '#b91c1c', fontSize: 11, cursor: 'pointer' }} onClick={() => removeFromCart(item._id)}>
+                                                        Hapus
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        <div style={{ marginTop: 16, padding: 16, background: '#f8fafc', borderRadius: 12 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                                <span>Subtotal</span>
+                                                <span style={{ color: '#2563eb' }}>{formatCurrency(getCartTotal())}</span>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                            
+                            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                <button className="btn-custom btn-custom-outline" onClick={() => setShowCart(false)}>
+                                    Lanjut Belanja
+                                </button>
+                                {cart.length > 0 && (
+                                    <>
+                                        <button className="btn-custom btn-custom-outline" style={{ borderColor: '#b91c1c', color: '#b91c1c' }} onClick={clearCart}>
+                                            <FaTrash style={{ marginRight: 4 }} /> Hapus Semua
+                                        </button>
+                                        <button className="btn-custom btn-custom-primary" onClick={() => {
+                                            setShowCart(false);
+                                            setShowCheckout(true);
+                                        }}>
+                                            Checkout <FaArrowRight style={{ marginLeft: 4 }} />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* CHECKOUT MODAL */}
-                <Modal show={showCheckout} onHide={() => setShowCheckout(false)} size="lg" centered>
-                    <Modal.Header closeButton className="border-0 pb-0">
-                        <Modal.Title className="h5 fw-bold">
-                            <FaTruck className="me-2 text-primary" />
-                            Checkout
-                        </Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body className="pt-2">
-                        {/* Alamat & Kontak */}
-                        <Card className="border-0 bg-light mb-4">
-                            <Card.Body className="p-3">
-                                <h6 className="fw-bold mb-3 small">1. Informasi Pengiriman</h6>
-                                
-                                <Form.Group className="mb-3">
-                                    <Form.Label className="small text-secondary">Nomor Telepon</Form.Label>
-                                    <Form.Control
-                                        type="tel"
-                                        value={phone}
-                                        onChange={(e) => setPhone(e.target.value)}
-                                        placeholder="081234567890"
-                                        className="bg-white border-0"
-                                        style={{ borderRadius: '10px' }}
-                                        required
-                                    />
-                                </Form.Group>
-                                
-                                <Form.Group className="mb-2">
-                                    <Form.Label className="small text-secondary">Alamat Lengkap</Form.Label>
-                                    <Form.Control
-                                        as="textarea"
-                                        rows={2}
-                                        value={address}
-                                        onChange={(e) => setAddress(e.target.value)}
-                                        placeholder="Masukkan alamat lengkap (jalan, gang, nomor rumah, RT/RW, kota, kode pos)"
-                                        className="bg-white border-0"
-                                        style={{ borderRadius: '10px', fontSize: '0.9rem' }}
-                                        required
-                                    />
-                                </Form.Group>
-                            </Card.Body>
-                        </Card>
+                {showCheckout && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                        <div style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 600, maxHeight: '80vh', overflow: 'auto' }}>
+                            <div style={{ padding: 24 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                    <h5 style={{ fontWeight: 600, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <FaTruck style={{ color: '#2563eb' }} /> Checkout
+                                    </h5>
+                                    <button onClick={() => setShowCheckout(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
+                                </div>
 
-                        {/* Pilih Kurir */}
-                        <Card className="border-0 bg-light mb-4">
-                            <Card.Body className="p-3">
-                                <h6 className="fw-bold mb-3 small">2. Pilih Pengiriman</h6>
-                                
-                                <Form.Group className="mb-3">
-                                    <Form.Select
-                                        value={selectedCourier}
-                                        onChange={(e) => {
-                                            setSelectedCourier(e.target.value);
-                                            setCourierService('');
-                                            setShippingCost(0);
-                                            fetchShippingCost(e.target.value);
-                                        }}
-                                        className="bg-white border-0"
-                                        style={{ borderRadius: '10px' }}
-                                        disabled={!address}
-                                    >
-                                        <option value="">-- Pilih Kurir --</option>
-                                        <option value="JNE">JNE</option>
-                                        <option value="J&T">J&T Express</option>
-                                        <option value="SiCepat">SiCepat</option>
-                                        <option value="Pos Indonesia">Pos Indonesia</option>
-                                    </Form.Select>
-                                </Form.Group>
-
-                                {/* Layanan Kurir */}
-                                {loadingShipping ? (
-                                    <div className="text-center py-3">
-                                        <Spinner size="sm" className="me-2" />
-                                        <span className="small">Memuat ongkir...</span>
+                                {/* Alamat & Kontak */}
+                                <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                                    <h6 style={{ fontWeight: 600, marginBottom: 12, fontSize: 13 }}>1. Informasi Pengiriman</h6>
+                                    
+                                    <div style={{ marginBottom: 12 }}>
+                                        <label style={{ fontSize: 12, color: '#64748b', marginBottom: 4, display: 'block' }}>Nomor Telepon</label>
+                                        <input
+                                            type="tel"
+                                            className="search-input"
+                                            style={{ padding: '10px 14px' }}
+                                            value={phone}
+                                            onChange={(e) => setPhone(e.target.value)}
+                                            placeholder="081234567890"
+                                        />
                                     </div>
-                                ) : shippingCosts.length > 0 && (
-                                    <div className="mt-3">
-                                        {shippingCosts.map((cost, idx) => (
-                                            <div
-                                                key={idx}
-                                                className={`p-2 mb-2 rounded-3 ${courierService === cost.service ? 'bg-primary bg-opacity-10 border-primary' : 'bg-white'}`}
-                                                style={{ cursor: 'pointer', border: '1px solid transparent' }}
-                                                onClick={() => {
-                                                    setCourierService(cost.service);
-                                                    setShippingCost(cost.cost);
-                                                    setEstimatedDays(cost.etd);
-                                                }}
-                                            >
-                                                <div className="d-flex justify-content-between align-items-center">
-                                                    <div>
-                                                        <span className="fw-medium">{cost.courier} {cost.service}</span>
-                                                        <br />
-                                                        <small className="text-secondary">
-                                                            Estimasi {cost.etd} hari
-                                                        </small>
+                                    
+                                    <div>
+                                        <label style={{ fontSize: 12, color: '#64748b', marginBottom: 4, display: 'block' }}>Alamat Lengkap</label>
+                                        <textarea
+                                            rows={2}
+                                            className="search-input"
+                                            style={{ padding: '10px 14px', resize: 'vertical' }}
+                                            value={address}
+                                            onChange={(e) => setAddress(e.target.value)}
+                                            placeholder="Masukkan alamat lengkap (jalan, gang, nomor rumah, RT/RW, kota, kode pos)"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Pilih Kurir */}
+                                <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                                    <h6 style={{ fontWeight: 600, marginBottom: 12, fontSize: 13 }}>2. Pilih Pengiriman</h6>
+                                    
+                                    <div style={{ marginBottom: 12 }}>
+                                        <select
+                                            className="filter-select"
+                                            style={{ padding: '10px 14px' }}
+                                            value={selectedCourier}
+                                            onChange={(e) => {
+                                                setSelectedCourier(e.target.value);
+                                                setCourierService('');
+                                                setShippingCost(0);
+                                                fetchShippingCost(e.target.value);
+                                            }}
+                                            disabled={!address}
+                                        >
+                                            <option value="">-- Pilih Kurir --</option>
+                                            <option value="JNE">JNE</option>
+                                            <option value="J&T">J&T Express</option>
+                                            <option value="SiCepat">SiCepat</option>
+                                            <option value="Pos Indonesia">Pos Indonesia</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Layanan Kurir */}
+                                    {loadingShipping ? (
+                                        <div style={{ textAlign: 'center', padding: 16 }}>
+                                            <Spinner size="sm" /> <span style={{ marginLeft: 8, fontSize: 13 }}>Memuat ongkir...</span>
+                                        </div>
+                                    ) : shippingCosts.length > 0 && (
+                                        <div>
+                                            {shippingCosts.map((cost, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    style={{
+                                                        padding: '12px',
+                                                        marginBottom: 8,
+                                                        borderRadius: 8,
+                                                        background: courierService === cost.service ? '#eff6ff' : '#ffffff',
+                                                        border: courierService === cost.service ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                    onClick={() => {
+                                                        setCourierService(cost.service);
+                                                        setShippingCost(cost.cost);
+                                                        setEstimatedDays(cost.etd);
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <div>
+                                                            <span style={{ fontWeight: 500 }}>{cost.courier} {cost.service}</span>
+                                                            <br />
+                                                            <span style={{ fontSize: 11, color: '#64748b' }}>Estimasi {cost.etd} hari</span>
+                                                        </div>
+                                                        <span style={{ fontWeight: 600, color: '#2563eb' }}>{formatCurrency(cost.cost)}</span>
                                                     </div>
-                                                    <span className="fw-bold text-primary">
-                                                        {formatCurrency(cost.cost)}
-                                                    </span>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </Card.Body>
-                        </Card>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
-                        {/* Ringkasan Biaya */}
-                        <Card className="border-0 bg-light mb-4">
-                            <Card.Body className="p-3">
-                                <h6 className="fw-bold mb-3 small">3. Ringkasan Biaya</h6>
-                                
-                                <div className="d-flex justify-content-between mb-2">
-                                    <span className="text-secondary small">Subtotal</span>
-                                    <span className="fw-medium">{formatCurrency(getCartTotal())}</span>
+                                {/* Ringkasan Biaya */}
+                                <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                                    <h6 style={{ fontWeight: 600, marginBottom: 12, fontSize: 13 }}>3. Ringkasan Biaya</h6>
+                                    
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                                        <span style={{ color: '#64748b' }}>Subtotal</span>
+                                        <span>{formatCurrency(getCartTotal())}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                                        <span style={{ color: '#64748b' }}>Ongkos Kirim</span>
+                                        <span>{formatCurrency(shippingCost)}</span>
+                                    </div>
+                                    <hr style={{ margin: '12px 0', borderColor: '#e2e8f0' }} />
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                        <span>Total</span>
+                                        <span style={{ color: '#2563eb' }}>{formatCurrency(getCartTotal() + shippingCost)}</span>
+                                    </div>
+                                    
+                                    <div style={{ background: '#dbeafe', borderRadius: 8, padding: '8px 12px', marginTop: 12, fontSize: 12, color: '#1e40af' }}>
+                                        <FaClock style={{ marginRight: 4 }} /> Stok akan di-lock selama 15 menit setelah pesanan dibuat
+                                    </div>
                                 </div>
-                                <div className="d-flex justify-content-between mb-2">
-                                    <span className="text-secondary small">Ongkos Kirim</span>
-                                    <span className="fw-medium">{formatCurrency(shippingCost)}</span>
-                                </div>
-                                <hr className="my-2" />
-                                <div className="d-flex justify-content-between fw-bold">
-                                    <span>Total</span>
-                                    <span className="text-primary">{formatCurrency(getCartTotal() + shippingCost)}</span>
-                                </div>
-                                
-                                <Alert variant="info" className="mt-3 py-2 small">
-                                    <FaClock className="me-1" />
-                                    Stok akan di-lock selama 15 menit setelah pesanan dibuat
-                                </Alert>
-                            </Card.Body>
-                        </Card>
-                    </Modal.Body>
-                    <Modal.Footer className="border-0 pt-0">
-                        <Button variant="light" onClick={() => setShowCheckout(false)} className="rounded-pill px-4">
-                            Batal
-                        </Button>
-                        <Button 
-                            variant="primary" 
-                            onClick={createOrder}
-                            disabled={!selectedCourier || !courierService || shippingCost === 0}
-                            className="rounded-pill px-4"
-                        >
-                            Buat Pesanan
-                        </Button>
-                    </Modal.Footer>
-                </Modal>
+                            </div>
+                            
+                            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                <button className="btn-custom btn-custom-outline" onClick={() => setShowCheckout(false)}>
+                                    Batal
+                                </button>
+                                <button 
+                                    className="btn-custom btn-custom-primary" 
+                                    onClick={createOrder}
+                                    disabled={!selectedCourier || !courierService || shippingCost === 0}
+                                >
+                                    Buat Pesanan
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* PAYMENT MODAL */}
-                <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)} size="lg" centered>
-                    <Modal.Header closeButton className="border-0 pb-0">
-                        <Modal.Title className="h5 fw-bold">
-                            <FaMoneyBillWave className="me-2 text-primary" />
-                            Pembayaran
-                        </Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body className="pt-2">
-                        {/* Countdown */}
-                        {paymentExpiry && step < 4 && (
-                            <Alert variant="warning" className="mb-4 text-center py-2">
-                                <FaClock className="me-2" />
-                                <strong>Sisa waktu: {countdown}</strong>
-                                <br />
-                                <small>Pesanan akan dibatalkan jika tidak dibayar</small>
-                            </Alert>
-                        )}
-
-                        {/* STEP 1: Pilih Metode Pembayaran */}
-                        {step === 1 && (
-                            <div className="p-3">
-                                <h6 className="fw-bold mb-4 text-center">Pilih Metode Pembayaran</h6>
-                                <p className="text-secondary text-center small mb-4">
-                                    Total pembayaran: <span className="fw-bold text-primary">{formatCurrency(paymentAmount)}</span>
-                                </p>
-                                
-                                {/* Transfer Bank */}
-                                <div className="mb-4">
-                                    <h6 className="fw-semibold mb-3 small text-secondary">🏦 Transfer Bank</h6>
-                                    <div className="d-flex flex-wrap gap-2">
-                                        {banks.map(bank => (
-                                            <Button
-                                                key={bank.id}
-                                                variant={selectedBank?.id === bank.id ? 'primary' : 'light'}
-                                                className={`rounded-pill px-3 py-2 d-flex align-items-center ${selectedBank?.id === bank.id ? 'shadow-sm' : ''}`}
-                                                onClick={() => setSelectedBank(bank)}
-                                                style={{ fontSize: '0.85rem' }}
-                                            >
-                                                <span className="me-2">🏦</span>
-                                                {bank.bankName}
-                                            </Button>
-                                        ))}
-                                    </div>
+                {showPaymentModal && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                        <div style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 500, maxHeight: '80vh', overflow: 'auto' }}>
+                            <div style={{ padding: 24 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                    <h5 style={{ fontWeight: 600, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <FaMoneyBillWave style={{ color: '#2563eb' }} /> Pembayaran
+                                    </h5>
+                                    <button onClick={() => setShowPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
                                 </div>
 
-                                {/* QRIS */}
-                                {qris && (
-                                    <div className="mb-4">
-                                        <h6 className="fw-semibold mb-3 small text-secondary">📱 QRIS</h6>
-                                        <Card 
-                                            className={`border-0 shadow-sm text-center p-3 ${selectedBank?.id === 999 ? 'border-primary' : ''}`}
-                                            style={{ cursor: 'pointer', maxWidth: '200px', margin: '0 auto' }}
-                                            onClick={() => setSelectedBank({ id: 999, bankName: 'QRIS', isQRIS: true })}
-                                        >
-                                            <div style={{ width: '120px', height: '120px', margin: '0 auto' }}>
-                                                <img 
-                                                    src={qris.qrCode || '/images/qris-klinik.png'} 
-                                                    alt="QRIS"
-                                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                                                />
-                                            </div>
-                                            <p className="mt-2 mb-0 small fw-medium">{qris.merchantName}</p>
-                                            <small className="text-secondary">Scan dengan e-wallet</small>
-                                        </Card>
+                                {/* Countdown */}
+                                {paymentExpiry && step < 4 && (
+                                    <div style={{ background: '#fef3c7', borderRadius: 10, padding: '12px', marginBottom: 16, textAlign: 'center' }}>
+                                        <FaClock style={{ color: '#b45309', marginRight: 4 }} />
+                                        <strong>Sisa waktu: {countdown}</strong>
+                                        <br />
+                                        <small style={{ color: '#b45309' }}>Pesanan akan dibatalkan jika tidak dibayar</small>
                                     </div>
                                 )}
 
-                                <div className="d-grid gap-2 mt-4">
-                                    <Button
-                                        variant="primary"
-                                        onClick={() => createTransaction(selectedBank.id)}
-                                        disabled={!selectedBank}
-                                        className="rounded-pill py-2"
-                                    >
-                                        Lanjutkan
-                                    </Button>
-                                    <Button variant="light" onClick={() => setShowPaymentModal(false)} className="rounded-pill">
-                                        Batal
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* STEP 2: Loading */}
-                        {step === 2 && (
-                            <div className="text-center py-5">
-                                <Spinner animation="border" variant="primary" />
-                                <p className="mt-3 text-secondary small">Membuat transaksi...</p>
-                            </div>
-                        )}
-
-                        {/* STEP 3: Instruksi Pembayaran */}
-                        {step === 3 && transaction && (
-                            <div className="p-3">
-                                {/* Detail Pembayaran */}
-                                <Card className="border-0 bg-light mb-4">
-                                    <Card.Body className="p-3">
-                                        <h6 className="fw-bold mb-3 small">💰 Detail Pembayaran</h6>
-                                        <div className="small">
-                                            <div className="d-flex justify-content-between mb-2">
-                                                <span className="text-secondary">ID Transaksi:</span>
-                                                <div>
-                                                    <code className="bg-white p-1 rounded" style={{ fontSize: '11px' }}>{transaction.id}</code>
-                                                    <Button 
-                                                        variant="link" 
-                                                        className="p-0 ms-2"
-                                                        onClick={() => copyToClipboard(transaction.id)}
+                                {/* STEP 1: Pilih Metode Pembayaran */}
+                                {step === 1 && (
+                                    <div>
+                                        <h6 style={{ fontWeight: 600, marginBottom: 16, textAlign: 'center' }}>Pilih Metode Pembayaran</h6>
+                                        <p style={{ color: '#64748b', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>
+                                            Total pembayaran: <span style={{ fontWeight: 700, color: '#2563eb' }}>{formatCurrency(paymentAmount)}</span>
+                                        </p>
+                                        
+                                        {/* Transfer Bank */}
+                                        <div style={{ marginBottom: 20 }}>
+                                            <h6 style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 12 }}>🏦 Transfer Bank</h6>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+                                                {banks.map(bank => (
+                                                    <div
+                                                        key={bank.id}
+                                                        className={`payment-option ${selectedBank?.id === bank.id ? 'selected' : ''}`}
+                                                        onClick={() => setSelectedBank(bank)}
+                                                        style={{ padding: '12px', textAlign: 'center' }}
                                                     >
-                                                        <FaCopy size={10} />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                            <div className="d-flex justify-content-between mb-2">
-                                                <span className="text-secondary">Metode:</span>
-                                                <span className="fw-medium">{transaction.bank.bankName}</span>
-                                            </div>
-                                            {!transaction.isQRIS && (
-                                                <>
-                                                    <div className="d-flex justify-content-between mb-2">
-                                                        <span className="text-secondary">No. Rekening:</span>
-                                                        <div>
-                                                            <span className="fw-medium">{transaction.bank.accountNumber}</span>
-                                                            <Button 
-                                                                variant="link" 
-                                                                className="p-0 ms-2"
-                                                                onClick={() => copyToClipboard(transaction.bank.accountNumber)}
-                                                            >
-                                                                <FaCopy size={10} />
-                                                            </Button>
-                                                        </div>
+                                                        <span style={{ fontSize: 20, display: 'block', marginBottom: 4 }}>🏦</span>
+                                                        <span style={{ fontSize: 12, fontWeight: 500 }}>{bank.bankName}</span>
                                                     </div>
-                                                    <div className="d-flex justify-content-between mb-2">
-                                                        <span className="text-secondary">Atas Nama:</span>
-                                                        <span className="fw-medium">{transaction.bank.accountName}</span>
-                                                    </div>
-                                                </>
-                                            )}
-                                            <div className="d-flex justify-content-between pt-2 border-top">
-                                                <span className="fw-medium">Total Transfer:</span>
-                                                <h6 className="text-primary mb-0">{formatCurrency(paymentAmount)}</h6>
+                                                ))}
                                             </div>
                                         </div>
-                                    </Card.Body>
-                                </Card>
 
-                                {/* Upload Bukti */}
-                                <Card className="border-0 bg-light mb-4">
-                                    <Card.Body className="p-3">
-                                        <h6 className="fw-bold mb-3 small">📤 Upload Bukti Transfer</h6>
-                                        <Form.Group className="mb-3">
-                                            <Form.Label className="small text-secondary">Tanggal Transfer</Form.Label>
-                                            <Form.Control
-                                                type="date"
-                                                value={transferDate}
-                                                onChange={(e) => setTransferDate(e.target.value)}
-                                                max={new Date().toISOString().split('T')[0]}
-                                                className="bg-white border-0"
-                                                style={{ borderRadius: '8px', fontSize: '0.9rem' }}
-                                                required
-                                            />
-                                        </Form.Group>
-                                        <Form.Group>
-                                            <Form.Label className="small text-secondary">File Bukti Transfer</Form.Label>
-                                            <Form.Control
-                                                type="file"
-                                                accept="image/*,.pdf"
-                                                onChange={handleFileChange}
-                                                className="bg-white border-0"
-                                                style={{ borderRadius: '8px', fontSize: '0.9rem' }}
-                                                required
-                                            />
-                                            <Form.Text className="text-secondary small">
-                                                Format: JPG, PNG, PDF (maks 5MB)
-                                            </Form.Text>
-                                        </Form.Group>
-                                    </Card.Body>
-                                </Card>
+                                        {/* QRIS */}
+                                        {qris && (
+                                            <div style={{ marginBottom: 20 }}>
+                                                <h6 style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 12 }}>📱 QRIS</h6>
+                                                <div
+                                                    className={`payment-option ${selectedBank?.id === 999 ? 'selected' : ''}`}
+                                                    onClick={() => setSelectedBank({ id: 999, bankName: 'QRIS', isQRIS: true })}
+                                                    style={{ padding: '16px', textAlign: 'center' }}
+                                                >
+                                                    <img 
+                                                        src={qris.qrCode || '/images/qris-klinik.png'} 
+                                                        alt="QRIS"
+                                                        className="qris-image"
+                                                    />
+                                                    <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{qris.merchantName}</p>
+                                                    <small style={{ color: '#64748b' }}>Scan dengan e-wallet</small>
+                                                </div>
+                                            </div>
+                                        )}
 
-                                <div className="d-grid gap-2">
-                                    <Button
-                                        variant="success"
-                                        onClick={uploadProof}
-                                        disabled={!file || !transferDate || uploading}
-                                        className="rounded-pill py-2"
-                                    >
-                                        {uploading ? 'Mengupload...' : 'Upload & Konfirmasi'}
-                                    </Button>
-                                    <Button variant="light" onClick={() => setStep(1)} className="rounded-pill">
-                                        Kembali
-                                    </Button>
-                                </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            <button
+                                                className="btn-custom btn-custom-primary"
+                                                onClick={() => createTransaction(selectedBank.id)}
+                                                disabled={!selectedBank}
+                                                style={{ width: '100%' }}
+                                            >
+                                                Lanjutkan
+                                            </button>
+                                            <button className="btn-custom btn-custom-outline" onClick={() => setShowPaymentModal(false)}>
+                                                Batal
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* STEP 2: Loading */}
+                                {step === 2 && (
+                                    <div style={{ textAlign: 'center', padding: 40 }}>
+                                        <Spinner animation="border" variant="primary" />
+                                        <p style={{ marginTop: 16, color: '#64748b', fontSize: 13 }}>Membuat transaksi...</p>
+                                    </div>
+                                )}
+
+                                {/* STEP 3: Instruksi Pembayaran */}
+                                {step === 3 && transaction && (
+                                    <div>
+                                        {/* Detail Pembayaran */}
+                                        <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                                            <h6 style={{ fontWeight: 600, marginBottom: 12, fontSize: 13 }}>💰 Detail Pembayaran</h6>
+                                            <div style={{ fontSize: 13 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                                    <span style={{ color: '#64748b' }}>ID Transaksi:</span>
+                                                    <div>
+                                                        <code style={{ background: '#ffffff', padding: '4px 8px', borderRadius: 4 }}>{transaction.id}</code>
+                                                        <button 
+                                                            style={{ background: 'none', border: 'none', color: '#2563eb', marginLeft: 4, cursor: 'pointer' }}
+                                                            onClick={() => copyToClipboard(transaction.id)}
+                                                        >
+                                                            <FaCopy size={12} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                                    <span style={{ color: '#64748b' }}>Metode:</span>
+                                                    <span style={{ fontWeight: 500 }}>{transaction.bank.bankName}</span>
+                                                </div>
+                                                {!transaction.isQRIS && (
+                                                    <>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                                            <span style={{ color: '#64748b' }}>No. Rekening:</span>
+                                                            <div>
+                                                                <span style={{ fontWeight: 500 }}>{transaction.bank.accountNumber}</span>
+                                                                <button 
+                                                                    style={{ background: 'none', border: 'none', color: '#2563eb', marginLeft: 4, cursor: 'pointer' }}
+                                                                    onClick={() => copyToClipboard(transaction.bank.accountNumber)}
+                                                                >
+                                                                    <FaCopy size={12} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                                            <span style={{ color: '#64748b' }}>Atas Nama:</span>
+                                                            <span style={{ fontWeight: 500 }}>{transaction.bank.accountName}</span>
+                                                        </div>
+                                                    </>
+                                                )}
+                                                <hr style={{ margin: '12px 0', borderColor: '#e2e8f0' }} />
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                                    <span>Total Transfer:</span>
+                                                    <span style={{ color: '#2563eb' }}>{formatCurrency(paymentAmount)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Upload Bukti */}
+                                        <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                                            <h6 style={{ fontWeight: 600, marginBottom: 12, fontSize: 13 }}>📤 Upload Bukti Transfer</h6>
+                                            <div style={{ marginBottom: 12 }}>
+                                                <label style={{ fontSize: 12, color: '#64748b', marginBottom: 4, display: 'block' }}>Tanggal Transfer</label>
+                                                <input
+                                                    type="date"
+                                                    className="search-input"
+                                                    style={{ padding: '10px 14px' }}
+                                                    value={transferDate}
+                                                    onChange={(e) => setTransferDate(e.target.value)}
+                                                    max={new Date().toISOString().split('T')[0]}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: 12, color: '#64748b', marginBottom: 4, display: 'block' }}>File Bukti Transfer</label>
+                                                <input
+                                                    type="file"
+                                                    className="search-input"
+                                                    style={{ padding: '8px 14px' }}
+                                                    accept="image/*,.pdf"
+                                                    onChange={handleFileChange}
+                                                />
+                                                <small style={{ color: '#94a3b8', fontSize: 11, display: 'block', marginTop: 4 }}>
+                                                    Format: JPG, PNG, PDF (maks 5MB)
+                                                </small>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            <button
+                                                className="btn-custom btn-custom-success"
+                                                onClick={uploadProof}
+                                                disabled={!file || !transferDate || uploading}
+                                                style={{ width: '100%' }}
+                                            >
+                                                {uploading ? 'Mengupload...' : 'Upload & Konfirmasi'}
+                                            </button>
+                                            <button className="btn-custom btn-custom-outline" onClick={() => setStep(1)}>
+                                                Kembali
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* STEP 4: Sukses */}
+                                {step === 4 && (
+                                    <div style={{ textAlign: 'center', padding: 20 }}>
+                                        <div style={{ width: 60, height: 60, background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                                            <FaCheckCircle size={32} style={{ color: '#16a34a' }} />
+                                        </div>
+                                        <h5 style={{ fontWeight: 600, marginBottom: 8 }}>Pembayaran Berhasil!</h5>
+                                        <p style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>Terima kasih, pesanan Anda sedang diproses.</p>
+                                        <button
+                                            className="btn-custom btn-custom-primary"
+                                            onClick={() => {
+                                                setShowPaymentModal(false);
+                                                setActiveTab('orders');
+                                            }}
+                                        >
+                                            Lihat Pesanan Saya
+                                        </button>
+                                    </div>
+                                )}
                             </div>
-                        )}
-
-                        {/* STEP 4: Sukses */}
-                        {step === 4 && (
-                            <div className="text-center py-5">
-                                <div className="bg-success bg-opacity-10 rounded-circle d-inline-flex p-3 mb-3">
-                                    <FaCheckCircle size={40} className="text-success" />
-                                </div>
-                                <h5 className="fw-bold mb-2">Pembayaran Berhasil!</h5>
-                                <p className="text-secondary small mb-4">
-                                    Terima kasih, pesanan Anda sedang diproses.
-                                </p>
-                                <Button 
-                                    variant="primary"
-                                    className="rounded-pill px-4"
-                                    onClick={() => {
-                                        setShowPaymentModal(false);
-                                        setActiveTab('orders');
-                                    }}
-                                >
-                                    Lihat Pesanan Saya
-                                </Button>
-                            </div>
-                        )}
-                    </Modal.Body>
-                </Modal>
+                        </div>
+                    </div>
+                )}
 
                 {/* DETAIL OBAT MODAL */}
-                <Modal show={showDetailModal} onHide={() => setShowDetailModal(false)} centered>
-                    <Modal.Header closeButton className="border-0 pb-0">
-                        <Modal.Title className="h5 fw-bold">{selectedMedicine?.name}</Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body className="pt-2">
-                        {selectedMedicine && (
-                            <>
-                                <div className="text-center mb-4">
+                {showDetailModal && selectedMedicine && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                        <div style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 400 }}>
+                            <div style={{ padding: 24 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                    <h5 style={{ fontWeight: 600, marginBottom: 0 }}>{selectedMedicine.name}</h5>
+                                    <button onClick={() => setShowDetailModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
+                                </div>
+
+                                <div style={{ textAlign: 'center', marginBottom: 16 }}>
                                     <img 
                                         src={selectedMedicine.image || '/images/medicine-placeholder.jpg'}
                                         alt={selectedMedicine.name}
-                                        style={{ maxHeight: '150px', objectFit: 'contain' }}
-                                        className="img-fluid"
+                                        style={{ maxHeight: '120px', objectFit: 'contain' }}
                                     />
                                 </div>
 
-                                <div className="bg-light p-3 rounded-3">
-                                    <div className="d-flex justify-content-between mb-2 small">
-                                        <span className="text-secondary">Nama Generik:</span>
-                                        <span className="fw-medium">{selectedMedicine.genericName || '-'}</span>
+                                <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                                        <span style={{ color: '#64748b' }}>Nama Generik:</span>
+                                        <span style={{ fontWeight: 500 }}>{selectedMedicine.genericName || '-'}</span>
                                     </div>
-                                    <div className="d-flex justify-content-between mb-2 small">
-                                        <span className="text-secondary">Kategori:</span>
-                                        <Badge bg="info" className="small">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                                        <span style={{ color: '#64748b' }}>Kategori:</span>
+                                        <span style={{ background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: '12px', fontSize: 11 }}>
                                             {categories.find(c => c.value === selectedMedicine.category)?.label}
-                                        </Badge>
+                                        </span>
                                     </div>
-                                    <div className="d-flex justify-content-between mb-2 small">
-                                        <span className="text-secondary">Harga:</span>
-                                        <span className="fw-bold text-primary">{formatCurrency(selectedMedicine.price)}</span>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                                        <span style={{ color: '#64748b' }}>Harga:</span>
+                                        <span style={{ fontWeight: 600, color: '#2563eb' }}>{formatCurrency(selectedMedicine.price)}</span>
                                     </div>
-                                    <div className="d-flex justify-content-between mb-2 small">
-                                        <span className="text-secondary">Stok Tersedia:</span>
-                                        <Badge bg={selectedMedicine.availableStock > 0 ? 'success' : 'danger'} className="small">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                                        <span style={{ color: '#64748b' }}>Stok Tersedia:</span>
+                                        <span style={{
+                                            background: selectedMedicine.availableStock > 0 ? '#dcfce7' : '#fee2e2',
+                                            color: selectedMedicine.availableStock > 0 ? '#166534' : '#b91c1c',
+                                            padding: '2px 8px',
+                                            borderRadius: '12px',
+                                            fontSize: 11,
+                                            fontWeight: 500
+                                        }}>
                                             {selectedMedicine.availableStock || 0} item
-                                        </Badge>
+                                        </span>
                                     </div>
                                     {selectedMedicine.prescription && (
-                                        <div className="d-flex justify-content-between mb-2 small">
-                                            <span className="text-secondary">Resep:</span>
-                                            <Badge bg="danger" className="small">Memerlukan Resep Dokter</Badge>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                                            <span style={{ color: '#64748b' }}>Resep:</span>
+                                            <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: '12px', fontSize: 11 }}>
+                                                Memerlukan Resep Dokter
+                                            </span>
                                         </div>
                                     )}
                                     {selectedMedicine.description && (
-                                        <div className="mt-3 pt-2 border-top">
-                                            <small className="text-secondary d-block">
-                                                <span className="fw-medium">Deskripsi:</span> {selectedMedicine.description}
+                                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                                            <small style={{ color: '#64748b', display: 'block' }}>
+                                                <span style={{ fontWeight: 500 }}>Deskripsi:</span> {selectedMedicine.description}
                                             </small>
                                         </div>
                                     )}
                                 </div>
-                            </>
-                        )}
-                    </Modal.Body>
-                    <Modal.Footer className="border-0 pt-0">
-                        <Button variant="light" onClick={() => setShowDetailModal(false)} className="rounded-pill px-4">
-                            Tutup
-                        </Button>
-                        <Button 
-                            variant="primary" 
-                            onClick={() => {
-                                addToCart(selectedMedicine);
-                                setShowDetailModal(false);
-                            }}
-                            disabled={selectedMedicine?.availableStock === 0}
-                            className="rounded-pill px-4"
-                        >
-                            <FaShoppingCart className="me-2" />
-                            Tambah ke Keranjang
-                        </Button>
-                    </Modal.Footer>
-                </Modal>
+                            </div>
+                            
+                            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                <button className="btn-custom btn-custom-outline" onClick={() => setShowDetailModal(false)}>
+                                    Tutup
+                                </button>
+                                <button 
+                                    className="btn-custom btn-custom-primary" 
+                                    onClick={() => {
+                                        addToCart(selectedMedicine);
+                                        setShowDetailModal(false);
+                                    }}
+                                    disabled={selectedMedicine.availableStock === 0}
+                                >
+                                    <FaShoppingCart style={{ marginRight: 4 }} /> Tambah ke Keranjang
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </Container>
-
-            <style jsx="true">{`
-                .pharmacy-page {
-                    background-color: #f8f9fa;
-                }
-                .bg-opacity-10 {
-                    opacity: 0.1;
-                }
-                .hover-card {
-                    transition: all 0.3s ease;
-                }
-                .hover-card:hover {
-                    transform: translateY(-5px);
-                    box-shadow: 0 15px 30px rgba(0,0,0,0.1) !important;
-                }
-                .btn {
-                    transition: all 0.2s ease;
-                }
-                .btn:hover {
-                    transform: translateY(-2px);
-                }
-                .orders-list {
-                    max-height: 500px;
-                    overflow-y: auto;
-                    padding-right: 5px;
-                }
-                .orders-list::-webkit-scrollbar {
-                    width: 5px;
-                }
-                .orders-list::-webkit-scrollbar-track {
-                    background: #f1f1f1;
-                    border-radius: 10px;
-                }
-                .orders-list::-webkit-scrollbar-thumb {
-                    background: #ccc;
-                    border-radius: 10px;
-                }
-                .orders-list::-webkit-scrollbar-thumb:hover {
-                    background: #999;
-                }
-            `}</style>
         </div>
     );
 };

@@ -6,6 +6,7 @@ const fs = require('fs');
 const ManualPayment = require('../models/ManualPayment');
 const Consultation = require('../models/Consultation');
 const Order = require('../models/Order');
+const Medicine = require('../models/Medicine');
 const auth = require('../middleware/auth');
 const { createNotification } = require('../utils/notificationHelper');
 
@@ -143,7 +144,7 @@ router.post('/upload-proof/:transactionId', auth, upload.single('proof'), async 
     }
 });
 
-// ─── GET riwayat pembayaran user (tanpa populate) ─────────────────────────────
+// ─── GET riwayat pembayaran user (hanya data dasar, tanpa populate) ──────────
 router.get('/my-history', auth, async (req, res) => {
     try {
         const payments = await ManualPayment.find({ userId: req.userId }).sort('-createdAt');
@@ -154,7 +155,6 @@ router.get('/my-history', auth, async (req, res) => {
 });
 
 // ─── GET riwayat pembayaran user (dengan populate) ────────────────────────────
-// FIX: route ini sekarang berada SEBELUM module.exports agar aktif
 router.get('/history', auth, async (req, res) => {
     try {
         const payments = await ManualPayment.find({ userId: req.userId })
@@ -218,13 +218,31 @@ router.put('/admin/verify/:paymentId', auth, async (req, res) => {
                 }
             }
 
-            // Update status order farmasi
+            // Update status order farmasi + kurangi stok permanen
             // FIX: frontend mengirim paymentType 'medicine', bukan 'pharmacy'
             if (payment.paymentType === 'medicine') {
-                await Order.findByIdAndUpdate(payment.referenceId, {
-                    status: 'processing',
-                    paymentVerified: true
-                });
+                const order = await Order.findById(payment.referenceId);
+                if (order && order.status === 'awaiting_payment') {
+                    // Kurangi stok permanen dan lepaskan lock
+                    for (const item of order.items) {
+                        await Medicine.findByIdAndUpdate(item.medicineId, {
+                            $inc: {
+                                stock: -item.quantity,
+                                lockedStock: -item.quantity
+                            }
+                        });
+                    }
+                    await Order.findByIdAndUpdate(payment.referenceId, {
+                        status: 'processing',
+                        paymentVerified: true
+                    });
+                } else if (order) {
+                    // Jika stok sudah diproses sebelumnya, hanya update status
+                    await Order.findByIdAndUpdate(payment.referenceId, {
+                        status: 'processing',
+                        paymentVerified: true
+                    });
+                }
             }
 
             // Kirim notifikasi ke user

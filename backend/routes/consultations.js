@@ -139,6 +139,26 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
             return res.status(404).json({ message: 'Dokter tidak ditemukan atau tidak aktif' });
         }
 
+        // ── Validasi: instant hanya jika dokter online ─────────────────────
+        if (scheduleType === 'instant' && !doctor.isOnline) {
+            return res.status(400).json({
+                message: 'Konsultasi langsung (instant) tidak tersedia. Dokter sedang offline. Pilih jadwal terjadwal.'
+            });
+        }
+
+        // ── Validasi: tipe konsultasi harus diizinkan dokter ──────────────
+        const settings = doctor.consultationSettings || {};
+        const typeAllowed = {
+            chat:       settings.allowChat      !== false,
+            voice_call: settings.allowVoiceCall !== false,
+            video_call: settings.allowVideoCall !== false,
+        };
+        if (!typeAllowed[consultationType]) {
+            return res.status(400).json({
+                message: `Dokter tidak mengaktifkan fitur ${consultationType === 'voice_call' ? 'Voice Call' : 'Video Call'}. Pilih jenis konsultasi lain.`
+            });
+        }
+
         // Validasi scheduled
         if (scheduleType === 'scheduled') {
             if (!scheduledAt) return res.status(400).json({ message: 'scheduledAt wajib diisi untuk konsultasi terjadwal' });
@@ -279,8 +299,14 @@ router.put('/:id/start', auth, async (req, res) => {
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        const isDoctor = req.userRole === 'doctor';
-        if (!isDoctor && req.userRole !== 'admin') return res.status(403).json({ message: 'Unauthorized' });
+        // FIX: Verifikasi bahwa dokter yang request adalah dokter konsultasi ini
+        if (req.userRole === 'doctor') {
+            const doctor = await Doctor.findOne({ userId: req.userId });
+            const isThisDoctor = doctor && consultation.doctorId._id.toString() === doctor._id.toString();
+            if (!isThisDoctor) return res.status(403).json({ message: 'Anda bukan dokter konsultasi ini' });
+        } else if (req.userRole !== 'admin') {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
 
         if (!['paid', 'scheduled'].includes(consultation.status)) {
             return res.status(400).json({ message: `Tidak bisa mulai dari status ${consultation.status}` });
