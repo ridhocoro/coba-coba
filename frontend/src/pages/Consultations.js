@@ -30,14 +30,22 @@ const StatusBadge = ({ status }) => {
   const cfg = {
     draft:              { color: '#6b7280', bg: '#f3f4f6', label: 'Draft' },
     pending_payment:    { color: '#b45309', bg: '#fffbeb', label: 'Menunggu Pembayaran' },
+    waiting_verification: { color: '#b45309', bg: '#fffbeb', label: 'Verifikasi Pembayaran' },
+    confirmed:          { color: '#1d4ed8', bg: '#eff6ff', label: 'Dikonfirmasi' },
     paid:               { color: '#1d4ed8', bg: '#eff6ff', label: 'Dibayar' },
     scheduled:          { color: '#7e22ce', bg: '#f5f3ff', label: 'Terjadwal' },
+    in_progress:        { color: '#15803d', bg: '#f0fdf4', label: 'Berlangsung' },
     ongoing:            { color: '#15803d', bg: '#f0fdf4', label: 'Berlangsung' },
     completed:          { color: '#1d4ed8', bg: '#eff6ff', label: 'Selesai' },
     cancelled:          { color: '#b91c1c', bg: '#fef2f2', label: 'Dibatalkan' },
+    cancelled_by_doctor:{ color: '#b91c1c', bg: '#fef2f2', label: 'Dibatalkan Dokter' },
     expired:            { color: '#6b7280', bg: '#f3f4f6', label: 'Kadaluarsa' },
     rejected_payment:   { color: '#b91c1c', bg: '#fef2f2', label: 'Pembayaran Ditolak' },
     no_show:            { color: '#b45309', bg: '#fffbeb', label: 'Tidak Hadir' },
+    doctor_no_show:     { color: '#b91c1c', bg: '#fef2f2', label: 'Dokter Tidak Hadir' },
+    refund_requested:   { color: '#7e22ce', bg: '#f5f3ff', label: 'Refund Diajukan' },
+    refunded:           { color: '#15803d', bg: '#f0fdf4', label: 'Refund Selesai' },
+    refund_failed:      { color: '#b91c1c', bg: '#fef2f2', label: 'Refund Ditolak' },
   };
   const c = cfg[status] || { color: '#6b7280', bg: '#f3f4f6', label: status };
   return (
@@ -269,7 +277,7 @@ const PaymentForm = ({ consultation, amount, deadline, onSuccess, onClose }) => 
 };
 
 // ── Multi-step Form ───────────────────────────────────────────────
-const STEPS = ['Pilih Dokter', 'Tipe Konsultasi', 'Keluhan', 'Jadwal'];
+const STEPS = ['Pilih Dokter', 'Tipe Konsultasi', 'Keluhan', 'Pilih Slot'];
 
 const NewConsultationWizard = ({ onCreated }) => {
   const [step, setStep] = useState(0);
@@ -277,15 +285,29 @@ const NewConsultationWizard = ({ onCreated }) => {
   const [search, setSearch] = useState('');
   const [filterSpec, setFilterSpec] = useState('');
   const [form, setForm] = useState({
-    doctorId: '', consultationType: 'chat', scheduleType: 'instant',
-    scheduledAt: '', symptoms: '', medicalHistory: '', attachments: []
+    doctorId: '', consultationType: 'chat',
+    selectedSlot: null, // { date, startTime, endTime, startUtc, endUtc }
+    symptoms: '', medicalHistory: '', attachments: []
   });
   const [loadingDoctors, setLoadingDoctors] = useState(true);
+  const [slots, setSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     api.get('/api/doctors').then(r => setDoctors(r.data || [])).catch(() => {}).finally(() => setLoadingDoctors(false));
   }, []);
+
+  // Load slots saat step 3 dan dokter dipilih
+  useEffect(() => {
+    if (step === 3 && form.doctorId) {
+      setLoadingSlots(true);
+      api.get(`/api/availability/slots/${form.doctorId}`)
+        .then(r => setSlots(r.data.slots || []))
+        .catch(() => { toast.error('Gagal memuat slot jadwal'); setSlots([]); })
+        .finally(() => setLoadingSlots(false));
+    }
+  }, [step, form.doctorId]);
 
   const selectedDoctor = doctors.find(d => d._id === form.doctorId);
   const specializations = [...new Set(doctors.map(d => d.specialization))].sort();
@@ -295,14 +317,27 @@ const NewConsultationWizard = ({ onCreated }) => {
       && (!filterSpec || d.specialization === filterSpec);
   });
 
+  // Group slots by date
+  const slotsByDate = slots.reduce((acc, s) => {
+    if (!acc[s.date]) acc[s.date] = [];
+    acc[s.date].push(s);
+    return acc;
+  }, {});
+
+  const fmtSlotDate = (dateStr) => {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
+  };
+
   const handleSubmit = async () => {
+    if (!form.selectedSlot) return;
     setSubmitting(true);
     try {
       const fd = new FormData();
       fd.append('doctorId', form.doctorId);
       fd.append('consultationType', form.consultationType);
-      fd.append('scheduleType', form.scheduleType);
-      if (form.scheduleType === 'scheduled') fd.append('scheduledAt', form.scheduledAt);
+      fd.append('scheduledAt', form.selectedSlot.startUtc);
+      fd.append('scheduledEnd', form.selectedSlot.endUtc);
       fd.append('symptoms', form.symptoms);
       fd.append('medicalHistory', form.medicalHistory);
       form.attachments.forEach(f => fd.append('attachments', f));
@@ -324,20 +359,17 @@ const NewConsultationWizard = ({ onCreated }) => {
     if (step === 1) {
       if (!form.consultationType) return false;
       const settings = selectedDoctor?.consultationSettings || {};
-      const keyMap = { chat: 'allowChat', voice_call: 'allowVoiceCall', video_call: 'allowVideoCall' };
+      const keyMap = { chat: 'allowChat', video_call: 'allowVideoCall' };
       return settings[keyMap[form.consultationType]] !== false;
     }
     if (step === 2) return form.symptoms.trim().length > 5;
-    if (step === 3) {
-      if (form.scheduleType === 'instant' && !selectedDoctor?.isOnline) return false;
-      return form.scheduleType === 'instant' || !!form.scheduledAt;
-    }
+    if (step === 3) return !!form.selectedSlot;
     return true;
   };
 
   const s = {
     card: { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
-    h: { color: '#111827', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontWeight: 700 },
+    h: { color: '#111827', fontFamily: "\'Inter\', -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif", fontWeight: 700 },
     sub: { color: '#6b7280', fontSize: 13 },
     inp: { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', color: '#111827', width: '100%', fontSize: 14, outline: 'none' },
     btn: { background: 'linear-gradient(135deg,#2563eb,#3b82f6)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 24px', fontWeight: 700, cursor: 'pointer', fontSize: 15 },
@@ -387,7 +419,7 @@ const NewConsultationWizard = ({ onCreated }) => {
           ) : (
             <div style={{ display: 'grid', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
               {filteredDoctors.map(doc => (
-                <div key={doc._id} onClick={() => setForm(f => ({ ...f, doctorId: doc._id }))}
+                <div key={doc._id} onClick={() => setForm(f => ({ ...f, doctorId: doc._id, selectedSlot: null }))}
                   style={{
                     border: `2px solid ${form.doctorId === doc._id ? '#3b82f6' : '#e5e7eb'}`,
                     borderRadius: 12, padding: '12px 14px', cursor: 'pointer', background: '#ffffff',
@@ -395,7 +427,7 @@ const NewConsultationWizard = ({ onCreated }) => {
                     boxShadow: form.doctorId === doc._id ? '0 0 0 2px #2563eb40' : 'none'
                   }}>
                   <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
-                    {doc.photo ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : '👨‍⚕️'}
+                    {doc.photo ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : '👨\u200d⚕️'}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>dr. {doc.name}</div>
@@ -408,12 +440,6 @@ const NewConsultationWizard = ({ onCreated }) => {
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ color: '#2563eb', fontWeight: 700, fontSize: 13 }}>{fmtRupiah(doc.consultationFee)}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', marginTop: 2 }}>
-                      <FaCircle style={{ fontSize: 7, color: doc.isOnline ? '#16a34a' : '#9ca3af' }} />
-                      <span style={{ fontSize: 11, color: doc.isOnline ? '#16a34a' : '#9ca3af' }}>
-                        {doc.isOnline ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
                   </div>
                 </div>
               ))}
@@ -430,12 +456,10 @@ const NewConsultationWizard = ({ onCreated }) => {
           <p style={s.sub}>Dengan dr. {selectedDoctor?.name} — {fmtRupiah(selectedDoctor?.consultationFee)}</p>
           <div style={{ display: 'grid', gap: 12 }}>
             {[
-              { val: 'chat',       icon: '💬', label: 'Chat',       desc: 'Konsultasi via pesan teks & foto',     key: 'allowChat' },
-              { val: 'voice_call', icon: '📞', label: 'Voice Call', desc: 'Konsultasi via panggilan suara',       key: 'allowVoiceCall' },
-              { val: 'video_call', icon: '📹', label: 'Video Call', desc: 'Konsultasi tatap muka virtual',        key: 'allowVideoCall' },
+              { val: 'chat',       icon: '💬', label: 'Chat',       desc: 'Konsultasi via pesan teks & foto',  key: 'allowChat' },
+              { val: 'video_call', icon: '📹', label: 'Video Call', desc: 'Konsultasi tatap muka virtual',     key: 'allowVideoCall' },
             ].map(opt => {
               const settings = selectedDoctor?.consultationSettings || {};
-              // default true jika field tidak ada (dokter lama)
               const isAllowed = settings[opt.key] !== false;
               return (
                 <div key={opt.val}
@@ -499,80 +523,89 @@ const NewConsultationWizard = ({ onCreated }) => {
                   setForm(f => ({ ...f, attachments: files }));
                 }} />
             </label>
-            {form.attachments.length > 0 && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-                {form.attachments.map((f, i) => (
-                  <span key={i} style={{ background: '#f3f4f6', color: '#6b7280', fontSize: 11, padding: '2px 8px', borderRadius: 20 }}>
-                    {f.name}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       )}
 
-      {/* Step 3: Jadwal */}
+      {/* Step 3: Pilih Slot */}
       {step === 3 && (
         <div>
-          <h6 style={s.h}>Pilih Jadwal</h6>
-          <p style={s.sub}>Tentukan kapan konsultasi akan berlangsung</p>
-          <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
-            {[
-              { val: 'instant',   icon: '⚡', label: 'Langsung (Instant)', desc: 'Konsultasi dimulai segera setelah pembayaran dikonfirmasi admin' },
-              { val: 'scheduled', icon: '📅', label: 'Terjadwal',           desc: 'Tentukan waktu konsultasi, dokter dikonfirmasi oleh admin' },
-            ].map(opt => {
-              const isDisabled = opt.val === 'instant' && !selectedDoctor?.isOnline;
-              return (
-                <div key={opt.val}
-                  onClick={() => !isDisabled && setForm(f => ({ ...f, scheduleType: opt.val }))}
-                  style={{
-                    border: `2px solid ${form.scheduleType === opt.val && !isDisabled ? '#3b82f6' : isDisabled ? '#f3f4f6' : '#e5e7eb'}`,
-                    borderRadius: 12, padding: '14px 18px',
-                    cursor: isDisabled ? 'not-allowed' : 'pointer',
-                    background: isDisabled ? '#f9fafb' : '#ffffff',
-                    display: 'flex', alignItems: 'flex-start', gap: 14, transition: 'all 0.15s',
-                    opacity: isDisabled ? 0.5 : 1
-                  }}>
-                  <span style={{ fontSize: 28, marginTop: 2 }}>{opt.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: '#111827', fontWeight: 600 }}>
-                      {opt.label}
-                      {isDisabled && <span style={{ marginLeft: 8, fontSize: 11, color: '#ef4444', fontWeight: 400 }}>— Dokter sedang offline</span>}
-                    </div>
-                    <div style={{ color: '#6b7280', fontSize: 13 }}>{opt.desc}</div>
+          <h6 style={s.h}>Pilih Jadwal Konsultasi</h6>
+          <p style={s.sub}>
+            Pilih slot yang tersedia dalam 7 hari ke depan. Setiap slot berdurasi 30 menit.
+          </p>
+
+          {loadingSlots ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+              Memuat jadwal tersedia...
+            </div>
+          ) : slots.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280', background: '#f9fafb', borderRadius: 12 }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada slot tersedia</div>
+              <div style={{ fontSize: 13 }}>Dokter ini belum mengatur jadwal atau semua slot sudah penuh</div>
+            </div>
+          ) : (
+            <div style={{ maxHeight: 400, overflowY: 'auto', paddingRight: 4 }}>
+              {Object.entries(slotsByDate).map(([date, daySlots]) => (
+                <div key={date} style={{ marginBottom: 20 }}>
+                  <div style={{ color: '#374151', fontWeight: 600, fontSize: 13, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #e5e7eb' }}>
+                    📅 {fmtSlotDate(date)}
                   </div>
-                  {form.scheduleType === opt.val && !isDisabled && <span style={{ color: '#3b82f6', fontSize: 20 }}>✓</span>}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {daySlots.map(slot => {
+                      const isSelected = form.selectedSlot?.startUtc === slot.startUtc;
+                      const isAvailable = slot.available;
+                      return (
+                        <button
+                          key={slot.startUtc}
+                          type="button"
+                          disabled={!isAvailable}
+                          onClick={() => isAvailable && setForm(f => ({ ...f, selectedSlot: slot }))}
+                          style={{
+                            padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                            border: `2px solid ${isSelected ? '#2563eb' : isAvailable ? '#e5e7eb' : '#f3f4f6'}`,
+                            background: isSelected ? '#eff6ff' : isAvailable ? '#ffffff' : '#f9fafb',
+                            color: isSelected ? '#2563eb' : isAvailable ? '#374151' : '#9ca3af',
+                            cursor: isAvailable ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.1s',
+                            minWidth: 80
+                          }}
+                        >
+                          {slot.startTime}
+                          {!isAvailable && <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: '#ef4444' }}>Penuh</span>}
+                          {isAvailable && <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: '#6b7280' }}>s/d {slot.endTime}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-          {form.scheduleType === 'scheduled' && (
-            <div>
-              <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>
-                Pilih Tanggal & Waktu <span style={{ color: '#b91c1c' }}>*</span>
-              </label>
-              <input type="datetime-local" value={form.scheduledAt}
-                min={new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)}
-                onChange={e => setForm(f => ({ ...f, scheduledAt: e.target.value }))}
-                style={s.inp} />
+              ))}
             </div>
           )}
+
           {/* Summary */}
-          <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 14, marginTop: 20 }}>
-            <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>RINGKASAN</div>
-            {[
-              ['Dokter', `dr. ${selectedDoctor?.name} (${selectedDoctor?.specialization})`],
-              ['Tipe', form.consultationType === 'chat' ? 'Chat' : form.consultationType === 'voice_call' ? 'Voice Call' : 'Video Call'],
-              ['Jadwal', form.scheduleType === 'instant' ? 'Langsung' : fmtDateTime(form.scheduledAt)],
-              ['Biaya', fmtRupiah(selectedDoctor?.consultationFee)],
-            ].map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ color: '#6b7280', fontSize: 13 }}>{k}</span>
-                <span style={{ color: '#111827', fontSize: 13, fontWeight: 600 }}>{v}</span>
+          {form.selectedSlot && (
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: 14, marginTop: 16 }}>
+              <div style={{ color: '#1d4ed8', fontSize: 12, marginBottom: 8, fontWeight: 700 }}>RINGKASAN PESANAN</div>
+              {[
+                ['Dokter', `dr. ${selectedDoctor?.name} (${selectedDoctor?.specialization})`],
+                ['Tipe', form.consultationType === 'chat' ? '💬 Chat' : '📹 Video Call'],
+                ['Tanggal', fmtSlotDate(form.selectedSlot.date)],
+                ['Jam', `${form.selectedSlot.startTime} – ${form.selectedSlot.endTime} WIB`],
+                ['Biaya', fmtRupiah(selectedDoctor?.consultationFee)],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: '#6b7280', fontSize: 13 }}>{k}</span>
+                  <span style={{ color: '#111827', fontSize: 13, fontWeight: 600 }}>{v}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: 8, padding: '6px 10px', background: '#fef3c7', borderRadius: 6, fontSize: 12, color: '#92400e' }}>
+                ⏰ Slot ini akan terkunci 15 menit setelah konfirmasi. Segera lakukan pembayaran.
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -596,12 +629,15 @@ const NewConsultationWizard = ({ onCreated }) => {
 };
 
 // ── History Card ──────────────────────────────────────────────────
-const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate }) => {
+const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate, onRefund }) => {
   const [expanded, setExpanded] = useState(false);
   const needsPay = cons.status === 'pending_payment';
-  const canChat = ['paid', 'scheduled', 'ongoing'].includes(cons.status);
+  const canChat = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(cons.status);
   const isCompleted = cons.status === 'completed';
   const hasSickLetter = cons.sickLetter?.status === 'issued';
+  const canRefund = ['cancelled_by_doctor', 'doctor_no_show'].includes(cons.status);
+  const isRefundPending = cons.status === 'refund_requested';
+  const isRefundFailed = cons.status === 'refund_failed';
 
   return (
     <div style={{
@@ -621,7 +657,7 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate }) => {
               <StatusBadge status={cons.status} />
               {cons.consultationType && (
                 <span style={{ fontSize: 11, color: '#6b7280', background: '#f3f4f6', padding: '1px 8px', borderRadius: 20 }}>
-                  {cons.consultationType === 'chat' ? '💬 Chat' : cons.consultationType === 'voice_call' ? '📞 Suara' : '📹 Video'}
+                  {cons.consultationType === 'chat' ? '💬 Chat' : '📹 Video'}
                 </span>
               )}
             </div>
@@ -668,6 +704,22 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate }) => {
               📄 Unduh Surat Sakit
             </button>
           )}
+          {canRefund && (
+            <button onClick={onRefund}
+              style={{ background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              💸 Ajukan Refund
+            </button>
+          )}
+          {isRefundPending && (
+            <span style={{ padding: '7px 14px', background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+              ⏳ Menunggu Proses Refund
+            </span>
+          )}
+          {isRefundFailed && cons.refund?.failReason && (
+            <div style={{ padding: '7px 14px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12 }}>
+              ❌ Refund ditolak: {cons.refund.failReason}
+            </div>
+          )}
         </div>
       </div>
       {expanded && (
@@ -684,6 +736,105 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate }) => {
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// ── Refund Modal ─────────────────────────────────────────────────
+const RefundModal = ({ consultation, onClose, onSuccess }) => {
+  const [form, setForm] = useState({ bankName: '', accountNumber: '', accountHolder: '', notes: '' });
+  const [proofFile, setProofFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const fileRef = React.useRef();
+
+  const handleSubmit = async () => {
+    if (!form.bankName || !form.accountNumber || !form.accountHolder) {
+      toast.error('Lengkapi semua field yang wajib diisi');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('bankName', form.bankName);
+      fd.append('accountNumber', form.accountNumber);
+      fd.append('accountName', form.accountHolder);  // backend pakai accountName
+      fd.append('notes', form.notes);
+      if (proofFile) fd.append('proof', proofFile);  // backend pakai 'proof'
+
+      await api.post(`/api/consultations/${consultation._id}/refund-request`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Pengajuan refund berhasil dikirim');
+      onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal mengajukan refund');
+    } finally { setSubmitting(false); }
+  };
+
+  const cancelReason = {
+    cancelled_by_doctor: 'Konsultasi dibatalkan oleh dokter',
+    doctor_no_show: 'Dokter tidak hadir dalam 15 menit setelah jadwal',
+  }[consultation.status] || 'Konsultasi dibatalkan';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, maxHeight: '90vh', overflowY: 'auto', fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>💸 Ajukan Refund</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6b7280' }}>×</button>
+        </div>
+        <div style={{ padding: '16px 20px' }}>
+          {/* Alasan */}
+          <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#92400e' }}>
+            <strong>Alasan refund:</strong> {cancelReason}
+          </div>
+
+          {[
+            { key: 'bankName', label: 'Nama Bank *', placeholder: 'Contoh: BCA, BRI, Mandiri, BNI' },
+            { key: 'accountNumber', label: 'Nomor Rekening *', placeholder: 'Contoh: 1234567890' },
+            { key: 'accountHolder', label: 'Atas Nama *', placeholder: 'Sesuai buku tabungan' },
+          ].map(f => (
+            <div key={f.key} style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>{f.label}</label>
+              <input
+                value={form[f.key]}
+                onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                placeholder={f.placeholder}
+                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none' }}
+              />
+            </div>
+          ))}
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>Catatan Tambahan</label>
+            <textarea
+              value={form.notes}
+              onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+              placeholder="Informasi tambahan (opsional)..."
+              rows={2}
+              style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '9px 12px', fontSize: 14, resize: 'none', outline: 'none' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>Bukti Pembayaran (opsional)</label>
+            <input ref={fileRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={e => setProofFile(e.target.files[0])} />
+            <button type="button" onClick={() => fileRef.current.click()}
+              style={{ padding: '8px 16px', border: '1px dashed #d1d5db', borderRadius: 8, background: '#f9fafb', cursor: 'pointer', fontSize: 13, color: '#6b7280' }}>
+              📎 {proofFile ? proofFile.name : 'Pilih File'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>Batal</button>
+            <button onClick={handleSubmit} disabled={submitting || !form.bankName || !form.accountNumber || !form.accountHolder}
+              style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
+              {submitting ? 'Mengirim...' : '✓ Kirim Pengajuan Refund'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -745,8 +896,9 @@ const Consultations = () => {
   const [view, setView] = useState('history'); // 'new' | 'history'
   const [consultations, setConsultations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [payModal, setPayModal] = useState(null); // { consultation, amount }
-  const [ratingModal, setRatingModal] = useState(null); // { id, doctorName }
+  const [payModal, setPayModal] = useState(null);
+  const [ratingModal, setRatingModal] = useState(null);
+  const [refundModal, setRefundModal] = useState(null); // consultation object
 
   const fetchConsultations = useCallback(async () => {
     setLoading(true);
@@ -808,8 +960,9 @@ const Consultations = () => {
     } catch { toast.error('Gagal mengunduh surat sakit'); }
   };
 
-  const active = consultations.filter(c => ['pending_payment', 'paid', 'scheduled', 'ongoing'].includes(c.status));
-  const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show'].includes(c.status));
+  const active = consultations.filter(c => ['pending_payment', 'waiting_verification', 'confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(c.status));
+  const needsAction = consultations.filter(c => ['cancelled_by_doctor', 'doctor_no_show', 'refund_requested', 'refund_failed'].includes(c.status));
+  const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show', 'refunded'].includes(c.status));
 
   const s = { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" };
 
@@ -849,6 +1002,23 @@ const Consultations = () => {
                     onChat={() => navigate(`/consultations/${cons._id}`)}
                     onDownload={() => handleDownloadPDF(cons)}
                     onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
+                    onRefund={() => setRefundModal(cons)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Perlu Tindakan (dibatalkan / refund) */}
+            {needsAction.length > 0 && (
+              <div style={{ marginBottom: 28 }}>
+                <h6 style={{ color: '#b91c1c', fontWeight: 700, marginBottom: 12, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>⚠️ Perlu Tindakan ({needsAction.length})</h6>
+                {needsAction.map(cons => (
+                  <ConsultationCard key={cons._id} cons={cons}
+                    onPay={() => {}}
+                    onChat={() => navigate(`/consultations/${cons._id}`)}
+                    onDownload={() => handleDownloadPDF(cons)}
+                    onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
+                    onRefund={() => setRefundModal(cons)}
                   />
                 ))}
               </div>
@@ -877,6 +1047,7 @@ const Consultations = () => {
                     onChat={() => navigate(`/consultations/${cons._id}`)}
                     onDownload={() => handleDownloadPDF(cons)}
                     onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
+                    onRefund={() => setRefundModal(cons)}
                   />
                 ))
               )}
@@ -904,6 +1075,15 @@ const Consultations = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Refund Modal */}
+      {refundModal && (
+        <RefundModal
+          consultation={refundModal}
+          onClose={() => setRefundModal(null)}
+          onSuccess={fetchConsultations}
+        />
       )}
 
       {/* Rating Modal */}

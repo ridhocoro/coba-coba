@@ -9,16 +9,24 @@ import {
 } from 'react-icons/fa';
 
 const STATUS_CFG = {
-    draft:            { bg: '#f1f5f9', color: '#475569', label: 'Draft' },
-    pending_payment:  { bg: '#fef3c7', color: '#b45309', label: 'Menunggu Bayar' },
-    paid:             { bg: '#dbeafe', color: '#1e40af', label: 'Sudah Bayar' },
-    scheduled:        { bg: '#ede9fe', color: '#6d28d9', label: 'Terjadwal' },
-    ongoing:          { bg: '#dcfce7', color: '#166534', label: 'Berlangsung' },
-    completed:        { bg: '#cffafe', color: '#0e7490', label: 'Selesai' },
-    cancelled:        { bg: '#fee2e2', color: '#b91c1c', label: 'Dibatalkan' },
-    expired:          { bg: '#f1f5f9', color: '#64748b', label: 'Kadaluarsa' },
-    rejected_payment: { bg: '#fee2e2', color: '#b91c1c', label: 'Bayar Ditolak' },
-    no_show:          { bg: '#fef3c7', color: '#b45309', label: 'Tidak Hadir' },
+    draft:                { bg: '#f1f5f9', color: '#475569', label: 'Draft' },
+    pending_payment:      { bg: '#fef3c7', color: '#b45309', label: 'Menunggu Bayar' },
+    waiting_verification: { bg: '#fef3c7', color: '#b45309', label: 'Verifikasi Bayar' },
+    confirmed:            { bg: '#dbeafe', color: '#1e40af', label: 'Dikonfirmasi' },
+    paid:                 { bg: '#dbeafe', color: '#1e40af', label: 'Sudah Bayar' },
+    scheduled:            { bg: '#ede9fe', color: '#6d28d9', label: 'Terjadwal' },
+    in_progress:          { bg: '#dcfce7', color: '#166534', label: 'Berlangsung' },
+    ongoing:              { bg: '#dcfce7', color: '#166534', label: 'Berlangsung' },
+    completed:            { bg: '#cffafe', color: '#0e7490', label: 'Selesai' },
+    cancelled:            { bg: '#fee2e2', color: '#b91c1c', label: 'Dibatalkan' },
+    cancelled_by_doctor:  { bg: '#fee2e2', color: '#b91c1c', label: 'Batal Dokter' },
+    expired:              { bg: '#f1f5f9', color: '#64748b', label: 'Kadaluarsa' },
+    rejected_payment:     { bg: '#fee2e2', color: '#b91c1c', label: 'Bayar Ditolak' },
+    no_show:              { bg: '#fef3c7', color: '#b45309', label: 'Tidak Hadir' },
+    doctor_no_show:       { bg: '#fee2e2', color: '#b91c1c', label: 'Dokter Absen' },
+    refund_requested:     { bg: '#ede9fe', color: '#6d28d9', label: 'Refund Diminta' },
+    refunded:             { bg: '#dcfce7', color: '#166534', label: 'Refund Selesai' },
+    refund_failed:        { bg: '#fee2e2', color: '#b91c1c', label: 'Refund Ditolak' },
 };
 
 const StatusBadge = ({ status }) => {
@@ -51,6 +59,9 @@ const ManageConsultations = () => {
     const [showDetail, setShowDetail] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
     const [showRejectForm, setShowRejectForm] = useState(false);
+    const [showRefundForm, setShowRefundForm] = useState(false);
+    const [refundAction, setRefundAction] = useState('approve'); // 'approve' | 'reject'
+    const [refundReason, setRefundReason] = useState('');
     const [processing, setProcessing] = useState(false);
 
     useEffect(() => { fetchData(); }, []);
@@ -68,19 +79,24 @@ const ManageConsultations = () => {
         setProcessing(true);
         try {
             const map = {
-                'mark-paid':       () => api.put(`/api/consultations/${consultationId}/mark-paid`),
-                'reject-payment':  () => api.put(`/api/consultations/${consultationId}/reject-payment`, extraData),
-                'start':           () => api.put(`/api/consultations/${consultationId}/start`),
-                'end':             () => api.put(`/api/consultations/${consultationId}/end`),
-                'no-show':         () => api.put(`/api/consultations/${consultationId}/no-show`, extraData),
-                'cancel':          () => api.put(`/api/consultations/${consultationId}/cancel`, extraData),
+                'mark-paid':         () => api.put(`/api/consultations/${consultationId}/mark-paid`),
+                'reject-payment':    () => api.put(`/api/consultations/${consultationId}/reject-payment`, extraData),
+                'start':             () => api.put(`/api/consultations/${consultationId}/start`),
+                'end':               () => api.put(`/api/consultations/${consultationId}/end`),
+                'no-show':           () => api.put(`/api/consultations/${consultationId}/no-show`, extraData),
+                'cancel':            () => api.put(`/api/consultations/${consultationId}/cancel`, extraData),
+                'cancel-by-doctor':  () => api.put(`/api/consultations/${consultationId}/cancel-by-doctor`, extraData),
+                'process-refund':    () => api.put(`/api/consultations/${consultationId}/process-refund`, extraData),
             };
             if (!map[action]) return;
             await map[action]();
             toast.success('Berhasil diproses');
             setShowDetail(false);
             setShowRejectForm(false);
+            setShowRefundForm(false);
             setRejectReason('');
+            setRefundReason('');
+            // Update selected jika masih buka
             fetchData();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Gagal memproses');
@@ -520,7 +536,7 @@ const ManageConsultations = () => {
                                     </td>
                                     <td>
                                         <div style={{ fontSize: 13 }}>
-                                            {c.consultationType === 'chat' ? '💬 Chat' : c.consultationType === 'voice_call' ? '📞 Voice' : '📹 Video'}
+                                            {c.consultationType === 'chat' ? '💬 Chat' : '📹 Video'}
                                         </div>
                                         <div style={{ fontSize: 12, color: '#64748b' }}>
                                             {c.scheduleType === 'scheduled' ? 'Terjadwal' : '⚡ Instant'}
@@ -594,7 +610,7 @@ const ManageConsultations = () => {
                         <div style={{ marginBottom: 16 }}>
                             <div className="section-title">INFORMASI KONSULTASI</div>
                             {[
-                                ['Tipe Konsultasi', selected.consultationType === 'chat' ? 'Chat' : selected.consultationType === 'voice_call' ? 'Voice Call' : 'Video Call'],
+                                ['Tipe Konsultasi', selected.consultationType === 'chat' ? 'Chat' : 'Video Call'],
                                 ['Jenis Jadwal', selected.scheduleType === 'instant' ? 'Instant' : 'Terjadwal'],
                                 ...(selected.scheduledAt ? [['Waktu Jadwal', fmtDate(selected.scheduledAt)]] : []),
                                 ['Tanggal Dibuat', fmtDate(selected.createdAt)],
@@ -730,8 +746,23 @@ const ManageConsultations = () => {
                                     </button>
                                 )}
 
-                                {/* Batalkan Konsultasi */}
-                                {['pending_payment', 'paid', 'scheduled'].includes(selected.status) && (
+                                {/* Batalkan oleh Dokter (admin pilih atas nama dokter) */}
+                                {['confirmed', 'paid', 'scheduled'].includes(selected.status) && (
+                                    <button
+                                        className="action-button btn-danger"
+                                        onClick={() => {
+                                            if (window.confirm('Batalkan konsultasi ini atas nama dokter?\nUser akan mendapat notifikasi dan bisa mengajukan refund.')) {
+                                                handleAction('cancel-by-doctor', selected._id, { reason: 'Dibatalkan oleh dokter' });
+                                            }
+                                        }}
+                                        disabled={processing}
+                                    >
+                                        <FaTimesCircle /> Batalkan oleh Dokter
+                                    </button>
+                                )}
+
+                                {/* Batalkan Konsultasi (admin) */}
+                                {['pending_payment', 'waiting_verification'].includes(selected.status) && (
                                     <button
                                         className="action-button btn-danger"
                                         onClick={() => handleAction('cancel', selected._id, { reason: 'Dibatalkan oleh admin' })}
@@ -739,6 +770,72 @@ const ManageConsultations = () => {
                                     >
                                         <FaTimesCircle /> Batalkan Konsultasi
                                     </button>
+                                )}
+
+                                {/* Proses Refund */}
+                                {selected.status === 'refund_requested' && (
+                                    <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 10, padding: 14, marginTop: 8 }}>
+                                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: '#6d28d9' }}>💸 Proses Permintaan Refund</div>
+                                        {selected.refund && (
+                                            <div style={{ marginBottom: 12, fontSize: 12, color: '#374151' }}>
+                                                <div>Bank: <strong>{selected.refund.bankName}</strong></div>
+                                                <div>No. Rekening: <strong>{selected.refund.accountNumber}</strong></div>
+                                                <div>Atas Nama: <strong>{selected.refund.accountName}</strong></div>
+                                                {selected.refund.proofUrl && (
+                                                    <a href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${selected.refund.proofUrl}`}
+                                                        target="_blank" rel="noreferrer"
+                                                        style={{ color: '#2563eb', fontSize: 12 }}>
+                                                        📎 Lihat Bukti Pembayaran
+                                                    </a>
+                                                )}
+                                            </div>
+                                        )}
+                                        {!showRefundForm ? (
+                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                <button className="action-button btn-primary" style={{ flex: 1 }}
+                                                    onClick={() => { setRefundAction('approve'); setShowRefundForm(true); }}
+                                                    disabled={processing}>
+                                                    <FaCheckCircle /> Setujui Refund
+                                                </button>
+                                                <button className="action-button btn-danger" style={{ flex: 1 }}
+                                                    onClick={() => { setRefundAction('reject'); setShowRefundForm(true); }}
+                                                    disabled={processing}>
+                                                    <FaTimesCircle /> Tolak Refund
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                {refundAction === 'reject' && (
+                                                    <textarea
+                                                        value={refundReason}
+                                                        onChange={e => setRefundReason(e.target.value)}
+                                                        placeholder="Alasan penolakan refund..."
+                                                        rows={2}
+                                                        style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 8, resize: 'none' }}
+                                                    />
+                                                )}
+                                                {refundAction === 'approve' && (
+                                                    <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8, padding: '6px 10px', background: '#eff6ff', borderRadius: 6 }}>
+                                                        ℹ️ Pastikan dana sudah ditransfer ke rekening user sebelum menekan Konfirmasi.
+                                                    </div>
+                                                )}
+                                                <div style={{ display: 'flex', gap: 8 }}>
+                                                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', cursor: 'pointer', fontSize: 13 }}
+                                                        onClick={() => { setShowRefundForm(false); setRefundReason(''); }}>
+                                                        Batal
+                                                    </button>
+                                                    <button style={{ flex: 2, padding: '8px', borderRadius: 8, border: 'none', background: refundAction === 'approve' ? '#16a34a' : '#b91c1c', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}
+                                                        disabled={processing || (refundAction === 'reject' && !refundReason.trim())}
+                                                        onClick={() => handleAction('process-refund', selected._id, {
+                                                            action: refundAction,
+                                                            reason: refundReason
+                                                        })}>
+                                                        {processing ? 'Memproses...' : refundAction === 'approve' ? '✓ Konfirmasi Refund' : '✗ Tolak Refund'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
 
                                 {/* Download Surat Sakit */}

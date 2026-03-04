@@ -7,8 +7,14 @@ module.exports = function(req, res, next) {
         return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+        console.error('FATAL: JWT_SECRET tidak dikonfigurasi di .env!');
+        return res.status(500).json({ message: 'Konfigurasi server error' });
+    }
+
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+        const decoded = jwt.verify(token, jwtSecret);
         req.userId = decoded.userId;
         req.userRole = decoded.role;
         next();

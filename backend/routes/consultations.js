@@ -132,50 +132,118 @@ router.get('/doctor/all', auth, doctorAuth, async (req, res) => {
  */
 router.post('/create', auth, uploadAttachment.array('attachments', 5), async (req, res) => {
     try {
-        const { doctorId, consultationType, scheduleType, scheduledAt, symptoms, medicalHistory } = req.body;
+        const { doctorId, consultationType, symptoms, medicalHistory, scheduledAt, scheduledEnd } = req.body;
 
         const doctor = await Doctor.findById(doctorId);
         if (!doctor || !doctor.isActive) {
             return res.status(404).json({ message: 'Dokter tidak ditemukan atau tidak aktif' });
         }
 
-        // ── Validasi: instant hanya jika dokter online ─────────────────────
-        if (scheduleType === 'instant' && !doctor.isOnline) {
-            return res.status(400).json({
-                message: 'Konsultasi langsung (instant) tidak tersedia. Dokter sedang offline. Pilih jadwal terjadwal.'
-            });
-        }
-
-        // ── Validasi: tipe konsultasi harus diizinkan dokter ──────────────
+        // ── Backend re-validasi tipe konsultasi ────────────────────────────────
         const settings = doctor.consultationSettings || {};
         const typeAllowed = {
             chat:       settings.allowChat      !== false,
-            voice_call: settings.allowVoiceCall !== false,
             video_call: settings.allowVideoCall !== false,
         };
         if (!typeAllowed[consultationType]) {
+            return res.status(400).json({ message: `Dokter tidak mengaktifkan fitur ${consultationType === 'video_call' ? 'Video Call' : 'Chat'}` });
+        }
+
+        // ── Validasi scheduledAt wajib ─────────────────────────────────────────
+        if (!scheduledAt || !scheduledEnd) {
+            return res.status(400).json({ message: 'Slot jadwal (scheduledAt & scheduledEnd) wajib diisi' });
+        }
+
+        const slotStart = new Date(scheduledAt);
+        const slotEnd   = new Date(scheduledEnd);
+        const now = new Date();
+
+        if (slotStart <= now) {
+            return res.status(400).json({ message: 'Tidak bisa memesan slot yang sudah lewat' });
+        }
+
+        // Batas 7 hari ke depan
+        const maxDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        if (slotStart > maxDate) {
+            return res.status(400).json({ message: 'Pemesanan hanya tersedia hingga 7 hari ke depan' });
+        }
+
+        // ── Race condition check: slot locked ──────────────────────────────────
+        // Cek apakah slot ini sudah dipesan orang lain (atomic dengan findOne)
+        const slotConflict = await Consultation.findOne({
+            doctorId,
+            scheduledAt: slotStart,
+            status: { $in: ['pending_payment', 'waiting_verification', 'confirmed', 'in_progress'] }
+        });
+        if (slotConflict) {
+            return res.status(409).json({ message: 'Slot ini baru saja diambil orang lain. Silakan pilih slot lain.' });
+        }
+
+        // ── Validasi ulang availability rule (backend, tidak bisa bypass) ──────
+        const DoctorAvailability = require('../models/DoctorAvailability');
+        const avail = await DoctorAvailability.findOne({ doctorId: doctor._id, isActive: true });
+        if (!avail) {
+            return res.status(400).json({ message: 'Dokter belum mengatur jadwal praktik' });
+        }
+
+        // Konversi scheduledAt UTC → WIB untuk validasi
+        const WIB_OFFSET = 7 * 60 * 60 * 1000;
+        const slotWIB = new Date(slotStart.getTime() + WIB_OFFSET);
+        const dayOfWeek = slotWIB.getUTCDay();
+        if (!avail.practiceDays.includes(dayOfWeek)) {
+            return res.status(400).json({ message: 'Dokter tidak praktik pada hari tersebut' });
+        }
+
+        const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2,'0')}:${String(slotWIB.getUTCMinutes()).padStart(2,'0')}`;
+        const toMin = (hhmm) => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
+        const slotMin = toMin(slotHHMM);
+        const startMin = toMin(avail.startTime);
+        const endMin   = toMin(avail.endTime);
+        const lunchS   = toMin(avail.lunchBreakStart);
+        const lunchE   = toMin(avail.lunchBreakEnd);
+        const interval = avail.sessionDuration + avail.bufferDuration; // 60 menit
+
+        if (slotMin < startMin || slotMin >= endMin) {
+            return res.status(400).json({ message: 'Slot di luar jam praktik dokter' });
+        }
+        if (slotMin >= lunchS && slotMin < lunchE) {
+            return res.status(400).json({ message: 'Slot tidak tersedia (break siang)' });
+        }
+
+        // ── Validasi strict: slot harus benar-benar ada di grid availability ──
+        // Regenerate valid slot times dan pastikan slotHHMM ada di dalamnya
+        // Ini mencegah user kirim jam sembarang (misal 08:17) lewat API langsung
+        const dateStr = slotWIB.toISOString().slice(0, 10);
+        const validSlots = avail.generateSlotsForDay(dateStr);
+        const isValidSlot = validSlots.some(s => s.startTime === slotHHMM);
+        if (!isValidSlot) {
             return res.status(400).json({
-                message: `Dokter tidak mengaktifkan fitur ${consultationType === 'voice_call' ? 'Voice Call' : 'Video Call'}. Pilih jenis konsultasi lain.`
+                message: 'Slot waktu tidak valid. Pilih slot yang tersedia dari sistem.',
+                validSlots: validSlots.map(s => s.startTime) // bantu debug
             });
         }
 
-        // Validasi scheduled
-        if (scheduleType === 'scheduled') {
-            if (!scheduledAt) return res.status(400).json({ message: 'scheduledAt wajib diisi untuk konsultasi terjadwal' });
-            if (new Date(scheduledAt) <= new Date()) return res.status(400).json({ message: 'Jadwal harus di masa mendatang' });
+        // Validasi scheduledEnd: harus = scheduledAt + sessionDuration
+        const expectedEndMin = slotMin + avail.sessionDuration;
+        const slotEndWIB = new Date(slotEnd.getTime() + WIB_OFFSET);
+        const slotEndHHMM = `${String(slotEndWIB.getUTCHours()).padStart(2,'0')}:${String(slotEndWIB.getUTCMinutes()).padStart(2,'0')}`;
+        if (toMin(slotEndHHMM) !== expectedEndMin) {
+            return res.status(400).json({ message: 'Waktu selesai slot tidak sesuai' });
         }
 
-        // Url lampiran keluhan
-        const attachmentUrls = (req.files || []).map(f => `/uploads/attachments/${f.filename}`);
-
+        // ── Buat konsultasi + lock slot ────────────────────────────────────────
         const paymentDeadline = new Date(Date.now() + 15 * 60 * 1000); // 15 menit
+
+        const attachmentUrls = (req.files || []).map(f => `/uploads/attachments/${f.filename}`);
 
         const consultation = new Consultation({
             userId: req.userId,
             doctorId,
             consultationType: consultationType || 'chat',
-            scheduleType: scheduleType || 'instant',
-            scheduledAt: scheduleType === 'scheduled' ? new Date(scheduledAt) : undefined,
+            scheduleType: 'scheduled',
+            scheduledAt: slotStart,
+            scheduledEnd: slotEnd,
+            slotLockExpires: paymentDeadline,
             symptoms,
             medicalHistory,
             attachmentUrls,
@@ -185,19 +253,6 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 
         await consultation.save();
 
-        // Notif admin/dokter
-        const doctorUser = await User.findById(doctor.userId);
-        if (doctorUser) {
-            await createNotification({
-                userId: doctorUser._id,
-                type: 'consultation_request',
-                title: 'Permintaan Konsultasi Baru',
-                message: `Ada pasien baru yang meminta konsultasi dengan Anda`,
-                data: { consultationId: consultation._id, url: `/consultations/${consultation._id}` },
-                io: req.app.get('io')
-            });
-        }
-
         res.json({
             success: true,
             consultation,
@@ -205,18 +260,410 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
             paymentDeadline
         });
     } catch (err) {
-        console.error(err);
+        console.error('create consultation error:', err);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 3. STATUS TRANSITIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// PAID (dipanggil setelah admin verifikasi pembayaran, atau oleh webhook)
-// Ini tetap dipakai oleh admin/payment route. Route ini mengubah pending_payment → paid
-// dan otomatis ke ongoing (instant) atau scheduled (scheduled)
+// ── User upload bukti pembayaran → waiting_verification ───────────────────────
+const uploadProof = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            const dir = 'uploads/payment-proofs';
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            cb(null, dir);
+        },
+        filename: (req, file, cb) => {
+            cb(null, `proof-${Date.now()}-${Math.round(Math.random()*1e9)}${path.extname(file.originalname)}`);
+        }
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+router.post('/:id/upload-proof', auth, uploadProof.single('proof'), async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
+        if (consultation.status !== 'pending_payment') {
+            return res.status(400).json({ message: `Status saat ini: ${consultation.status}. Upload bukti hanya bisa saat pending_payment.` });
+        }
+        if (!req.file) return res.status(400).json({ message: 'File bukti pembayaran wajib diunggah' });
+
+        consultation.status = 'waiting_verification';
+        consultation.paymentProofUrl = `/uploads/payment-proofs/${req.file.filename}`;
+        consultation.transferDate = req.body.transferDate ? new Date(req.body.transferDate) : new Date();
+        await consultation.save();
+
+        // Notif admin
+        const User = require('../models/User');
+        const admins = await User.find({ role: 'admin' });
+        for (const admin of admins) {
+            await createNotification({
+                userId: admin._id,
+                type: 'payment_verified',
+                title: 'Bukti Pembayaran Baru',
+                message: `Ada bukti pembayaran konsultasi yang perlu diverifikasi`,
+                data: { consultationId: consultation._id },
+                io: req.app.get('io')
+            });
+        }
+
+        res.json({ success: true, message: 'Bukti pembayaran berhasil diunggah', consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Admin: verifikasi pembayaran → confirmed ──────────────────────────────────
+router.put('/:id/verify-payment', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('doctorId', 'userId name')
+            .populate('userId', 'name');
+
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.status !== 'waiting_verification') {
+            return res.status(400).json({ message: `Status harus waiting_verification, saat ini: ${consultation.status}` });
+        }
+
+        consultation.status = 'confirmed';
+        consultation.paymentVerified = true;
+        consultation.verifiedAt = new Date();
+        consultation.verifiedBy = req.userId;
+        await consultation.save();
+
+        // Notif user
+        await createNotification({
+            userId: consultation.userId._id,
+            type: 'consultation_confirmed',
+            title: 'Pembayaran Dikonfirmasi',
+            message: `Pembayaran Anda telah diverifikasi. Konsultasi terjadwal pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
+            data: { consultationId: consultation._id },
+            io: req.app.get('io')
+        });
+
+        // Notif dokter
+        if (consultation.doctorId?.userId) {
+            await createNotification({
+                userId: consultation.doctorId.userId,
+                type: 'consultation_request',
+                title: 'Konsultasi Baru Terkonfirmasi',
+                message: `Pasien ${consultation.userId.name} akan konsultasi pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
+                data: { consultationId: consultation._id },
+                io: req.app.get('io')
+            });
+        }
+
+        res.json({ success: true, message: 'Pembayaran berhasil diverifikasi', consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Admin: tolak pembayaran → kembali ke pending_payment atau expired ─────────
+router.put('/:id/reject-payment', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+
+        const consultation = await Consultation.findById(req.params.id);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.status !== 'waiting_verification') {
+            return res.status(400).json({ message: 'Status harus waiting_verification' });
+        }
+
+        // Jika masih dalam window lock (slot belum expired), kembalikan ke pending_payment
+        const now = new Date();
+        const slotStillValid = consultation.scheduledAt > now;
+        if (slotStillValid) {
+            consultation.status = 'pending_payment';
+            consultation.paymentProofUrl = null;
+            consultation.paymentDeadline = new Date(now.getTime() + 15 * 60 * 1000); // extend 15 mnt lagi
+        } else {
+            consultation.status = 'expired';
+        }
+        consultation.rejectedAt = now;
+        consultation.rejectionReason = req.body.reason || 'Bukti pembayaran tidak valid';
+        await consultation.save();
+
+        await createNotification({
+            userId: consultation.userId,
+            type: 'payment_rejected',
+            title: 'Bukti Pembayaran Ditolak',
+            message: req.body.reason || 'Bukti pembayaran tidak valid. Silakan upload ulang.',
+            data: { consultationId: consultation._id },
+            io: req.app.get('io')
+        });
+
+        res.json({ success: true, message: 'Pembayaran ditolak', consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Admin: cancelled_by_doctor ────────────────────────────────────────────────
+router.put('/:id/cancel-by-doctor', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+
+        const consultation = await Consultation.findById(req.params.id);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        const cancellableStatuses = ['confirmed', 'waiting_verification', 'pending_payment'];
+        if (!cancellableStatuses.includes(consultation.status)) {
+            return res.status(400).json({ message: `Tidak bisa batalkan dari status ${consultation.status}` });
+        }
+
+        consultation.status = 'cancelled_by_doctor';
+        consultation.cancelledAt = new Date();
+        consultation.cancelledBy = 'admin';
+        consultation.cancelReason = req.body.reason || 'Dokter membatalkan konsultasi';
+        await consultation.save();
+
+        await createNotification({
+            userId: consultation.userId,
+            type: 'consultation_cancelled',
+            title: 'Konsultasi Dibatalkan',
+            message: `Konsultasi Anda dibatalkan oleh dokter. Anda dapat mengajukan refund.`,
+            data: { consultationId: consultation._id },
+            io: req.app.get('io')
+        });
+
+        res.json({ success: true, message: 'Konsultasi dibatalkan oleh dokter', consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Dokter: Start → in_progress ──────────────────────────────────────────────
+router.put('/:id/start', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('doctorId', 'userId');
+
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        const doctorUserId = consultation.doctorId?.userId?.toString();
+        if (doctorUserId !== req.userId && req.userRole !== 'admin') {
+            return res.status(403).json({ message: 'Hanya dokter yang bersangkutan yang dapat memulai' });
+        }
+        if (consultation.status !== 'confirmed') {
+            return res.status(400).json({ message: `Status harus confirmed, saat ini: ${consultation.status}` });
+        }
+
+        consultation.status = 'in_progress';
+        consultation.startTime = new Date();
+        await consultation.save();
+
+        await createNotification({
+            userId: consultation.userId,
+            type: 'consultation_started',
+            title: 'Konsultasi Dimulai',
+            message: 'Dokter telah memulai sesi konsultasi Anda',
+            data: { consultationId: consultation._id },
+            io: req.app.get('io')
+        });
+
+        res.json({ success: true, message: 'Konsultasi dimulai', consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Dokter: End → completed / no_show ────────────────────────────────────────
+router.put('/:id/end', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('doctorId', 'userId');
+
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        const doctorUserId = consultation.doctorId?.userId?.toString();
+        if (doctorUserId !== req.userId && req.userRole !== 'admin') {
+            return res.status(403).json({ message: 'Hanya dokter yang bersangkutan yang dapat mengakhiri' });
+        }
+        if (consultation.status !== 'in_progress') {
+            return res.status(400).json({ message: `Status harus in_progress, saat ini: ${consultation.status}` });
+        }
+
+        // Tentukan no_show: jika tidak ada satu pesan pun dari user
+        const userMessages = consultation.messages.filter(
+            m => m.senderId?.toString() === consultation.userId?.toString()
+        );
+        const finalStatus = userMessages.length === 0 ? 'no_show' : 'completed';
+
+        consultation.status = finalStatus;
+        consultation.endTime = new Date();
+        await consultation.save();
+
+        await createNotification({
+            userId: consultation.userId,
+            type: 'consultation_ended',
+            title: finalStatus === 'no_show' ? 'Konsultasi Berakhir (Tidak Hadir)' : 'Konsultasi Selesai',
+            message: finalStatus === 'no_show'
+                ? 'Dokter telah mengakhiri sesi namun Anda tidak mengirim pesan. Status: Tidak Hadir.'
+                : 'Konsultasi Anda telah selesai. Silakan beri rating.',
+            data: { consultationId: consultation._id },
+            io: req.app.get('io')
+        });
+
+        res.json({ success: true, message: `Konsultasi ${finalStatus}`, consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── User: Ajukan refund (setelah cancelled_by_doctor atau doctor_no_show) ─────
+const uploadRefundProof = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            const dir = 'uploads/refund-proofs';
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            cb(null, dir);
+        },
+        filename: (req, file, cb) => {
+            cb(null, `refund-${Date.now()}-${Math.round(Math.random()*1e9)}${path.extname(file.originalname)}`);
+        }
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+router.post('/:id/refund-request', auth, uploadRefundProof.single('proof'), async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
+
+        const refundableStatuses = ['cancelled_by_doctor', 'doctor_no_show'];
+        if (!refundableStatuses.includes(consultation.status)) {
+            return res.status(400).json({ message: 'Refund hanya bisa diajukan untuk konsultasi yang dibatalkan dokter' });
+        }
+
+        const { bankName, accountNumber, accountName } = req.body;
+        if (!bankName || !accountNumber || !accountName) {
+            return res.status(400).json({ message: 'Data bank (nama bank, nomor rekening, atas nama) wajib diisi' });
+        }
+
+        const proofUrl = req.file ? `/uploads/refund-proofs/${req.file.filename}` : null;
+
+        consultation.status = 'refund_requested';
+        consultation.refund = {
+            bankName,
+            accountNumber,
+            accountName,
+            proofUrl,
+            requestedAt: new Date()
+        };
+        await consultation.save();
+
+        // Notif admin
+        const User = require('../models/User');
+        const admins = await User.find({ role: 'admin' });
+        for (const admin of admins) {
+            await createNotification({
+                userId: admin._id,
+                type: 'refund_requested',
+                title: 'Permintaan Refund Baru',
+                message: `Ada permintaan refund konsultasi yang perlu diproses`,
+                data: { consultationId: consultation._id },
+                io: req.app.get('io')
+            });
+        }
+
+        res.json({ success: true, message: 'Permintaan refund berhasil dikirim', consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Admin: Proses refund (refunded / refund_failed) ───────────────────────────
+router.put('/:id/process-refund', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+
+        const consultation = await Consultation.findById(req.params.id);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.status !== 'refund_requested') {
+            return res.status(400).json({ message: 'Status harus refund_requested' });
+        }
+
+        const { action, failReason } = req.body; // action: 'approve' | 'reject'
+        if (!['approve', 'reject'].includes(action)) {
+            return res.status(400).json({ message: 'action harus approve atau reject' });
+        }
+
+        consultation.status = action === 'approve' ? 'refunded' : 'refund_failed';
+        consultation.refund.processedAt = new Date();
+        consultation.refund.adminId = req.userId;
+        if (action === 'reject') {
+            consultation.refund.failReason = failReason || 'Refund ditolak oleh admin';
+        }
+        await consultation.save();
+
+        await createNotification({
+            userId: consultation.userId,
+            type: 'refund_processed',
+            title: action === 'approve' ? 'Refund Disetujui' : 'Refund Ditolak',
+            message: action === 'approve'
+                ? 'Dana Anda akan ditransfer dalam 1-3 hari kerja'
+                : `Refund ditolak: ${failReason || 'Silakan hubungi admin'}`,
+            data: { consultationId: consultation._id },
+            io: req.app.get('io')
+        });
+
+        res.json({ success: true, message: `Refund ${action === 'approve' ? 'disetujui' : 'ditolak'}`, consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Legacy: mark-paid (tetap ada untuk backward compat, redirect ke verify) ───
+router.put('/:id/mark-paid', auth, async (req, res) => {
+    return res.status(410).json({ message: 'Endpoint ini sudah diganti dengan /verify-payment (admin) dan /upload-proof (user)' });
+});
+
+router.put('/:id/no-show', auth, async (req, res) => {
+    return res.status(410).json({ message: 'No-show ditentukan otomatis oleh sistem' });
+});
+
+router.put('/:id/cancel', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        // User hanya bisa cancel saat pending_payment
+        if (req.userRole === 'user') {
+            if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
+            if (consultation.status !== 'pending_payment') {
+                return res.status(400).json({ message: 'Hanya bisa dibatalkan saat menunggu pembayaran' });
+            }
+            consultation.status = 'expired';
+            consultation.cancelledBy = 'user';
+            consultation.cancelledAt = new Date();
+        } else if (req.userRole === 'admin') {
+            consultation.status = 'cancelled_by_doctor';
+            consultation.cancelledBy = 'admin';
+            consultation.cancelledAt = new Date();
+            consultation.cancelReason = req.body.reason || '';
+        } else {
+            return res.status(403).json({ message: 'Akses ditolak' });
+        }
+
+        await consultation.save();
+        res.json({ success: true, consultation });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Admin: Verifikasi pembayaran manual → confirmed/scheduled ─────────────────
 router.put('/:id/mark-paid', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id)
@@ -256,194 +703,6 @@ router.put('/:id/mark-paid', auth, async (req, res) => {
         res.json({ success: true, consultation });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
-    }
-});
-
-// REJECTED PAYMENT (admin)
-router.put('/:id/reject-payment', auth, async (req, res) => {
-    try {
-        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Hanya admin' });
-
-        const consultation = await Consultation.findById(req.params.id);
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (consultation.status !== 'pending_payment') {
-            return res.status(400).json({ message: 'Hanya bisa reject di status pending_payment' });
-        }
-
-        consultation.status = 'rejected_payment';
-        consultation.rejectedAt = new Date();
-        consultation.rejectionReason = req.body.reason || '';
-        await consultation.save();
-
-        await createNotification({
-            userId: consultation.userId,
-            type: 'payment_rejected',
-            title: 'Pembayaran Ditolak',
-            message: `Pembayaran Anda ditolak. ${req.body.reason || 'Silakan hubungi admin.'}`,
-            data: { consultationId: consultation._id },
-            io: req.app.get('io')
-        });
-
-        res.json({ success: true, consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// START (scheduled → ongoing, oleh dokter)
-router.put('/:id/start', auth, async (req, res) => {
-    try {
-        const consultation = await Consultation.findById(req.params.id)
-            .populate('userId', 'name')
-            .populate('doctorId', 'name userId');
-
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-
-        // FIX: Verifikasi bahwa dokter yang request adalah dokter konsultasi ini
-        if (req.userRole === 'doctor') {
-            const doctor = await Doctor.findOne({ userId: req.userId });
-            const isThisDoctor = doctor && consultation.doctorId._id.toString() === doctor._id.toString();
-            if (!isThisDoctor) return res.status(403).json({ message: 'Anda bukan dokter konsultasi ini' });
-        } else if (req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Unauthorized' });
-        }
-
-        if (!['paid', 'scheduled'].includes(consultation.status)) {
-            return res.status(400).json({ message: `Tidak bisa mulai dari status ${consultation.status}` });
-        }
-
-        consultation.status = 'ongoing';
-        consultation.startTime = new Date();
-        await consultation.save();
-
-        await createNotification({
-            userId: consultation.userId._id,
-            type: 'consultation_started',
-            title: 'Konsultasi Dimulai',
-            message: `dr. ${consultation.doctorId.name} telah bergabung. Konsultasi dimulai!`,
-            data: { consultationId: consultation._id, url: `/consultations/${consultation._id}` },
-            io: req.app.get('io')
-        });
-
-        res.json({ success: true, consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// END (ongoing → completed, oleh dokter)
-router.put('/:id/end', auth, async (req, res) => {
-    try {
-        const consultation = await Consultation.findById(req.params.id)
-            .populate('userId', 'name')
-            .populate('doctorId', 'name userId');
-
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (consultation.status !== 'ongoing') return res.status(400).json({ message: 'Konsultasi belum berlangsung' });
-
-        // Hanya dokter atau admin yang bisa end
-        const doctor = await Doctor.findOne({ userId: req.userId });
-        const isThisDoctor = doctor && consultation.doctorId._id.toString() === doctor._id.toString();
-        if (!isThisDoctor && req.userRole !== 'admin') return res.status(403).json({ message: 'Unauthorized' });
-
-        consultation.status = 'completed';
-        consultation.endTime = new Date();
-        await consultation.save();
-
-        await createNotification({
-            userId: consultation.userId._id,
-            type: 'consultation_ended',
-            title: 'Konsultasi Selesai',
-            message: `Konsultasi dengan dr. ${consultation.doctorId.name} telah selesai. Jangan lupa beri rating!`,
-            data: { consultationId: consultation._id, url: `/consultations/${consultation._id}` },
-            io: req.app.get('io')
-        });
-
-        res.json({ success: true, consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// NO_SHOW (scheduled → no_show, oleh admin/dokter)
-router.put('/:id/no-show', auth, async (req, res) => {
-    try {
-        if (req.userRole !== 'admin' && req.userRole !== 'doctor') {
-            return res.status(403).json({ message: 'Unauthorized' });
-        }
-
-        const consultation = await Consultation.findById(req.params.id);
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (consultation.status !== 'scheduled') return res.status(400).json({ message: 'Hanya bisa dari status scheduled' });
-
-        consultation.status = 'no_show';
-        consultation.cancelledAt = new Date();
-        consultation.cancelledBy = req.userRole;
-        consultation.cancelReason = req.body.reason || 'Salah satu pihak tidak hadir';
-        await consultation.save();
-
-        await createNotification({
-            userId: consultation.userId,
-            type: 'consultation_no_show',
-            title: 'Konsultasi Tidak Hadir',
-            message: `Konsultasi Anda ditandai no-show. ${req.body.reason || ''}`,
-            data: { consultationId: consultation._id },
-            io: req.app.get('io')
-        });
-
-        res.json({ success: true, consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// CANCEL (user, dengan batasan 1 hari sebelum jadwal jika scheduled)
-router.put('/:id/cancel', auth, async (req, res) => {
-    try {
-        const consultation = await Consultation.findById(req.params.id)
-            .populate('doctorId', 'name userId');
-
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-
-        // Hanya user pemilik atau admin
-        if (consultation.userId.toString() !== req.userId && req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Unauthorized' });
-        }
-
-        const allowedStatuses = ['pending_payment', 'paid', 'scheduled'];
-        if (!allowedStatuses.includes(consultation.status)) {
-            return res.status(400).json({ message: `Tidak bisa cancel dari status ${consultation.status}` });
-        }
-
-        // Jika scheduled: user hanya bisa cancel minimal 1 hari sebelum jadwal
-        if (consultation.status === 'scheduled' && req.userRole !== 'admin') {
-            const hoursBefore = (new Date(consultation.scheduledAt) - new Date()) / (1000 * 3600);
-            if (hoursBefore < 24) {
-                return res.status(400).json({ message: 'Pembatalan harus dilakukan minimal 1 hari sebelum jadwal konsultasi' });
-            }
-        }
-
-        consultation.status = 'cancelled';
-        consultation.cancelledAt = new Date();
-        consultation.cancelledBy = req.userRole === 'admin' ? 'admin' : 'user';
-        consultation.cancelReason = req.body.reason || '';
-        await consultation.save();
-
-        // Notif dokter
-        if (consultation.doctorId?.userId) {
-            await createNotification({
-                userId: consultation.doctorId.userId,
-                type: 'consultation_cancelled',
-                title: 'Konsultasi Dibatalkan',
-                message: `Pasien membatalkan konsultasi. ${req.body.reason || ''}`,
-                data: { consultationId: consultation._id },
-                io: req.app.get('io')
-            });
-        }
-
-        res.json({ success: true, consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error' });
     }
 });
 
@@ -490,15 +749,8 @@ router.post('/:id/messages', auth, async (req, res) => {
             io: req.app.get('io')
         });
 
-        // Emit ke socket room
-        const io = req.app.get('io');
-        if (io) {
-            io.to(`consultation-${consultation._id}`).emit('receive-message', {
-                ...msg,
-                senderId: req.userId
-            });
-        }
-
+        // Catatan: socket emit untuk pesan teks dihandle di socket/chat.js via event 'send-message'
+        // REST endpoint ini hanya untuk persistensi & mengembalikan msg dengan _id yang valid
         res.json({ success: true, message: msg });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
@@ -534,6 +786,7 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
         consultation.messages.push(msg);
         await consultation.save();
 
+        // Untuk gambar: emit ke semua di room termasuk pengirim (tidak ada optimistic update gambar)
         const io = req.app.get('io');
         if (io) {
             io.to(`consultation-${consultation._id}`).emit('receive-message', {
@@ -787,13 +1040,15 @@ router.get('/:id', auth, async (req, res) => {
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
         // ★ Akses room hanya jika paid / scheduled / ongoing / completed
-        const paidStatuses = ['paid', 'scheduled', 'ongoing', 'completed'];
+        const chatAllowedStatuses = ['confirmed', 'in_progress', 'completed', 'no_show',
+            // legacy
+            'paid', 'scheduled', 'ongoing'];
         const isOwnerOrDoctor = canAccess(consultation, req.userId, req.userRole);
 
         if (!isOwnerOrDoctor) return res.status(403).json({ message: 'Akses ditolak' });
 
         // Blokir akses chat jika belum bayar
-        if (!paidStatuses.includes(consultation.status) && req.userRole !== 'admin') {
+        if (!chatAllowedStatuses.includes(consultation.status) && req.userRole !== 'admin') {
             // Kembalikan data tapi tanpa messages
             const safe = consultation.toObject();
             safe.messages = [];

@@ -25,7 +25,6 @@ const doctorSchema = new mongoose.Schema({
   // Setting fitur konsultasi yang tersedia
   consultationSettings: {
     allowChat:      { type: Boolean, default: true },
-    allowVoiceCall: { type: Boolean, default: true },
     allowVideoCall: { type: Boolean, default: true },
   }
 });

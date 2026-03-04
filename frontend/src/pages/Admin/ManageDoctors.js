@@ -18,7 +18,6 @@ const defaultForm = {
 };
 
 const defaultSettings = {
-    allowChat: true, allowVoiceCall: true, allowVideoCall: true
 };
 
 const ManageDoctors = () => {
@@ -222,7 +221,6 @@ const ManageDoctors = () => {
         setPhotoPreview(doctor.photo ? `${API_URL}${doctor.photo}` : null);
         setSettings({
             allowChat:      doctor.consultationSettings?.allowChat      !== false,
-            allowVoiceCall: doctor.consultationSettings?.allowVoiceCall !== false,
             allowVideoCall: doctor.consultationSettings?.allowVideoCall !== false,
         });
         setForm({
@@ -353,7 +351,6 @@ const ManageDoctors = () => {
                                         <div className="text-muted" style={{ fontSize: '0.72rem' }}>{d.qualification}</div>
                                         <div style={{ fontSize: '0.7rem', marginTop: 2 }}>
                                             {d.consultationSettings?.allowChat      !== false && <span title="Chat aktif" style={{ marginRight: 3 }}>💬</span>}
-                                            {d.consultationSettings?.allowVoiceCall !== false && <span title="Voice aktif" style={{ marginRight: 3 }}>📞</span>}
                                             {d.consultationSettings?.allowVideoCall !== false && <span title="Video aktif">📹</span>}
                                         </div>
                                     </td>
@@ -529,7 +526,6 @@ const ManageDoctors = () => {
                                 <div className="d-flex gap-4 flex-wrap">
                                     {[
                                         { key: 'allowChat',       icon: '💬', label: 'Chat' },
-                                        { key: 'allowVoiceCall',  icon: '📞', label: 'Voice Call' },
                                         { key: 'allowVideoCall',  icon: '📹', label: 'Video Call' },
                                     ].map(opt => (
                                         <Form.Check
@@ -537,12 +533,12 @@ const ManageDoctors = () => {
                                             type="switch"
                                             id={`setting-${opt.key}`}
                                             label={<span>{opt.icon} {opt.label}</span>}
-                                            checked={settings[opt.key]}
+                                            checked={settings[opt.key] !== false}
                                             onChange={e => setSettings(s => ({ ...s, [opt.key]: e.target.checked }))}
                                         />
                                     ))}
                                 </div>
-                                {!settings.allowChat && !settings.allowVoiceCall && !settings.allowVideoCall && (
+                                {(!settings.allowChat && !settings.allowVideoCall) && (
                                     <div className="text-danger small mt-1">⚠️ Minimal satu fitur harus diaktifkan</div>
                                 )}
                             </Col>
@@ -586,7 +582,7 @@ const ManageDoctors = () => {
                     </Modal.Body>
                     <Modal.Footer>
                         <Button variant="secondary" onClick={() => setShowDoctorModal(false)}>Batal</Button>
-                        <Button type="submit" variant="primary" disabled={processing || uploadingPhoto || (!settings.allowChat && !settings.allowVoiceCall && !settings.allowVideoCall)}>
+                        <Button type="submit" variant="primary" disabled={processing || uploadingPhoto || (!settings.allowChat && !settings.allowVideoCall)}>
                             {(processing || uploadingPhoto) ? <><Spinner size="sm" className="me-1" />Menyimpan...</> : editingDoctor ? 'Simpan Perubahan' : 'Tambah Dokter'}
                         </Button>
                     </Modal.Footer>

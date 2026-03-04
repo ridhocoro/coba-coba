@@ -169,16 +169,16 @@ router.put('/:id/schedule', auth, async (req, res) => {
 // PUT update consultation settings (dokter sendiri)
 router.put('/my/settings', auth, doctorAuth, async (req, res) => {
     try {
-        const { allowChat, allowVoiceCall, allowVideoCall } = req.body;
+        const { allowChat, allowVideoCall } = req.body;
         const doctor = await Doctor.findOne({ userId: req.userId });
         if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
 
         // Minimal satu fitur harus aktif
-        if (!allowChat && !allowVoiceCall && !allowVideoCall) {
+        if (!allowChat && !allowVideoCall) {
             return res.status(400).json({ message: 'Minimal satu fitur konsultasi harus diaktifkan' });
         }
 
-        doctor.consultationSettings = { allowChat, allowVoiceCall, allowVideoCall };
+        doctor.consultationSettings = { allowChat, allowVideoCall };
         await doctor.save();
 
         res.json({ success: true, consultationSettings: doctor.consultationSettings });
@@ -192,15 +192,15 @@ router.put('/my/settings', auth, doctorAuth, async (req, res) => {
 router.put('/:id/settings', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Unauthorized' });
-        const { allowChat, allowVoiceCall, allowVideoCall } = req.body;
+        const { allowChat, allowVideoCall } = req.body;
 
-        if (!allowChat && !allowVoiceCall && !allowVideoCall) {
+        if (!allowChat && !allowVideoCall) {
             return res.status(400).json({ message: 'Minimal satu fitur konsultasi harus diaktifkan' });
         }
 
         const doctor = await Doctor.findByIdAndUpdate(
             req.params.id,
-            { $set: { consultationSettings: { allowChat, allowVoiceCall, allowVideoCall } } },
+            { $set: { consultationSettings: { allowChat, allowVideoCall } } },
             { new: true }
         );
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });

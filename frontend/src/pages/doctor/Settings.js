@@ -8,7 +8,6 @@ import { Link } from 'react-router-dom';
 const DoctorSettings = () => {
     const [settings, setSettings] = useState({
         allowChat: true,
-        allowVoiceCall: true,
         allowVideoCall: true,
     });
     const [loading, setLoading] = useState(true);
@@ -20,7 +19,6 @@ const DoctorSettings = () => {
                 const s = r.data.doctor?.consultationSettings || {};
                 setSettings({
                     allowChat:      s.allowChat      !== false,
-                    allowVoiceCall: s.allowVoiceCall !== false,
                     allowVideoCall: s.allowVideoCall !== false,
                 });
             })
@@ -30,7 +28,7 @@ const DoctorSettings = () => {
 
     const handleSave = async (e) => {
         e.preventDefault();
-        if (!settings.allowChat && !settings.allowVoiceCall && !settings.allowVideoCall) {
+        if (!settings.allowChat && !settings.allowVideoCall) {
             toast.error('Minimal satu fitur konsultasi harus diaktifkan');
             return;
         }
@@ -57,12 +55,6 @@ const DoctorSettings = () => {
             icon: '💬',
             label: 'Chat',
             desc: 'Pasien dapat berkonsultasi lewat pesan teks dan foto',
-        },
-        {
-            key: 'allowVoiceCall',
-            icon: '📞',
-            label: 'Voice Call',
-            desc: 'Pasien dapat menghubungi via panggilan suara',
         },
         {
             key: 'allowVideoCall',
@@ -120,7 +112,7 @@ const DoctorSettings = () => {
                             ))}
                         </div>
 
-                        {!settings.allowChat && !settings.allowVoiceCall && !settings.allowVideoCall && (
+                        {!settings.allowChat && !settings.allowVideoCall && (
                             <Alert variant="danger" className="mt-3 py-2 small">
                                 ⚠️ Minimal satu fitur harus diaktifkan agar pasien bisa membuat konsultasi.
                             </Alert>
@@ -135,7 +127,7 @@ const DoctorSettings = () => {
                     <Button
                         type="submit"
                         variant="primary"
-                        disabled={saving || (!settings.allowChat && !settings.allowVoiceCall && !settings.allowVideoCall)}
+                        disabled={saving || (!settings.allowChat && !settings.allowVideoCall)}
                     >
                         {saving ? <><Spinner size="sm" className="me-1" />Menyimpan...</> : <><FaSave className="me-1" />Simpan Pengaturan</>}
                     </Button>

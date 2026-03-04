@@ -12,6 +12,8 @@ import Footer from './components/Layout/Footer';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import HealthCheck from './pages/HealthCheck';
 import BMICalculator from './pages/HealthCheck/BMICalculator';
 import CalorieCalculator from './pages/HealthCheck/CalorieCalculator';
@@ -55,7 +57,10 @@ import { NotificationProvider } from './context/NotificationContext';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles }) => {
-    const { user } = useAuth();
+    const { user, loading } = useAuth();
+    
+    // Tunggu fetch user selesai dulu — jangan redirect sebelum tahu status auth
+    if (loading) return null;
     
     if (!user) return <Navigate to="/login" />;
     
@@ -98,6 +103,8 @@ function AppContent() {
                     <Route path="/" element={<HomeRouter />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/health-check" element={<HealthCheck />} />
                     <Route path="/health-check/bmi" element={<BMICalculator />} />
                     <Route path="/health-check/calories" element={<CalorieCalculator />} />
