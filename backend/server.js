@@ -38,6 +38,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/klinik-ip
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/doctors', require('./routes/doctors'));
+app.use('/api/availability', require('./routes/availability'));
 app.use('/api/consultations', require('./routes/consultations'));
 app.use('/api/health-check', require('./routes/healthCheck'));
 app.use('/api/pharmacy', require('./routes/pharmacy'));

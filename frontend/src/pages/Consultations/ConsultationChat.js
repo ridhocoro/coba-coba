@@ -11,10 +11,19 @@ const fmtDate = (d) => new Date(d).toLocaleString('id-ID', { day: 'numeric', mon
 
 const StatusBadge = ({ status }) => {
   const cfg = {
-    paid:      { color: '#58a6ff', label: 'Dibayar' },
+    pending_payment:      { color: '#d29922', label: 'Menunggu Pembayaran' },
+    waiting_verification: { color: '#d29922', label: 'Verifikasi Pembayaran' },
+    confirmed:            { color: '#58a6ff', label: 'Terkonfirmasi' },
+    in_progress:          { color: '#3fb950', label: 'Berlangsung' },
+    completed:            { color: '#58a6ff', label: 'Selesai' },
+    no_show:              { color: '#d29922', label: 'Tidak Hadir' },
+    doctor_no_show:       { color: '#f85149', label: 'Dokter Tidak Hadir' },
+    cancelled_by_doctor:  { color: '#f85149', label: 'Dibatalkan Dokter' },
+    expired:              { color: '#8b949e', label: 'Kadaluarsa' },
+    // legacy
+    paid:      { color: '#58a6ff', label: 'Terkonfirmasi' },
     scheduled: { color: '#a371f7', label: 'Terjadwal' },
     ongoing:   { color: '#3fb950', label: 'Berlangsung' },
-    completed: { color: '#58a6ff', label: 'Selesai' },
     cancelled: { color: '#f85149', label: 'Dibatalkan' },
   };
   const c = cfg[status] || { color: '#8b949e', label: status };
@@ -192,8 +201,9 @@ const ConsultationChat = () => {
 
   const isDoctor = user?.role === 'doctor';
   const isUser = user?.role === 'user';
-  const isOngoing = consultation?.status === 'ongoing';
-  const isCompleted = consultation?.status === 'completed';
+  // Status yang memungkinkan chat aktif (kirim pesan)
+  const isOngoing = ['in_progress', 'ongoing', 'confirmed', 'paid', 'scheduled'].includes(consultation?.status);
+  const isCompleted = ['completed', 'no_show'].includes(consultation?.status);
   const myId = user?.id || user?._id;
 
   const fetchConsultation = useCallback(async () => {
@@ -493,9 +503,9 @@ const ConsultationChat = () => {
           {isDoctor && (
             <div style={s.sideSection}>
               <span style={s.label}>Tindakan Dokter</span>
-              {['paid', 'scheduled'].includes(consultation.status) && (
+              {['confirmed', 'paid', 'scheduled'].includes(consultation.status) && (
                 <button onClick={handleStart} disabled={starting} style={s.actionBtn('#1a7f37')}>
-                  ▶ {starting ? 'Memulai...' : 'Mulai Konsultasi'}
+                  ▶ {starting ? 'Memulai...' : 'Mulai Sesi'}
                 </button>
               )}
               {isOngoing && (
@@ -653,6 +663,10 @@ const ConsultationChat = () => {
 
           {!isOngoing && !isCompleted && !consultation._accessRestricted && (
             <div style={{ padding: '20px', textAlign: 'center', borderTop: '1px solid #21262d', color: '#8b949e', fontSize: 13 }}>
+              {consultation.status === 'confirmed' && isDoctor && '⏳ Klik "Mulai Sesi" untuk memulai konsultasi'}
+              {consultation.status === 'confirmed' && isUser && '⏳ Menunggu dokter memulai sesi...'}
+              {consultation.status === 'in_progress' && isDoctor && '🟢 Sesi sedang berlangsung'}
+              {consultation.status === 'in_progress' && isUser && '🟢 Sesi berlangsung - silakan kirim pesan'}
               {consultation.status === 'paid' && isDoctor && '⏳ Klik "Mulai Konsultasi" di sidebar untuk memulai sesi'}
               {consultation.status === 'scheduled' && isDoctor && '📅 Mulai konsultasi saat jadwal tiba'}
               {['paid', 'scheduled'].includes(consultation.status) && isUser && '⏳ Menunggu dokter memulai sesi...'}

@@ -69,7 +69,7 @@ router.get('/my-consultations', auth, async (req, res) => {
     }
 });
 
-// Daftar konsultasi dokter (paid, scheduled, ongoing)
+// Daftar konsultasi dokter (aktif: confirmed, in_progress)
 router.get('/doctor/pending', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ userId: req.userId });
@@ -77,10 +77,10 @@ router.get('/doctor/pending', auth, doctorAuth, async (req, res) => {
 
         const consultations = await Consultation.find({
             doctorId: doctor._id,
-            status: { $in: ['paid', 'scheduled', 'ongoing'] }
+            status: { $in: ['waiting_verification', 'confirmed', 'in_progress'] }
         })
             .populate('userId', 'name email phone')
-            .sort('-createdAt');
+            .sort('scheduledAt');
 
         res.json({ success: true, count: consultations.length, consultations });
     } catch (err) {
@@ -181,52 +181,36 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 
         // ── Validasi ulang availability rule (backend, tidak bisa bypass) ──────
         const DoctorAvailability = require('../models/DoctorAvailability');
-        const avail = await DoctorAvailability.findOne({ doctorId: doctor._id, isActive: true });
-        if (!avail) {
-            return res.status(400).json({ message: 'Dokter belum mengatur jadwal praktik' });
+        const avail = await DoctorAvailability.findOne({ doctorId: doctor._id });
+        if (!avail || !avail.isActive) {
+            return res.status(400).json({ message: 'Dokter belum mengatur jadwal praktik atau sedang tidak menerima konsultasi' });
         }
 
-        // Konversi scheduledAt UTC → WIB untuk validasi
-        const WIB_OFFSET = 7 * 60 * 60 * 1000;
-        const slotWIB = new Date(slotStart.getTime() + WIB_OFFSET);
+        // Konversi scheduledAt (UTC dari DB/frontend) → WIB untuk validasi
+        const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+        const slotWIB = new Date(slotStart.getTime() + WIB_OFFSET_MS);
+
+        // Cek hari praktik
         const dayOfWeek = slotWIB.getUTCDay();
         if (!avail.practiceDays.includes(dayOfWeek)) {
             return res.status(400).json({ message: 'Dokter tidak praktik pada hari tersebut' });
         }
 
+        // Jam WIB dari slot
         const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2,'0')}:${String(slotWIB.getUTCMinutes()).padStart(2,'0')}`;
-        const toMin = (hhmm) => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
-        const slotMin = toMin(slotHHMM);
-        const startMin = toMin(avail.startTime);
-        const endMin   = toMin(avail.endTime);
-        const lunchS   = toMin(avail.lunchBreakStart);
-        const lunchE   = toMin(avail.lunchBreakEnd);
-        const interval = avail.sessionDuration + avail.bufferDuration; // 60 menit
 
-        if (slotMin < startMin || slotMin >= endMin) {
-            return res.status(400).json({ message: 'Slot di luar jam praktik dokter' });
-        }
-        if (slotMin >= lunchS && slotMin < lunchE) {
-            return res.status(400).json({ message: 'Slot tidak tersedia (break siang)' });
-        }
-
-        // ── Validasi strict: slot harus benar-benar ada di grid availability ──
-        // Regenerate valid slot times dan pastikan slotHHMM ada di dalamnya
-        // Ini mencegah user kirim jam sembarang (misal 08:17) lewat API langsung
-        const dateStr = slotWIB.toISOString().slice(0, 10);
-        const validSlots = avail.generateSlotsForDay(dateStr);
-        const isValidSlot = validSlots.some(s => s.startTime === slotHHMM);
-        if (!isValidSlot) {
+        // Validasi strict: slot harus ada di grid availability (cegah bypass frontend)
+        if (!avail.isValidSlot(slotHHMM)) {
             return res.status(400).json({
                 message: 'Slot waktu tidak valid. Pilih slot yang tersedia dari sistem.',
-                validSlots: validSlots.map(s => s.startTime) // bantu debug
             });
         }
 
-        // Validasi scheduledEnd: harus = scheduledAt + sessionDuration
-        const expectedEndMin = slotMin + avail.sessionDuration;
-        const slotEndWIB = new Date(slotEnd.getTime() + WIB_OFFSET);
+        // Validasi scheduledEnd: harus tepat = scheduledAt + sessionDuration
+        const slotEndWIB  = new Date(slotEnd.getTime() + WIB_OFFSET_MS);
         const slotEndHHMM = `${String(slotEndWIB.getUTCHours()).padStart(2,'0')}:${String(slotEndWIB.getUTCMinutes()).padStart(2,'0')}`;
+        const toMin = (hhmm) => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
+        const expectedEndMin = toMin(slotHHMM) + avail.sessionDuration;
         if (toMin(slotEndHHMM) !== expectedEndMin) {
             return res.status(400).json({ message: 'Waktu selesai slot tidak sesuai' });
         }
@@ -720,7 +704,7 @@ router.post('/:id/messages', auth, async (req, res) => {
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
         // Hanya bisa chat jika paid/ongoing (access control)
-        if (!['paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
+        if (!['confirmed', 'in_progress', 'completed', 'paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
             return res.status(403).json({ message: 'Konsultasi belum aktif' });
         }
 
@@ -765,7 +749,7 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
             .populate('doctorId', 'name userId');
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (!['paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
+        if (!['confirmed', 'in_progress', 'completed', 'paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
             return res.status(403).json({ message: 'Konsultasi belum aktif' });
         }
         if (!req.file) return res.status(400).json({ message: 'File tidak ditemukan' });

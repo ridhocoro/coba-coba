@@ -291,6 +291,7 @@ const NewConsultationWizard = ({ onCreated }) => {
   });
   const [loadingDoctors, setLoadingDoctors] = useState(true);
   const [slots, setSlots] = useState([]);
+  const [slotsMsg, setSlotsMsg] = useState('');
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -301,10 +302,15 @@ const NewConsultationWizard = ({ onCreated }) => {
   // Load slots saat step 3 dan dokter dipilih
   useEffect(() => {
     if (step === 3 && form.doctorId) {
+      setSlots([]);
+      setSlotsMsg('');
       setLoadingSlots(true);
       api.get(`/api/availability/slots/${form.doctorId}`)
-        .then(r => setSlots(r.data.slots || []))
-        .catch(() => { toast.error('Gagal memuat slot jadwal'); setSlots([]); })
+        .then(r => {
+          setSlots(r.data.slots || []);
+          setSlotsMsg(r.data.message || '');
+        })
+        .catch(() => { toast.error('Gagal memuat slot jadwal'); setSlots([]); setSlotsMsg('Gagal memuat jadwal'); })
         .finally(() => setLoadingSlots(false));
     }
   }, [step, form.doctorId]);
@@ -544,7 +550,9 @@ const NewConsultationWizard = ({ onCreated }) => {
             <div style={{ textAlign: 'center', padding: 40, color: '#6b7280', background: '#f9fafb', borderRadius: 12 }}>
               <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada slot tersedia</div>
-              <div style={{ fontSize: 13 }}>Dokter ini belum mengatur jadwal atau semua slot sudah penuh</div>
+              <div style={{ fontSize: 13 }}>
+                {slotsMsg || 'Dokter ini belum mengatur jadwal atau semua slot sudah penuh'}
+              </div>
             </div>
           ) : (
             <div style={{ maxHeight: 400, overflowY: 'auto', paddingRight: 4 }}>
