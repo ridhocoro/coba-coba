@@ -49,9 +49,9 @@ module.exports = (io) => {
                 }
 
                 // Hanya boleh chat jika status memungkinkan
-                const allowedStatuses = ['paid', 'scheduled', 'ongoing', 'completed'];
+                const allowedStatuses = ['confirmed', 'in_progress', 'completed', 'paid', 'scheduled', 'ongoing'];
                 if (!allowedStatuses.includes(consultation.status) && !isAdmin) {
-                    socket.emit('error', { message: 'Konsultasi belum aktif' });
+                    socket.emit('error', { message: 'Konsultasi belum aktif atau belum terkonfirmasi' });
                     return;
                 }
 

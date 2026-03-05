@@ -56,6 +56,9 @@ require('./socket/chat')(io);
 // Cron: expired consultation checker (setiap 1 menit)
 require('./utils/Expiredconsultationcron').startCron(io);
 
+// Cron: doctor no-show checker (setiap 1 menit, grace period 15 mnt)
+require('./utils/DoctorNoShowCron').startCron(io);
+
 // Cron: expired order checker (setiap 1 menit)
 require('./utils/ExpiredOrderCron').startCron();
 

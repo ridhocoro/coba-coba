@@ -197,18 +197,39 @@ router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
         // Update status konsultasi / order setelah verified
         if (status === 'verified') {
             if (payment.paymentType === 'consultation') {
-                // Cek scheduleType untuk tentukan status berikutnya
-                const consultation = await Consultation.findById(payment.referenceId);
+                const consultation = await Consultation.findById(payment.referenceId)
+                    .populate('doctorId', 'userId name')
+                    .populate('userId', 'name');
                 if (consultation) {
                     consultation.paymentVerified = true;
                     consultation.verifiedAt = new Date();
-                    if (consultation.scheduleType === 'scheduled') {
-                        consultation.status = 'scheduled';
-                    } else {
-                        consultation.status = 'ongoing';
-                        consultation.startTime = new Date();
-                    }
+                    consultation.verifiedBy = req.userId;
+                    consultation.status = 'confirmed';
                     await consultation.save();
+
+                    // Notif user
+                    const userIdToNotify = consultation.userId?._id || consultation.userId;
+                    await createNotification({
+                        userId: userIdToNotify,
+                        type: 'consultation_confirmed',
+                        title: 'Pembayaran Dikonfirmasi',
+                        message: `Pembayaran Anda telah diverifikasi. Konsultasi terjadwal pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
+                        data: { consultationId: consultation._id },
+                        io: req.app.get('io')
+                    });
+
+                    // Notif dokter (real-time)
+                    if (consultation.doctorId?.userId) {
+                        const doctorUserId = consultation.doctorId.userId._id || consultation.doctorId.userId;
+                        await createNotification({
+                            userId: doctorUserId,
+                            type: 'consultation_request',
+                            title: '📅 Konsultasi Baru Terkonfirmasi',
+                            message: `Pasien ${consultation.userId?.name || 'Baru'} akan konsultasi pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
+                            data: { consultationId: consultation._id },
+                            io: req.app.get('io')
+                        });
+                    }
                 }
             }
             if (payment.paymentType === 'medicine') {
@@ -220,11 +241,21 @@ router.put('/payments/:id/verify', auth, adminAuth, async (req, res) => {
         }
 
         if (status === 'rejected' && payment.paymentType === 'consultation') {
-            await Consultation.findByIdAndUpdate(payment.referenceId, {
-                status: 'rejected_payment',
-                rejectedAt: new Date(),
-                rejectionReason: notes || 'Bukti transfer tidak valid'
-            });
+            const consultation = await Consultation.findById(payment.referenceId);
+            if (consultation) {
+                const now = new Date();
+                if (consultation.scheduledAt > now) {
+                    consultation.status = 'pending_payment';
+                    consultation.paymentDeadline = new Date(now.getTime() + 15 * 60 * 1000);
+                    consultation.slotLockExpires = consultation.paymentDeadline;
+                    consultation.paymentProofUrl = null;
+                } else {
+                    consultation.status = 'expired';
+                }
+                consultation.rejectedAt = now;
+                consultation.rejectionReason = notes || 'Bukti transfer tidak valid';
+                await consultation.save();
+            }
         }
 
         res.json({

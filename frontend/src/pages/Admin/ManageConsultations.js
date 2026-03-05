@@ -79,7 +79,7 @@ const ManageConsultations = () => {
         setProcessing(true);
         try {
             const map = {
-                'mark-paid':         () => api.put(`/api/consultations/${consultationId}/mark-paid`),
+                'verify-payment':    () => api.put(`/api/consultations/${consultationId}/verify-payment`),
                 'reject-payment':    () => api.put(`/api/consultations/${consultationId}/reject-payment`, extraData),
                 'start':             () => api.put(`/api/consultations/${consultationId}/start`),
                 'end':               () => api.put(`/api/consultations/${consultationId}/end`),
@@ -112,6 +112,35 @@ const ManageConsultations = () => {
         } catch { toast.error('Surat sakit belum tersedia'); }
     };
 
+    const exportCSV = () => {
+        const rows = [
+            ['ID', 'Pasien', 'Email Pasien', 'Dokter', 'Spesialisasi', 'Status', 'Tipe', 'Jadwal', 'Biaya', 'Dibuat'],
+            ...filtered.map(c => [
+                c._id,
+                c.userId?.name || '-',
+                c.userId?.email || '-',
+                `dr. ${c.doctorId?.name || '-'}`,
+                c.doctorId?.specialization || '-',
+                c.status,
+                c.consultationType || 'chat',
+                c.scheduledAt ? new Date(c.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-',
+                c.doctorId?.consultationFee ? `Rp ${Number(c.doctorId.consultationFee).toLocaleString('id-ID')}` : '-',
+                new Date(c.createdAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
+            ])
+        ];
+        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `konsultasi-${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast.success(`${filtered.length} data berhasil diekspor`);
+    };
+
     const filtered = consultations.filter(c => {
         const q = search.toLowerCase();
         const matchSearch = !search
@@ -122,9 +151,9 @@ const ManageConsultations = () => {
     });
 
     const stats = {
-        pending_payment: consultations.filter(c => c.status === 'pending_payment').length,
-        ongoing: consultations.filter(c => c.status === 'ongoing').length,
-        scheduled: consultations.filter(c => c.status === 'scheduled').length,
+        waiting: consultations.filter(c => ['pending_payment', 'waiting_verification'].includes(c.status)).length,
+        confirmed: consultations.filter(c => c.status === 'confirmed').length,
+        in_progress: consultations.filter(c => c.status === 'in_progress').length,
         completed: consultations.filter(c => c.status === 'completed').length,
         total: consultations.length
     };
@@ -440,36 +469,41 @@ const ManageConsultations = () => {
                             <p>Verifikasi pembayaran & pantau status konsultasi</p>
                         </div>
                     </div>
-                    <button className="action-btn" onClick={fetchData} style={{ padding: '8px 16px' }}>
-                        <FaSync /> Refresh
-                    </button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="action-btn" onClick={exportCSV} style={{ padding: '8px 16px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
+                            <FaDownload /> Export CSV
+                        </button>
+                        <button className="action-btn" onClick={fetchData} style={{ padding: '8px 16px' }}>
+                            <FaSync /> Refresh
+                        </button>
+                    </div>
                 </div>
 
                 {/* Stats Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 24 }}>
-                    <div className="stats-card" onClick={() => setFilterStatus('pending_payment')}>
+                    <div className="stats-card" onClick={() => setFilterStatus('waiting_verification')}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                            <div style={{ color: '#b45309', fontSize: 14 }}>Menunggu Bayar</div>
+                            <div style={{ color: '#b45309', fontSize: 14 }}>Perlu Verifikasi</div>
                             <FaMoneyBillWave style={{ color: '#b45309', opacity: 0.5 }} size={20} />
                         </div>
-                        <div className="stats-value">{stats.pending_payment}</div>
-                        <div className="stats-label">Perlu verifikasi</div>
+                        <div className="stats-value">{stats.waiting}</div>
+                        <div className="stats-label">Bukti pembayaran masuk</div>
                     </div>
-                    <div className="stats-card" onClick={() => setFilterStatus('ongoing')}>
+                    <div className="stats-card" onClick={() => setFilterStatus('confirmed')}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                            <div style={{ color: '#1e40af', fontSize: 14 }}>Terkonfirmasi</div>
+                            <FaCalendarAlt style={{ color: '#1e40af', opacity: 0.5 }} size={20} />
+                        </div>
+                        <div className="stats-value">{stats.confirmed}</div>
+                        <div className="stats-label">Menunggu hari H</div>
+                    </div>
+                    <div className="stats-card" onClick={() => setFilterStatus('in_progress')}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                             <div style={{ color: '#166534', fontSize: 14 }}>Berlangsung</div>
                             <FaPlay style={{ color: '#166534', opacity: 0.5 }} size={20} />
                         </div>
-                        <div className="stats-value">{stats.ongoing}</div>
-                        <div className="stats-label">Aktif</div>
-                    </div>
-                    <div className="stats-card" onClick={() => setFilterStatus('scheduled')}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                            <div style={{ color: '#6d28d9', fontSize: 14 }}>Terjadwal</div>
-                            <FaCalendarAlt style={{ color: '#6d28d9', opacity: 0.5 }} size={20} />
-                        </div>
-                        <div className="stats-value">{stats.scheduled}</div>
-                        <div className="stats-label">Menunggu mulai</div>
+                        <div className="stats-value">{stats.in_progress}</div>
+                        <div className="stats-label">Aktif sekarang</div>
                     </div>
                     <div className="stats-card" onClick={() => setFilterStatus('completed')}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -659,17 +693,48 @@ const ManageConsultations = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
                                 {/* Verifikasi Pembayaran */}
-                                {selected.status === 'pending_payment' && (
+                                {['pending_payment', 'waiting_verification'].includes(selected.status) && (
                                     <>
+                                        {/* Tampilkan bukti pembayaran jika ada */}
+                                        {selected.paymentProofUrl && (
+                                            <div style={{ marginBottom: 12, padding: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10 }}>
+                                                <div style={{ fontSize: 12, fontWeight: 600, color: '#15803d', marginBottom: 8 }}>
+                                                    📎 Bukti Pembayaran
+                                                </div>
+                                                <a
+                                                    href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${selected.paymentProofUrl}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    style={{ display: 'block', textAlign: 'center' }}
+                                                >
+                                                    {selected.paymentProofUrl.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
+                                                        <img
+                                                            src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${selected.paymentProofUrl}`}
+                                                            alt="Bukti"
+                                                            style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, border: '1px solid #bbf7d0' }}
+                                                        />
+                                                    ) : (
+                                                        <span style={{ color: '#2563eb', fontSize: 12, textDecoration: 'underline' }}>
+                                                            📄 Lihat File Bukti Pembayaran
+                                                        </span>
+                                                    )}
+                                                </a>
+                                                {selected.transferDate && (
+                                                    <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6, textAlign: 'center' }}>
+                                                        Tanggal transfer: {fmtDate(selected.transferDate)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                         {!showRejectForm ? (
                                             <div style={{ display: 'flex', gap: 8 }}>
                                                 <button
                                                     className="action-button btn-success"
                                                     style={{ flex: 1 }}
-                                                    onClick={() => handleAction('mark-paid', selected._id)}
+                                                    onClick={() => handleAction('verify-payment', selected._id)}
                                                     disabled={processing}
                                                 >
-                                                    <FaCheckCircle /> Verifikasi
+                                                    <FaCheckCircle /> Verifikasi Pembayaran
                                                 </button>
                                                 <button
                                                     className="action-button btn-danger"

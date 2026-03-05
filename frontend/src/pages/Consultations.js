@@ -287,6 +287,7 @@ const NewConsultationWizard = ({ onCreated }) => {
   const [form, setForm] = useState({
     doctorId: '', consultationType: 'chat',
     selectedSlot: null, // { date, startTime, endTime, startUtc, endUtc }
+    selectedDate: '',   // for calendar view
     symptoms: '', medicalHistory: '', attachments: []
   });
   const [loadingDoctors, setLoadingDoctors] = useState(true);
@@ -307,8 +308,12 @@ const NewConsultationWizard = ({ onCreated }) => {
       setLoadingSlots(true);
       api.get(`/api/availability/slots/${form.doctorId}`)
         .then(r => {
-          setSlots(r.data.slots || []);
+          const loadedSlots = r.data.slots || [];
+          setSlots(loadedSlots);
           setSlotsMsg(r.data.message || '');
+          // Auto-select first available date
+          const dates = [...new Set(loadedSlots.map(s => s.date))].sort();
+          if (dates.length > 0) setForm(f => ({ ...f, selectedDate: dates[0] }));
         })
         .catch(() => { toast.error('Gagal memuat slot jadwal'); setSlots([]); setSlotsMsg('Gagal memuat jadwal'); })
         .finally(() => setLoadingSlots(false));
@@ -533,65 +538,111 @@ const NewConsultationWizard = ({ onCreated }) => {
         </div>
       )}
 
-      {/* Step 3: Pilih Slot */}
-      {step === 3 && (
-        <div>
-          <h6 style={s.h}>Pilih Jadwal Konsultasi</h6>
-          <p style={s.sub}>
-            Pilih slot yang tersedia dalam 7 hari ke depan. Setiap slot berdurasi 30 menit.
-          </p>
+      {/* Step 3: Pilih Slot — Calendar View */}
+      {step === 3 && (() => {
+        // State-like variables using form state for selected date
+        const allDates = Object.keys(slotsByDate).sort();
+        const selectedDate = form.selectedDate || allDates[0] || '';
+        const todayDaySlots = slotsByDate[selectedDate] || [];
 
-          {loadingSlots ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
-              Memuat jadwal tersedia...
-            </div>
-          ) : slots.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280', background: '#f9fafb', borderRadius: 12 }}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada slot tersedia</div>
-              <div style={{ fontSize: 13 }}>
-                {slotsMsg || 'Dokter ini belum mengatur jadwal atau semua slot sudah penuh'}
+        const setSelectedDate = (d) => setForm(f => ({ ...f, selectedDate: d, selectedSlot: null }));
+
+        const dayNameShort = (dateStr) => {
+          const d = new Date(dateStr + 'T00:00:00');
+          return d.toLocaleDateString('id-ID', { weekday: 'short' });
+        };
+        const dayNum = (dateStr) => new Date(dateStr + 'T00:00:00').getDate();
+        const monthLabel = (dateStr) => new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+
+        return (
+          <div>
+            <h6 style={s.h}>Pilih Jadwal Konsultasi</h6>
+            <p style={s.sub}>Setiap sesi berdurasi 30 menit. Break siang 12:00–13:00.</p>
+
+            {loadingSlots ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+                Memuat jadwal tersedia...
               </div>
-            </div>
-          ) : (
-            <div style={{ maxHeight: 400, overflowY: 'auto', paddingRight: 4 }}>
-              {Object.entries(slotsByDate).map(([date, daySlots]) => (
-                <div key={date} style={{ marginBottom: 20 }}>
-                  <div style={{ color: '#374151', fontWeight: 600, fontSize: 13, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #e5e7eb' }}>
-                    📅 {fmtSlotDate(date)}
+            ) : slots.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#6b7280', background: '#f9fafb', borderRadius: 12 }}>
+                <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada slot tersedia</div>
+                <div style={{ fontSize: 13 }}>{slotsMsg || 'Dokter ini belum mengatur jadwal atau semua slot sudah penuh'}</div>
+              </div>
+            ) : (
+              <>
+                {/* Calendar strip */}
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>
+                    📅 {selectedDate ? monthLabel(selectedDate) : ''}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {daySlots.map(slot => {
-                      const isSelected = form.selectedSlot?.startUtc === slot.startUtc;
-                      const isAvailable = slot.available;
+                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                    {allDates.map(dateStr => {
+                      const isSelected = dateStr === selectedDate;
+                      const hasAvailable = (slotsByDate[dateStr] || []).some(s => s.available);
                       return (
                         <button
-                          key={slot.startUtc}
+                          key={dateStr}
                           type="button"
-                          disabled={!isAvailable}
-                          onClick={() => isAvailable && setForm(f => ({ ...f, selectedSlot: slot }))}
+                          onClick={() => setSelectedDate(dateStr)}
                           style={{
-                            padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                            border: `2px solid ${isSelected ? '#2563eb' : isAvailable ? '#e5e7eb' : '#f3f4f6'}`,
-                            background: isSelected ? '#eff6ff' : isAvailable ? '#ffffff' : '#f9fafb',
-                            color: isSelected ? '#2563eb' : isAvailable ? '#374151' : '#9ca3af',
-                            cursor: isAvailable ? 'pointer' : 'not-allowed',
-                            transition: 'all 0.1s',
-                            minWidth: 80
+                            minWidth: 54, padding: '10px 8px', borderRadius: 12, border: 'none',
+                            cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
+                            background: isSelected ? '#2563eb' : hasAvailable ? '#ffffff' : '#f9fafb',
+                            color: isSelected ? '#fff' : hasAvailable ? '#111827' : '#9ca3af',
+                            boxShadow: isSelected ? '0 2px 8px rgba(37,99,235,0.35)' : '0 1px 3px rgba(0,0,0,0.06)',
+                            border: isSelected ? '2px solid #2563eb' : hasAvailable ? '2px solid #e5e7eb' : '2px solid #f3f4f6',
+                            flexShrink: 0
                           }}
                         >
-                          {slot.startTime}
-                          {!isAvailable && <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: '#ef4444' }}>Penuh</span>}
-                          {isAvailable && <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: '#6b7280' }}>s/d {slot.endTime}</span>}
+                          <div style={{ fontSize: 10, fontWeight: 500, opacity: isSelected ? 1 : 0.7 }}>{dayNameShort(dateStr)}</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3 }}>{dayNum(dateStr)}</div>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', margin: '3px auto 0', background: isSelected ? 'rgba(255,255,255,0.7)' : hasAvailable ? '#22c55e' : '#d1d5db' }} />
                         </button>
                       );
                     })}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                {/* Slots for selected date */}
+                {selectedDate && (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 12 }}>
+                      Slot Tersedia — {fmtSlotDate(selectedDate)}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
+                      {todayDaySlots.map(slot => {
+                        const isSelected = form.selectedSlot?.startUtc === slot.startUtc;
+                        const isAvailable = slot.available;
+                        return (
+                          <button
+                            key={slot.startUtc}
+                            type="button"
+                            disabled={!isAvailable}
+                            onClick={() => isAvailable && setForm(f => ({ ...f, selectedSlot: slot }))}
+                            style={{
+                              padding: '10px 8px', borderRadius: 10, fontSize: 14, fontWeight: 700,
+                              border: `2px solid ${isSelected ? '#2563eb' : isAvailable ? '#d1fae5' : '#f3f4f6'}`,
+                              background: isSelected ? '#eff6ff' : isAvailable ? '#f0fdf4' : '#f9fafb',
+                              color: isSelected ? '#2563eb' : isAvailable ? '#15803d' : '#d1d5db',
+                              cursor: isAvailable ? 'pointer' : 'not-allowed',
+                              textAlign: 'center', transition: 'all 0.15s',
+                              boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : 'none'
+                            }}
+                          >
+                            {slot.startTime}
+                            <div style={{ fontSize: 10, fontWeight: 400, marginTop: 2, color: isSelected ? '#60a5fa' : isAvailable ? '#6b7280' : '#d1d5db' }}>
+                              {isAvailable ? `s/d ${slot.endTime}` : 'Penuh'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
           {/* Summary */}
           {form.selectedSlot && (
@@ -614,8 +665,9 @@ const NewConsultationWizard = ({ onCreated }) => {
               </div>
             </div>
           )}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {/* Navigation */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24, gap: 10 }}>

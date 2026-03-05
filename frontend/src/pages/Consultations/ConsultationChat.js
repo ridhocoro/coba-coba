@@ -203,6 +203,8 @@ const ConsultationChat = () => {
   const isUser = user?.role === 'user';
   // Status yang memungkinkan chat aktif (kirim pesan)
   const isOngoing = ['in_progress', 'ongoing', 'confirmed', 'paid', 'scheduled'].includes(consultation?.status);
+  // Status yang memungkinkan aksi dokter (resep, surat sakit, akhiri sesi)
+  const isSessionActive = ['in_progress', 'ongoing'].includes(consultation?.status);
   const isCompleted = ['completed', 'no_show'].includes(consultation?.status);
   const myId = user?.id || user?._id;
 
@@ -508,7 +510,7 @@ const ConsultationChat = () => {
                   ▶ {starting ? 'Memulai...' : 'Mulai Sesi'}
                 </button>
               )}
-              {isOngoing && (
+              {isSessionActive && (
                 <>
                   <button onClick={() => setShowPrescription(true)} style={s.actionBtn('#1f6feb')}>💊 Tulis Resep</button>
                   {!sickLetter && (

@@ -14,9 +14,16 @@ const createNotification = async ({
             case 'consultation_request':
             case 'consultation_started':
             case 'consultation_ended':
+            case 'consultation_confirmed':
+            case 'consultation_cancelled':
+            case 'consultation_expired':
+            case 'doctor_no_show':
             case 'new_message':
             case 'sick_letter_draft':
             case 'sick_letter_issued':
+            case 'prescription_sent':
+            case 'refund_requested':
+            case 'refund_processed':
                 url = data.consultationId ? `/consultations/${data.consultationId}` : '/consultations';
                 break;
             case 'payment_success':

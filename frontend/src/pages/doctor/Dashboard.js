@@ -58,7 +58,7 @@ const DoctorDashboard = () => {
 
             if (consRes.status === 'fulfilled') {
                 const consultations = consRes.value.data?.consultations || [];
-                const ongoing = consultations.filter(c => c.status === 'ongoing').length;
+                const ongoing = consultations.filter(c => ['in_progress', 'ongoing'].includes(c.status)).length;
                 setStats(prev => ({ ...prev, ongoingConsultations: ongoing }));
                 setPendingConsultations(consultations.slice(0, 5));
             }
@@ -100,14 +100,19 @@ const DoctorDashboard = () => {
 
     const getConsBadge = (status) => {
         const map = {
-            paid:            ['info',      'Menunggu Mulai'],
-            scheduled:       ['primary',   'Terjadwal'],
-            ongoing:         ['success',   'Berlangsung'],
-            completed:       ['secondary', 'Selesai'],
-            cancelled:       ['danger',    'Dibatalkan'],
-            pending_payment: ['warning',   'Menunggu Bayar'],
-            expired:         ['secondary', 'Kadaluarsa'],
-            no_show:         ['warning',   'Tidak Hadir'],
+            pending_payment:      ['warning',   'Menunggu Bayar'],
+            waiting_verification: ['warning',   'Verifikasi Bayar'],
+            confirmed:            ['primary',   'Terkonfirmasi'],
+            in_progress:          ['success',   'Berlangsung'],
+            completed:            ['secondary', 'Selesai'],
+            cancelled_by_doctor:  ['danger',    'Dibatalkan'],
+            no_show:              ['warning',   'Tidak Hadir'],
+            doctor_no_show:       ['danger',    'Dokter Absen'],
+            expired:              ['secondary', 'Kadaluarsa'],
+            // legacy
+            paid:     ['info',    'Menunggu Mulai'],
+            scheduled:['primary', 'Terjadwal'],
+            ongoing:  ['success', 'Berlangsung'],
         };
         const [bg, label] = map[status] || ['secondary', status];
         return <Badge bg={bg} className="small">{label}</Badge>;
@@ -296,7 +301,7 @@ const DoctorDashboard = () => {
                                                 </div>
                                                 <div className="d-flex align-items-center gap-2">
                                                     {getConsBadge(c.status)}
-                                                    {c.status === 'ongoing' && (
+                                                    {['in_progress', 'ongoing'].includes(c.status) && (
                                                         <Button as={Link} to={`/consultations/${c._id}`}
                                                             variant="success" size="sm">
                                                             Chat

@@ -132,6 +132,31 @@ router.post('/upload-proof/:transactionId', auth, upload.single('proof'), async 
         manualPayment.status        = 'pending';
         await manualPayment.save();
 
+        // ── Update consultation status ke waiting_verification ────────────────
+        if (manualPayment.paymentType === 'consultation' && manualPayment.referenceId) {
+            const consultation = await Consultation.findById(manualPayment.referenceId);
+            if (consultation && consultation.status === 'pending_payment') {
+                consultation.status = 'waiting_verification';
+                consultation.paymentProofUrl = manualPayment.transferProof;
+                consultation.transferDate = manualPayment.transferDate;
+                await consultation.save();
+
+                // Notif semua admin
+                const User = require('../models/User');
+                const admins = await User.find({ role: 'admin' });
+                for (const admin of admins) {
+                    await createNotification({
+                        userId: admin._id,
+                        type: 'payment_verified',
+                        title: 'Bukti Pembayaran Baru',
+                        message: 'Ada bukti pembayaran konsultasi yang perlu diverifikasi',
+                        data: { consultationId: consultation._id },
+                        io: req.app.get('io')
+                    });
+                }
+            }
+        }
+
         res.json({
             success: true,
             message: 'Bukti transfer berhasil diupload, menunggu verifikasi admin',
@@ -185,7 +210,7 @@ router.get('/admin/pending', auth, async (req, res) => {
 });
 
 // ─── Admin: PUT verifikasi/tolak pembayaran ───────────────────────────────────
-// FIX: setelah verified, consultation status diset ke 'ongoing' (bukan 'paid'),
+// Setelah verified, consultation status diset ke 'confirmed'
 //      dan notifikasi dikirim ke user
 router.put('/admin/verify/:paymentId', auth, async (req, res) => {
     try {
@@ -202,19 +227,41 @@ router.put('/admin/verify/:paymentId', auth, async (req, res) => {
         await payment.save();
 
         if (status === 'verified') {
-            // Update consultation: paid → ongoing (instant) atau scheduled sesuai scheduleType
+            // Update consultation: set ke 'confirmed' (bukan 'scheduled'/'ongoing')
             if (payment.paymentType === 'consultation') {
-                const consultation = await Consultation.findById(payment.referenceId);
+                const consultation = await Consultation.findById(payment.referenceId)
+                    .populate('doctorId', 'userId name')
+                    .populate('userId', 'name');
                 if (consultation) {
                     consultation.paymentVerified = true;
                     consultation.verifiedAt = new Date();
-                    if (consultation.scheduleType === 'scheduled') {
-                        consultation.status = 'scheduled';
-                    } else {
-                        consultation.status = 'ongoing';
-                        consultation.startTime = new Date();
-                    }
+                    consultation.verifiedBy = req.userId;
+                    consultation.status = 'confirmed';
                     await consultation.save();
+
+                    // Notif user
+                    const userIdToNotify = consultation.userId?._id || consultation.userId;
+                    await createNotification({
+                        userId: userIdToNotify,
+                        type: 'consultation_confirmed',
+                        title: 'Pembayaran Dikonfirmasi',
+                        message: `Pembayaran Anda telah diverifikasi. Konsultasi terjadwal pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
+                        data: { consultationId: consultation._id },
+                        io: req.app.get('io')
+                    });
+
+                    // Notif dokter (real-time)
+                    if (consultation.doctorId?.userId) {
+                        const doctorUserId = consultation.doctorId.userId._id || consultation.doctorId.userId;
+                        await createNotification({
+                            userId: doctorUserId,
+                            type: 'consultation_request',
+                            title: '📅 Konsultasi Baru Terkonfirmasi',
+                            message: `Pasien ${consultation.userId?.name || 'Baru'} akan konsultasi pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
+                            data: { consultationId: consultation._id },
+                            io: req.app.get('io')
+                        });
+                    }
                 }
             }
 
@@ -262,21 +309,33 @@ router.put('/admin/verify/:paymentId', auth, async (req, res) => {
         }
 
         if (status === 'rejected') {
-            // Update consultation ke rejected_payment
+            // Tolak → kembalikan consultation ke pending_payment agar user bisa upload ulang
             if (payment.paymentType === 'consultation') {
-                await Consultation.findByIdAndUpdate(payment.referenceId, {
-                    status: 'rejected_payment',
-                    rejectedAt: new Date(),
-                    rejectionReason: notes || 'Bukti transfer tidak valid'
-                });
+                const consultation = await Consultation.findById(payment.referenceId);
+                if (consultation) {
+                    const now = new Date();
+                    const slotStillValid = consultation.scheduledAt > now;
+                    if (slotStillValid) {
+                        // extend payment deadline 15 menit lagi
+                        consultation.status = 'pending_payment';
+                        consultation.paymentDeadline = new Date(now.getTime() + 15 * 60 * 1000);
+                        consultation.slotLockExpires = consultation.paymentDeadline;
+                    } else {
+                        consultation.status = 'expired';
+                    }
+                    consultation.rejectedAt = now;
+                    consultation.rejectionReason = notes || 'Bukti transfer tidak valid';
+                    consultation.paymentProofUrl = null;
+                    await consultation.save();
+                }
             }
             // Kirim notifikasi penolakan ke user
             const userId = payment.userId?._id || payment.userId;
             await createNotification({
                 userId,
                 type: 'payment_rejected',
-                title: 'Pembayaran Ditolak ❌',
-                message: `Pembayaran Anda ditolak. Alasan: ${notes || 'Bukti transfer tidak valid'}. Silakan hubungi admin.`,
+                title: 'Bukti Pembayaran Ditolak ❌',
+                message: `Bukti pembayaran ditolak. Alasan: ${notes || 'Bukti transfer tidak valid'}. Silakan upload ulang.`,
                 data: { paymentId: payment._id },
                 io: req.app.get('io')
             });
