@@ -46,6 +46,7 @@ app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/manual-payment', require('./routes/manualpayment'));
+app.use('/api/xendit', require('./routes/xendit'));
 
 // 🔔 TAMBAHKAN ROUTE NOTIFIKASI
 app.use('/api/notifications', require('./routes/notifications'));

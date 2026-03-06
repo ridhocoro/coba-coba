@@ -254,54 +254,83 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 // 3. STATUS TRANSITIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── User upload bukti pembayaran → waiting_verification ───────────────────────
-const uploadProof = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => {
-            const dir = 'uploads/payment-proofs';
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            cb(null, dir);
-        },
-        filename: (req, file, cb) => {
-            cb(null, `proof-${Date.now()}-${Math.round(Math.random()*1e9)}${path.extname(file.originalname)}`);
-        }
-    }),
-    limits: { fileSize: 5 * 1024 * 1024 }
-});
-
-router.post('/:id/upload-proof', auth, uploadProof.single('proof'), async (req, res) => {
+// ── POST /:id/initiate-payment → buat Xendit invoice untuk konsultasi ─────────
+// Dipanggil frontend setelah user memilih slot. Returns invoiceUrl Xendit.
+router.post('/:id/initiate-payment', auth, async (req, res) => {
     try {
-        const consultation = await Consultation.findById(req.params.id);
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('doctorId', 'name consultationFee');
+
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
         if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
         if (consultation.status !== 'pending_payment') {
-            return res.status(400).json({ message: `Status saat ini: ${consultation.status}. Upload bukti hanya bisa saat pending_payment.` });
+            return res.status(400).json({ message: `Status saat ini: ${consultation.status}. Tidak bisa bayar.` });
         }
-        if (!req.file) return res.status(400).json({ message: 'File bukti pembayaran wajib diunggah' });
 
-        consultation.status = 'waiting_verification';
-        consultation.paymentProofUrl = `/uploads/payment-proofs/${req.file.filename}`;
-        consultation.transferDate = req.body.transferDate ? new Date(req.body.transferDate) : new Date();
+        // Cek deadline belum lewat
+        if (consultation.paymentDeadline && consultation.paymentDeadline < new Date()) {
+            consultation.status = 'expired';
+            await consultation.save();
+            return res.status(400).json({ message: 'Waktu pembayaran sudah habis. Silakan booking ulang.' });
+        }
+
+        const amount = consultation.doctorId?.consultationFee || req.body.amount;
+        if (!amount) return res.status(400).json({ message: 'Biaya konsultasi tidak ditemukan' });
+
+        const externalId = `INV-CONSULT-${consultation._id}-${Date.now()}`;
+
+        // Buat Xendit invoice via axios (tidak perlu re-route ke /api/xendit untuk menghindari circular)
+        const axios = require('axios');
+        const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;
+        const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+        const xenditRes = await axios.post(
+            'https://api.xendit.co/v2/invoices',
+            {
+                external_id         : externalId,
+                amount,
+                description         : `Konsultasi Online – dr. ${consultation.doctorId?.name || ''}`,
+                invoice_duration    : 900,
+                success_redirect_url: `${FRONTEND_URL}/payment/success?external_id=${externalId}`,
+                failure_redirect_url: `${FRONTEND_URL}/payment/failed?external_id=${externalId}`,
+                currency            : 'IDR',
+                payment_methods     : ['BCA','BNI','BRI','MANDIRI','PERMATA','OVO','DANA','SHOPEEPAY','LINKAJA','QRIS'],
+            },
+            {
+                headers: {
+                    Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        const invoice = xenditRes.data;
+
+        // Simpan xendit invoice id ke consultation
+        consultation.xenditInvoiceId  = invoice.id;
+        consultation.xenditExternalId = externalId;
         await consultation.save();
 
-        // Notif admin
-        const User = require('../models/User');
-        const admins = await User.find({ role: 'admin' });
-        for (const admin of admins) {
-            await createNotification({
-                userId: admin._id,
-                type: 'payment_verified',
-                title: 'Bukti Pembayaran Baru',
-                message: `Ada bukti pembayaran konsultasi yang perlu diverifikasi`,
-                data: { consultationId: consultation._id },
-                io: req.app.get('io')
-            });
-        }
-
-        res.json({ success: true, message: 'Bukti pembayaran berhasil diunggah', consultation });
+        res.json({
+            success    : true,
+            invoiceUrl : invoice.invoice_url,
+            externalId,
+            invoiceId  : invoice.id,
+            amount,
+            paymentDeadline: consultation.paymentDeadline,
+        });
     } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
+        console.error('[initiate-payment]', err.response?.data || err.message);
+        res.status(500).json({ message: 'Gagal membuat invoice pembayaran: ' + (err.response?.data?.message || err.message) });
     }
+});
+
+// ── DEPRECATED: upload-proof → ditangani Xendit otomatis ─────────────────────
+// Tetap ada sebagai fallback jika ada user yang belum migrasi
+router.post('/:id/upload-proof', auth, async (req, res) => {
+    res.status(410).json({
+        message: 'Pembayaran kini dilakukan otomatis via Xendit. Gunakan endpoint /initiate-payment.',
+    });
 });
 
 // ── Admin: verifikasi pembayaran → confirmed ──────────────────────────────────
@@ -314,8 +343,8 @@ router.put('/:id/verify-payment', auth, async (req, res) => {
             .populate('userId', 'name');
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (!['pending_payment', 'waiting_verification'].includes(consultation.status)) {
-            return res.status(400).json({ message: `Tidak bisa verifikasi dari status: ${consultation.status}` });
+        if (consultation.status !== 'waiting_verification') {
+            return res.status(400).json({ message: `Status harus waiting_verification, saat ini: ${consultation.status}` });
         }
 
         consultation.status = 'confirmed';
@@ -359,8 +388,8 @@ router.put('/:id/reject-payment', auth, async (req, res) => {
 
         const consultation = await Consultation.findById(req.params.id);
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (!['pending_payment', 'waiting_verification'].includes(consultation.status)) {
-            return res.status(400).json({ message: `Tidak bisa tolak dari status: ${consultation.status}` });
+        if (consultation.status !== 'waiting_verification') {
+            return res.status(400).json({ message: 'Status harus waiting_verification' });
         }
 
         // Jika masih dalam window lock (slot belum expired), kembalikan ke pending_payment
@@ -438,8 +467,15 @@ router.put('/:id/start', auth, async (req, res) => {
         if (doctorUserId !== req.userId && req.userRole !== 'admin') {
             return res.status(403).json({ message: 'Hanya dokter yang bersangkutan yang dapat memulai' });
         }
-        if (consultation.status !== 'confirmed') {
-            return res.status(400).json({ message: `Status harus confirmed, saat ini: ${consultation.status}` });
+
+        // Izinkan dari confirmed ATAU in_progress (sudah di-auto-start oleh cron)
+        if (!['confirmed', 'in_progress'].includes(consultation.status)) {
+            return res.status(400).json({ message: `Status harus confirmed atau in_progress, saat ini: ${consultation.status}` });
+        }
+
+        // Jika sudah in_progress (auto oleh cron), kembalikan saja
+        if (consultation.status === 'in_progress') {
+            return res.json({ success: true, message: 'Konsultasi sudah berjalan', consultation });
         }
 
         consultation.status = 'in_progress';
@@ -449,11 +485,20 @@ router.put('/:id/start', auth, async (req, res) => {
         await createNotification({
             userId: consultation.userId,
             type: 'consultation_started',
-            title: 'Konsultasi Dimulai',
-            message: 'Dokter telah memulai sesi konsultasi Anda',
+            title: 'Konsultasi Dimulai 🩺',
+            message: 'Dokter telah memulai sesi konsultasi Anda. Silakan mulai chat.',
             data: { consultationId: consultation._id },
             io: req.app.get('io')
         });
+
+        // Emit socket real-time
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
+                consultationId: consultation._id.toString(),
+                status: 'in_progress',
+            });
+        }
 
         res.json({ success: true, message: 'Konsultasi dimulai', consultation });
     } catch (err) {
@@ -490,13 +535,21 @@ router.put('/:id/end', auth, async (req, res) => {
         await createNotification({
             userId: consultation.userId,
             type: 'consultation_ended',
-            title: finalStatus === 'no_show' ? 'Konsultasi Berakhir (Tidak Hadir)' : 'Konsultasi Selesai',
+            title: finalStatus === 'no_show' ? 'Sesi Berakhir — Tidak Hadir' : 'Konsultasi Selesai ✅',
             message: finalStatus === 'no_show'
                 ? 'Dokter telah mengakhiri sesi namun Anda tidak mengirim pesan. Status: Tidak Hadir.'
                 : 'Konsultasi Anda telah selesai. Silakan beri rating.',
             data: { consultationId: consultation._id },
             io: req.app.get('io')
         });
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
+                consultationId: consultation._id.toString(),
+                status        : finalStatus,
+            });
+        }
 
         res.json({ success: true, message: `Konsultasi ${finalStatus}`, consultation });
     } catch (err) {
@@ -608,7 +661,11 @@ router.put('/:id/process-refund', auth, async (req, res) => {
     }
 });
 
-// ── Legacy: no-show ditentukan otomatis oleh sistem ──────────────────────────
+// ── Legacy: mark-paid (tetap ada untuk backward compat, redirect ke verify) ───
+router.put('/:id/mark-paid', auth, async (req, res) => {
+    return res.status(410).json({ message: 'Endpoint ini sudah diganti dengan /verify-payment (admin) dan /upload-proof (user)' });
+});
+
 router.put('/:id/no-show', auth, async (req, res) => {
     return res.status(410).json({ message: 'No-show ditentukan otomatis oleh sistem' });
 });
@@ -643,7 +700,7 @@ router.put('/:id/cancel', auth, async (req, res) => {
     }
 });
 
-// ── Admin: Verifikasi pembayaran (fallback jika ManualPayment tidak dipakai) ───
+// ── Admin: Verifikasi pembayaran manual → confirmed/scheduled ─────────────────
 router.put('/:id/mark-paid', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id)
@@ -652,41 +709,33 @@ router.put('/:id/mark-paid', auth, async (req, res) => {
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Hanya admin' });
-
-        const allowedStatuses = ['pending_payment', 'waiting_verification'];
-        if (!allowedStatuses.includes(consultation.status)) {
-            return res.status(400).json({ message: `Status saat ini: ${consultation.status}. Harus pending_payment atau waiting_verification.` });
+        if (consultation.status !== 'pending_payment') {
+            return res.status(400).json({ message: `Status saat ini: ${consultation.status}` });
         }
 
         consultation.paymentVerified = true;
         consultation.verifiedAt = new Date();
-        consultation.verifiedBy = req.userId;
-        consultation.status = 'confirmed'; // selalu confirmed (bukan scheduled/ongoing)
+
+        if (consultation.scheduleType === 'instant') {
+            consultation.status = 'ongoing';
+            consultation.startTime = new Date();
+        } else {
+            consultation.status = 'scheduled';
+        }
 
         await consultation.save();
 
         // Notif user
         await createNotification({
             userId: consultation.userId._id,
-            type: 'consultation_confirmed',
-            title: 'Pembayaran Dikonfirmasi',
-            message: `Pembayaran dikonfirmasi. Konsultasi terjadwal pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
-            data: { consultationId: consultation._id },
+            type: 'payment_verified',
+            title: 'Pembayaran Terverifikasi',
+            message: consultation.scheduleType === 'instant'
+                ? 'Pembayaran dikonfirmasi, konsultasi Anda dimulai!'
+                : `Pembayaran dikonfirmasi. Konsultasi dijadwalkan pada ${consultation.scheduledAt?.toLocaleString('id-ID') || '-'}`,
+            data: { consultationId: consultation._id, url: `/consultations/${consultation._id}` },
             io: req.app.get('io')
         });
-
-        // Notif dokter
-        if (consultation.doctorId?.userId) {
-            const doctorUserId = consultation.doctorId.userId._id || consultation.doctorId.userId;
-            await createNotification({
-                userId: doctorUserId,
-                type: 'consultation_request',
-                title: '📅 Konsultasi Baru Terkonfirmasi',
-                message: `Pasien ${consultation.userId.name} akan konsultasi pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
-                data: { consultationId: consultation._id },
-                io: req.app.get('io')
-            });
-        }
 
         res.json({ success: true, consultation });
     } catch (err) {
@@ -803,7 +852,7 @@ router.put('/:id/prescription', auth, doctorAuth, async (req, res) => {
         if (consultation.doctorId.toString() !== doctor._id.toString()) {
             return res.status(403).json({ message: 'Anda bukan dokter konsultasi ini' });
         }
-        if (!['in_progress', 'ongoing', 'completed'].includes(consultation.status)) {
+        if (!['ongoing', 'completed'].includes(consultation.status)) {
             return res.status(400).json({ message: 'Resep hanya bisa dikirim saat konsultasi berlangsung atau selesai' });
         }
 
@@ -887,7 +936,7 @@ router.post('/:id/sick-letter', auth, doctorAuth, async (req, res) => {
             .populate('doctorId', 'name specialization consultationFee userId');
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (!['in_progress', 'ongoing', 'completed'].includes(consultation.status)) return res.status(400).json({ message: 'Konsultasi harus in_progress atau completed' });
+        if (!['ongoing', 'completed'].includes(consultation.status)) return res.status(400).json({ message: 'Konsultasi harus ongoing atau completed' });
 
         const doctor = await Doctor.findOne({ userId: req.userId });
         if (!doctor || consultation.doctorId._id.toString() !== doctor._id.toString()) {

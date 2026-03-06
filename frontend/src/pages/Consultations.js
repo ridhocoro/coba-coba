@@ -83,198 +83,99 @@ const Countdown = ({ deadline, onExpired }) => {
   );
 };
 
-// ── Manual Payment Form ───────────────────────────────────────────
-const PaymentForm = ({ consultation, amount, deadline, onSuccess, onClose }) => {
-  const [step, setStep] = useState(1);
-  const [banks, setBanks] = useState([]);
-  const [qris, setQris] = useState(null);
-  const [selectedBank, setSelectedBank] = useState(null);
-  const [transaction, setTransaction] = useState(null);
+// ── Xendit Payment Form ───────────────────────────────────────────
+const PaymentForm = ({ consultation, amount, deadline, onClose }) => {
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [transferDate, setTransferDate] = useState('');
-  const [file, setFile] = useState(null);
+  const [error, setError]     = useState(null);
 
-  useEffect(() => {
-    api.get('/api/manual-payment/bank-accounts').then(r => {
-      setBanks(r.data.banks || []);
-      setQris(r.data.qris?.[0] || null);
-    }).catch(() => toast.error('Gagal memuat rekening'));
-  }, []);
-
-  const createTrx = async (bankId) => {
+  const handlePay = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const r = await api.post('/api/manual-payment/create', {
-        amount, paymentType: 'consultation', referenceId: consultation._id, bankId
-      });
-      setTransaction(r.data.transaction);
-      setSelectedBank(r.data.transaction.isQRIS
-        ? { bankName: 'QRIS', accountName: 'Klinik Pratama IPB', isQRIS: true }
-        : banks.find(b => b.id === bankId));
-      setStep(2);
-    } catch { toast.error('Gagal membuat transaksi'); }
-    finally { setLoading(false); }
+      const res = await api.post(`/api/consultations/${consultation._id}/initiate-payment`);
+      if (res.data.invoiceUrl) {
+        window.location.href = res.data.invoiceUrl;
+      } else {
+        throw new Error('Gagal mendapatkan URL pembayaran');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Terjadi kesalahan');
+      setLoading(false);
+    }
   };
 
-  const uploadProof = async () => {
-    if (!file || !transferDate) { toast.error('Lengkapi semua field'); return; }
-    setUploading(true);
-    const fd = new FormData();
-    fd.append('proof', file);
-    fd.append('transferDate', transferDate);
-    try {
-      await api.post(`/api/manual-payment/upload-proof/${transaction.id}`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      toast.success('Bukti transfer terkirim! Menunggu verifikasi admin.');
-      setStep(3);
-      onSuccess();
-    } catch { toast.error('Gagal upload bukti'); }
-    finally { setUploading(false); }
-  };
-
-  const s = { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" };
-
-  if (step === 1) return (
-    <div style={s} className="p-2">
+  return (
+    <div style={{ fontFamily: "'Inter', sans-serif" }}>
       {deadline && (
-        <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 16px', marginBottom: 20, textAlign: 'center' }}>
-          <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 4 }}>Selesaikan pembayaran dalam</div>
-          <Countdown deadline={deadline} />
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 16px', marginBottom: 16, textAlign: 'center' }}>
+          <div style={{ color: '#92400e', fontSize: 12, marginBottom: 4 }}>Selesaikan pembayaran dalam</div>
+          <Countdown deadline={deadline} onExpired={() => { toast.error('Waktu habis, silakan booking ulang'); onClose(); }} />
+          <div style={{ color: '#92400e', fontSize: 11, marginTop: 4 }}>Slot dibebaskan jika tidak dibayar tepat waktu</div>
         </div>
       )}
-      <h6 style={{ color: '#111827', fontWeight: 700, marginBottom: 16 }}>Pilih Metode Pembayaran</h6>
-      <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
-        {banks.map(bank => (
-          <div key={bank.id} onClick={() => setSelectedBank({ ...bank, isQRIS: false })}
-            style={{
-              border: `2px solid ${selectedBank?.id === bank.id && !selectedBank?.isQRIS ? '#2563eb' : '#e5e7eb'}`,
-              borderRadius: 12, padding: '12px 16px', cursor: 'pointer', background: '#ffffff',
-              display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.2s'
-            }}>
-            <span style={{ fontSize: 28 }}>🏦</span>
-            <div>
-              <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{bank.bankName}</div>
-              <div style={{ color: '#6b7280', fontSize: 12 }}>a.n. {bank.accountName}</div>
-            </div>
-          </div>
-        ))}
-        {qris && (
-          <div onClick={() => setSelectedBank({ id: 999, bankName: 'QRIS', accountName: qris.merchantName, isQRIS: true, qrCode: qris.qrCode })}
-            style={{
-              border: `2px solid ${selectedBank?.isQRIS ? '#16a34a' : '#e5e7eb'}`,
-              borderRadius: 12, padding: '12px 16px', cursor: 'pointer', background: '#ffffff',
-              display: 'flex', alignItems: 'center', gap: 12
-            }}>
-            <span style={{ fontSize: 28 }}>📱</span>
-            <div>
-              <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>QRIS</div>
-              <div style={{ color: '#6b7280', fontSize: 12 }}>OVO · GoPay · Dana · ShopeePay</div>
-            </div>
+
+      <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Ringkasan</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#374151', marginBottom: 6 }}>
+          <span>Layanan</span><span style={{ fontWeight: 600 }}>Konsultasi Online</span>
+        </div>
+        {consultation?.doctorId?.name && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#374151', marginBottom: 6 }}>
+            <span>Dokter</span><span style={{ fontWeight: 600 }}>dr. {consultation.doctorId.name}</span>
           </div>
         )}
+        {consultation?.scheduledAt && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#374151', marginBottom: 6 }}>
+            <span>Jadwal</span>
+            <span style={{ fontWeight: 600 }}>
+              {new Date(consultation.scheduledAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })} WIB
+            </span>
+          </div>
+        )}
+        <div style={{ borderTop: '1px solid #e5e7eb', marginTop: 10, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>Total</span>
+          <span style={{ fontWeight: 800, fontSize: 20, color: '#059669' }}>{fmtRupiah(amount)}</span>
+        </div>
       </div>
-      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 16px', marginBottom: 16, textAlign: 'center' }}>
-        <div style={{ color: '#6b7280', fontSize: 12 }}>Total Pembayaran</div>
-        <div style={{ color: '#2563eb', fontWeight: 800, fontSize: 22 }}>{fmtRupiah(amount)}</div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8, fontWeight: 600 }}>METODE TERSEDIA</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {['VA BCA/BRI/BNI/Mandiri', 'QRIS', 'OVO', 'DANA', 'ShopeePay', 'Alfamart/Indomaret'].map(m => (
+            <span key={m} style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 6, padding: '3px 9px', fontSize: 11, color: '#374151' }}>{m}</span>
+          ))}
+        </div>
       </div>
-      <button onClick={() => selectedBank && createTrx(selectedBank.id)}
-        disabled={!selectedBank || loading}
-        style={{
-          width: '100%', padding: '12px', borderRadius: 10, border: 'none', fontWeight: 700,
-          background: selectedBank ? 'linear-gradient(135deg,#2563eb,#3b82f6)' : '#e5e7eb',
-          color: selectedBank ? '#fff' : '#9ca3af', cursor: selectedBank ? 'pointer' : 'not-allowed', fontSize: 15
-        }}>
-        {loading ? 'Memproses...' : 'Lanjutkan →'}
+
+      {error && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#991b1b', marginBottom: 14 }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#1d4ed8', marginBottom: 16 }}>
+        🔒 Anda akan diarahkan ke halaman Xendit yang aman. Konfirmasi <strong>otomatis</strong> setelah bayar — tidak perlu upload bukti.
+      </div>
+
+      <button onClick={handlePay} disabled={loading} style={{
+        width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 15,
+        background: loading ? '#94a3b8' : 'linear-gradient(135deg,#1d4ed8,#2563eb)',
+        color: '#fff', cursor: loading ? 'not-allowed' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}>
+        {loading ? <>
+          <span style={{ width: 15, height: 15, border: '2px solid rgba(255,255,255,.35)', borderTop: '2px solid #fff', borderRadius: '50%', display: 'inline-block', animation: 'xspin 1s linear infinite' }} />
+          Mengarahkan ke Xendit...
+        </> : '💳 Bayar Sekarang via Xendit'}
+        <style>{`@keyframes xspin{to{transform:rotate(360deg)}}`}</style>
       </button>
-      <button onClick={onClose} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>
+      <button onClick={onClose} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontSize: 14 }}>
         Batal
       </button>
     </div>
   );
-
-  if (step === 2) return (
-    <div style={s} className="p-2">
-      {deadline && (
-        <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 16px', marginBottom: 20, textAlign: 'center' }}>
-          <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 4 }}>Sisa waktu pembayaran</div>
-          <Countdown deadline={deadline} />
-        </div>
-      )}
-      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 8 }}>Detail Transfer</div>
-        {transaction?.bank?.accountNumber && (
-          <div style={{ marginBottom: 6 }}>
-            <span style={{ color: '#6b7280', fontSize: 12 }}>No. Rekening: </span>
-            <span style={{ color: '#111827', fontWeight: 700, fontFamily: 'monospace' }}>{transaction.bank.accountNumber}</span>
-            <button onClick={() => { navigator.clipboard.writeText(transaction.bank.accountNumber); toast.success('Disalin!'); }}
-              style={{ marginLeft: 8, background: 'transparent', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 12 }}>salin</button>
-          </div>
-        )}
-        <div style={{ marginBottom: 6 }}>
-          <span style={{ color: '#6b7280', fontSize: 12 }}>Bank: </span>
-          <span style={{ color: '#111827', fontWeight: 600 }}>{selectedBank?.bankName}</span>
-        </div>
-        <div>
-          <span style={{ color: '#6b7280', fontSize: 12 }}>Nominal: </span>
-          <span style={{ color: '#2563eb', fontWeight: 800, fontSize: 18 }}>{fmtRupiah(amount)}</span>
-        </div>
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>Tanggal Transfer</label>
-        <input type="date" value={transferDate} max={new Date().toISOString().split('T')[0]}
-          onChange={e => setTransferDate(e.target.value)}
-          style={{ width: '100%', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', color: '#111827', fontSize: 14 }} />
-      </div>
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ color: '#6b7280', fontSize: 12, display: 'block', marginBottom: 6 }}>Bukti Transfer</label>
-        <label style={{
-          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-          background: '#ffffff', border: '1px dashed #e5e7eb', borderRadius: 8, cursor: 'pointer'
-        }}>
-          <FaImage style={{ color: '#2563eb' }} />
-          <span style={{ color: file ? '#16a34a' : '#6b7280', fontSize: 13 }}>
-            {file ? file.name : 'Klik untuk pilih file (JPG/PNG/PDF, maks 5MB)'}
-          </span>
-          <input type="file" accept="image/*,.pdf" style={{ display: 'none' }}
-            onChange={e => {
-              const f = e.target.files[0];
-              if (f && f.size > 5 * 1024 * 1024) { toast.error('Maks 5MB'); return; }
-              setFile(f);
-            }} />
-        </label>
-      </div>
-      <button onClick={uploadProof} disabled={!file || !transferDate || uploading}
-        style={{
-          width: '100%', padding: '12px', borderRadius: 10, border: 'none', fontWeight: 700,
-          background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', cursor: 'pointer', fontSize: 15,
-          opacity: (!file || !transferDate || uploading) ? 0.5 : 1
-        }}>
-        {uploading ? 'Mengupload...' : '✓ Upload & Konfirmasi'}
-      </button>
-      <button onClick={() => setStep(1)} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>
-        ← Kembali
-      </button>
-    </div>
-  );
-
-  return (
-    <div style={{ ...s, textAlign: 'center', padding: '24px 0' }}>
-      <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
-      <div style={{ color: '#16a34a', fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Bukti Terkirim!</div>
-      <div style={{ color: '#6b7280', fontSize: 14, marginBottom: 24 }}>
-        Pembayaran Anda sedang diverifikasi admin.<br />Proses maksimal 1×24 jam.
-      </div>
-      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
-        ID: <code style={{ color: '#2563eb' }}>{transaction?.id}</code>
-      </div>
-      <button onClick={onClose} style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
-        Tutup
-      </button>
-    </div>
-  );
 };
+
 
 // ── Multi-step Form ───────────────────────────────────────────────
 const STEPS = ['Pilih Dokter', 'Tipe Konsultasi', 'Keluhan', 'Pilih Slot'];
@@ -287,7 +188,6 @@ const NewConsultationWizard = ({ onCreated }) => {
   const [form, setForm] = useState({
     doctorId: '', consultationType: 'chat',
     selectedSlot: null, // { date, startTime, endTime, startUtc, endUtc }
-    selectedDate: '',   // for calendar view
     symptoms: '', medicalHistory: '', attachments: []
   });
   const [loadingDoctors, setLoadingDoctors] = useState(true);
@@ -308,12 +208,8 @@ const NewConsultationWizard = ({ onCreated }) => {
       setLoadingSlots(true);
       api.get(`/api/availability/slots/${form.doctorId}`)
         .then(r => {
-          const loadedSlots = r.data.slots || [];
-          setSlots(loadedSlots);
+          setSlots(r.data.slots || []);
           setSlotsMsg(r.data.message || '');
-          // Auto-select first available date
-          const dates = [...new Set(loadedSlots.map(s => s.date))].sort();
-          if (dates.length > 0) setForm(f => ({ ...f, selectedDate: dates[0] }));
         })
         .catch(() => { toast.error('Gagal memuat slot jadwal'); setSlots([]); setSlotsMsg('Gagal memuat jadwal'); })
         .finally(() => setLoadingSlots(false));
@@ -538,111 +434,65 @@ const NewConsultationWizard = ({ onCreated }) => {
         </div>
       )}
 
-      {/* Step 3: Pilih Slot — Calendar View */}
-      {step === 3 && (() => {
-        // State-like variables using form state for selected date
-        const allDates = Object.keys(slotsByDate).sort();
-        const selectedDate = form.selectedDate || allDates[0] || '';
-        const todayDaySlots = slotsByDate[selectedDate] || [];
+      {/* Step 3: Pilih Slot */}
+      {step === 3 && (
+        <div>
+          <h6 style={s.h}>Pilih Jadwal Konsultasi</h6>
+          <p style={s.sub}>
+            Pilih slot yang tersedia dalam 7 hari ke depan. Setiap slot berdurasi 30 menit.
+          </p>
 
-        const setSelectedDate = (d) => setForm(f => ({ ...f, selectedDate: d, selectedSlot: null }));
-
-        const dayNameShort = (dateStr) => {
-          const d = new Date(dateStr + 'T00:00:00');
-          return d.toLocaleDateString('id-ID', { weekday: 'short' });
-        };
-        const dayNum = (dateStr) => new Date(dateStr + 'T00:00:00').getDate();
-        const monthLabel = (dateStr) => new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-
-        return (
-          <div>
-            <h6 style={s.h}>Pilih Jadwal Konsultasi</h6>
-            <p style={s.sub}>Setiap sesi berdurasi 30 menit. Break siang 12:00–13:00.</p>
-
-            {loadingSlots ? (
-              <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
-                Memuat jadwal tersedia...
+          {loadingSlots ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+              Memuat jadwal tersedia...
+            </div>
+          ) : slots.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280', background: '#f9fafb', borderRadius: 12 }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada slot tersedia</div>
+              <div style={{ fontSize: 13 }}>
+                {slotsMsg || 'Dokter ini belum mengatur jadwal atau semua slot sudah penuh'}
               </div>
-            ) : slots.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40, color: '#6b7280', background: '#f9fafb', borderRadius: 12 }}>
-                <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada slot tersedia</div>
-                <div style={{ fontSize: 13 }}>{slotsMsg || 'Dokter ini belum mengatur jadwal atau semua slot sudah penuh'}</div>
-              </div>
-            ) : (
-              <>
-                {/* Calendar strip */}
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>
-                    📅 {selectedDate ? monthLabel(selectedDate) : ''}
+            </div>
+          ) : (
+            <div style={{ maxHeight: 400, overflowY: 'auto', paddingRight: 4 }}>
+              {Object.entries(slotsByDate).map(([date, daySlots]) => (
+                <div key={date} style={{ marginBottom: 20 }}>
+                  <div style={{ color: '#374151', fontWeight: 600, fontSize: 13, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #e5e7eb' }}>
+                    📅 {fmtSlotDate(date)}
                   </div>
-                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-                    {allDates.map(dateStr => {
-                      const isSelected = dateStr === selectedDate;
-                      const hasAvailable = (slotsByDate[dateStr] || []).some(s => s.available);
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {daySlots.map(slot => {
+                      const isSelected = form.selectedSlot?.startUtc === slot.startUtc;
+                      const isAvailable = slot.available;
                       return (
                         <button
-                          key={dateStr}
+                          key={slot.startUtc}
                           type="button"
-                          onClick={() => setSelectedDate(dateStr)}
+                          disabled={!isAvailable}
+                          onClick={() => isAvailable && setForm(f => ({ ...f, selectedSlot: slot }))}
                           style={{
-                            minWidth: 54, padding: '10px 8px', borderRadius: 12, border: 'none',
-                            cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
-                            background: isSelected ? '#2563eb' : hasAvailable ? '#ffffff' : '#f9fafb',
-                            color: isSelected ? '#fff' : hasAvailable ? '#111827' : '#9ca3af',
-                            boxShadow: isSelected ? '0 2px 8px rgba(37,99,235,0.35)' : '0 1px 3px rgba(0,0,0,0.06)',
-                            border: isSelected ? '2px solid #2563eb' : hasAvailable ? '2px solid #e5e7eb' : '2px solid #f3f4f6',
-                            flexShrink: 0
+                            padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                            border: `2px solid ${isSelected ? '#2563eb' : isAvailable ? '#e5e7eb' : '#f3f4f6'}`,
+                            background: isSelected ? '#eff6ff' : isAvailable ? '#ffffff' : '#f9fafb',
+                            color: isSelected ? '#2563eb' : isAvailable ? '#374151' : '#9ca3af',
+                            cursor: isAvailable ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.1s',
+                            minWidth: 80
                           }}
                         >
-                          <div style={{ fontSize: 10, fontWeight: 500, opacity: isSelected ? 1 : 0.7 }}>{dayNameShort(dateStr)}</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3 }}>{dayNum(dateStr)}</div>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', margin: '3px auto 0', background: isSelected ? 'rgba(255,255,255,0.7)' : hasAvailable ? '#22c55e' : '#d1d5db' }} />
+                          {slot.startTime}
+                          {!isAvailable && <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: '#ef4444' }}>Penuh</span>}
+                          {isAvailable && <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: '#6b7280' }}>s/d {slot.endTime}</span>}
                         </button>
                       );
                     })}
                   </div>
                 </div>
-
-                {/* Slots for selected date */}
-                {selectedDate && (
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 12 }}>
-                      Slot Tersedia — {fmtSlotDate(selectedDate)}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
-                      {todayDaySlots.map(slot => {
-                        const isSelected = form.selectedSlot?.startUtc === slot.startUtc;
-                        const isAvailable = slot.available;
-                        return (
-                          <button
-                            key={slot.startUtc}
-                            type="button"
-                            disabled={!isAvailable}
-                            onClick={() => isAvailable && setForm(f => ({ ...f, selectedSlot: slot }))}
-                            style={{
-                              padding: '10px 8px', borderRadius: 10, fontSize: 14, fontWeight: 700,
-                              border: `2px solid ${isSelected ? '#2563eb' : isAvailable ? '#d1fae5' : '#f3f4f6'}`,
-                              background: isSelected ? '#eff6ff' : isAvailable ? '#f0fdf4' : '#f9fafb',
-                              color: isSelected ? '#2563eb' : isAvailable ? '#15803d' : '#d1d5db',
-                              cursor: isAvailable ? 'pointer' : 'not-allowed',
-                              textAlign: 'center', transition: 'all 0.15s',
-                              boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : 'none'
-                            }}
-                          >
-                            {slot.startTime}
-                            <div style={{ fontSize: 10, fontWeight: 400, marginTop: 2, color: isSelected ? '#60a5fa' : isAvailable ? '#6b7280' : '#d1d5db' }}>
-                              {isAvailable ? `s/d ${slot.endTime}` : 'Penuh'}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
+              ))}
+            </div>
+          )}
 
           {/* Summary */}
           {form.selectedSlot && (
@@ -665,9 +515,8 @@ const NewConsultationWizard = ({ onCreated }) => {
               </div>
             </div>
           )}
-          </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* Navigation */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24, gap: 10 }}>
@@ -974,20 +823,15 @@ const Consultations = () => {
     fetchConsultations();
   }, [user, fetchConsultations, navigate]);
 
-  // ── Auto-refresh via polling (30 detik) jika ada konsultasi pending_payment
-  // Ini memastikan status update ketika admin memverifikasi pembayaran
+  // ── Polling ringan saat ada pending_payment (safety net untuk Xendit webhook)
   useEffect(() => {
     const hasPending = consultations.some(c => c.status === 'pending_payment');
     if (!hasPending) return;
-
-    const interval = setInterval(() => {
-      fetchConsultations();
-    }, 30000); // 30 detik
-
+    const interval = setInterval(fetchConsultations, 10000);
     return () => clearInterval(interval);
   }, [consultations, fetchConsultations]);
 
-  // ── Auto-refresh via Socket notifikasi payment_verified
+  // ── Socket: update real-time dari Xendit webhook
   useEffect(() => {
     if (!user) return;
     const sock = io(API_URL, {
@@ -996,18 +840,29 @@ const Consultations = () => {
     });
     sock.emit('join-user', user.id);
     sock.on('new-notification', (notif) => {
-      // Refresh daftar konsultasi saat ada notifikasi payment
-      if (['payment_verified', 'payment_rejected', 'consultation_started'].includes(notif.type)) {
+      if (['payment_verified', 'consultation_started', 'consultation_ended'].includes(notif.type)) {
         fetchConsultations();
       }
     });
+    sock.on('consultation-status-update', () => fetchConsultations());
     return () => sock.close();
   }, [user, fetchConsultations]);
 
-  const handleCreated = (data) => {
+  const handleCreated = async (data) => {
     setView('history');
-    setPayModal({ consultation: data.consultation, amount: data.amount, deadline: data.paymentDeadline });
     fetchConsultations();
+    // Langsung redirect ke Xendit — tidak perlu buka modal manual
+    try {
+      const res = await api.post(`/api/consultations/${data.consultation._id}/initiate-payment`);
+      if (res.data.invoiceUrl) {
+        toast.success('Slot dikunci! Mengarahkan ke pembayaran...');
+        setTimeout(() => { window.location.href = res.data.invoiceUrl; }, 700);
+      }
+    } catch (err) {
+      // Fallback: buka modal jika redirect gagal
+      toast.error('Redirect gagal, klik tombol Bayar untuk melanjutkan.');
+      setPayModal({ consultation: data.consultation, amount: data.amount, deadline: data.paymentDeadline });
+    }
   };
 
   const handleDownloadPDF = async (cons) => {
@@ -1020,7 +875,7 @@ const Consultations = () => {
     } catch { toast.error('Gagal mengunduh surat sakit'); }
   };
 
-  const active = consultations.filter(c => ['pending_payment', 'waiting_verification', 'confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(c.status));
+  const active = consultations.filter(c => ['pending_payment', 'confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(c.status));
   const needsAction = consultations.filter(c => ['cancelled_by_doctor', 'doctor_no_show', 'refund_requested', 'refund_failed'].includes(c.status));
   const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show', 'refunded'].includes(c.status));
 

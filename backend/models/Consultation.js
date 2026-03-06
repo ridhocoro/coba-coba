@@ -115,6 +115,13 @@ const consultationSchema = new mongoose.Schema({
     rejectedAt:       Date,
     rejectionReason:  String,
 
+    // ── Xendit ───────────────────────────────────────────────────────────────
+    xenditInvoiceId:  { type: String },   // Xendit invoice ID (mis. "inv_xxx")
+    xenditExternalId: { type: String },   // external_id yang kita buat
+    xenditRefundId:   { type: String },   // Xendit refund ID setelah refund diproses
+    xenditPaymentMethod: { type: String },// metode bayar yang dipakai user (VA/OVO/dll)
+    paidAt:           { type: Date },     // waktu pembayaran dikonfirmasi Xendit
+
     // ── Refund ────────────────────────────────────────────────────────────────
     refund: refundSchema,
 

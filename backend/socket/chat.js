@@ -48,15 +48,16 @@ module.exports = (io) => {
                     return;
                 }
 
-                // Hanya boleh chat jika status memungkinkan
-                const allowedStatuses = ['confirmed', 'in_progress', 'completed', 'paid', 'scheduled', 'ongoing'];
-                if (!allowedStatuses.includes(consultation.status) && !isAdmin) {
-                    socket.emit('error', { message: 'Konsultasi belum aktif atau belum terkonfirmasi' });
+                // Dokter boleh join kapan saja (untuk cek keluhan)
+                // User boleh join saat confirmed/in_progress/completed
+                const userAllowed = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing', 'completed'];
+                if (!isAdmin && !isDoctor && !userAllowed.includes(consultation.status)) {
+                    socket.emit('error', { message: 'Konsultasi belum aktif' });
                     return;
                 }
 
                 socket.join(`consultation-${consultationId}`);
-                console.log(`User ${socket.userId} joined consultation: ${consultationId}`);
+                console.log(`User ${socket.userId} (${socket.userRole}) joined consultation: ${consultationId}`);
             } catch (err) {
                 console.error('[Socket] join-consultation error:', err.message);
             }
@@ -88,8 +89,73 @@ module.exports = (io) => {
             });
         });
 
+        // ── WebRTC Video Call Signaling ─────────────────────────────────────
+        // Semua event diteruskan hanya ke pihak lain di room (socket.to = broadcast kecuali pengirim)
+
+        // Dokter → User: offer
+        socket.on('vc-offer', ({ consultationId, offer }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-offer', { offer });
+        });
+
+        // User → Dokter: answer
+        socket.on('vc-answer', ({ consultationId, answer }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-answer', { answer });
+        });
+
+        // Kedua pihak: ICE candidate exchange
+        socket.on('vc-ice-candidate', ({ consultationId, candidate }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-ice-candidate', { candidate });
+        });
+
+        // Salah satu pihak akhiri call
+        socket.on('vc-end', ({ consultationId }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-end');
+        });
+        // ───────────────────────────────────────────────────────────────────
+
         socket.on('leave-consultation', (consultationId) => {
             socket.leave(`consultation-${consultationId}`);
+        });
+
+        // ── WebRTC Signaling ──────────────────────────────────────────────────
+        // Semua event diteruskan hanya ke user lain dalam room (bukan broadcast)
+
+        // Inisiator kirim offer ke pihak lain
+        socket.on('webrtc-offer', ({ consultationId, offer }) => {
+            socket.to(`consultation-${consultationId}`).emit('webrtc-offer', {
+                offer,
+                fromId: socket.userId
+            });
+        });
+
+        // Penerima balas dengan answer
+        socket.on('webrtc-answer', ({ consultationId, answer }) => {
+            socket.to(`consultation-${consultationId}`).emit('webrtc-answer', {
+                answer,
+                fromId: socket.userId
+            });
+        });
+
+        // ICE candidate exchange
+        socket.on('webrtc-ice-candidate', ({ consultationId, candidate }) => {
+            socket.to(`consultation-${consultationId}`).emit('webrtc-ice-candidate', {
+                candidate,
+                fromId: socket.userId
+            });
+        });
+
+        // Notifikasi: user mulai video call (agar pihak lain tahu ada panggilan masuk)
+        socket.on('webrtc-call-start', ({ consultationId }) => {
+            socket.to(`consultation-${consultationId}`).emit('webrtc-incoming-call', {
+                fromId: socket.userId
+            });
+        });
+
+        // Notifikasi: user akhiri/tolak video call
+        socket.on('webrtc-call-end', ({ consultationId }) => {
+            socket.to(`consultation-${consultationId}`).emit('webrtc-call-ended', {
+                fromId: socket.userId
+            });
         });
 
         socket.on('disconnect', () => {

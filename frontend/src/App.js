@@ -1,4 +1,11 @@
-// src/App.js
+// src/App.js  — VERSI UPDATE (tambah route booking slot & payment result)
+// Salin isi ini ke frontend/src/App.js
+// Perubahan dari versi lama:
+//   1. Import BookingSlot & PaymentResult
+//   2. Tambah route /consultations/book/:doctorId
+//   3. Tambah route /payment/success dan /payment/failed
+//   4. Ganti import DoctorConsultations dengan versi baru (.jsx)
+
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
@@ -20,7 +27,7 @@ import CalorieCalculator from './pages/HealthCheck/CalorieCalculator';
 import BloodPressureChecker from './pages/HealthCheck/BloodPressureChecker';
 
 // User Pages
-import Consultations from './pages/Consultations';           // ← HANYA SATU IMPORT
+import Consultations from './pages/Consultations';
 import ConsultationChat from './pages/Consultations/ConsultationChat';
 import Pharmacy from './pages/Pharmacy';
 import Appointments from './pages/Appointments';
@@ -28,12 +35,20 @@ import PaymentHistory from './pages/PaymentHistory';
 import UserDashboard from './pages/user/Dashboard';
 import Profile from './pages/user/Profile';
 
+// ── NEW: Booking & Payment Result ──────────────────────────────────────────────
+import BookingSlot from './pages/user/BookingSlot';
+import PaymentResult from './pages/user/PaymentResult';
+// ──────────────────────────────────────────────────────────────────────────────
+
 // Doctor Pages
 import DoctorDashboard from './pages/doctor/Dashboard';
 import DoctorSickLetters from './pages/doctor/SickLetters';
 import DoctorAppointments from './pages/doctor/Appointments';
 import DoctorPatients from './pages/doctor/Patients';
-import DoctorConsultations from './pages/doctor/Consultations';
+
+// ── NEW: Updated DoctorConsultations (ganti import lama) ──────────────────────
+import DoctorConsultations from './pages/doctor/DoctorConsultations';
+// ──────────────────────────────────────────────────────────────────────────────
 
 // Role-specific Home Pages
 import AdminHome from './pages/Admin/Home';
@@ -55,39 +70,30 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { NotificationProvider } from './context/NotificationContext';
 
-// Protected Route Component
+// ── Protected Route ────────────────────────────────────────────────────────────
 const ProtectedRoute = ({ children, allowedRoles }) => {
     const { user, loading } = useAuth();
-    
-    // Tunggu fetch user selesai dulu — jangan redirect sebelum tahu status auth
     if (loading) return null;
-    
     if (!user) return <Navigate to="/login" />;
-    
     if (allowedRoles && !allowedRoles.includes(user.role)) {
         if (user.role === 'admin') return <Navigate to="/admin" />;
         if (user.role === 'doctor') return <Navigate to="/doctor" />;
         return <Navigate to="/dashboard" />;
     }
-    
     return children;
 };
 
-// Home router - tampilkan halaman relevan per role
 const HomeRouter = () => {
     const { user, loading } = useAuth();
     if (loading) return null;
-    
     if (user?.role === 'admin') return <AdminHome />;
     if (user?.role === 'doctor') return <DoctorHome />;
     return <Home />;
 };
 
-// Dashboard redirect berdasarkan role
 const DashboardRouter = () => {
     const { user } = useAuth();
     if (!user) return <Navigate to="/login" />;
-    
     if (user.role === 'admin') return <Navigate to="/admin" />;
     if (user.role === 'doctor') return <Navigate to="/doctor" />;
     return <UserDashboard />;
@@ -99,7 +105,7 @@ function AppContent() {
             <Navbar />
             <main style={{ minHeight: '80vh' }}>
                 <Routes>
-                    {/* ===== PUBLIC ROUTES ===== */}
+                    {/* ===== PUBLIC ===== */}
                     <Route path="/" element={<HomeRouter />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
@@ -110,120 +116,48 @@ function AppContent() {
                     <Route path="/health-check/calories" element={<CalorieCalculator />} />
                     <Route path="/health-check/blood-pressure" element={<BloodPressureChecker />} />
 
-                    {/* ===== DASHBOARD (semua role) ===== */}
-                    <Route path="/dashboard" element={
-                        <ProtectedRoute>
-                            <DashboardRouter />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/profile" element={
-                        <ProtectedRoute>
-                            <Profile />
+                    {/* ===== DASHBOARD ===== */}
+                    <Route path="/dashboard" element={<ProtectedRoute><DashboardRouter /></ProtectedRoute>} />
+                    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+
+                    {/* ===== USER ===== */}
+                    <Route path="/consultations" element={<ProtectedRoute allowedRoles={['user']}><Consultations /></ProtectedRoute>} />
+                    <Route path="/consultations/:id" element={<ProtectedRoute allowedRoles={['user','doctor']}><ConsultationChat /></ProtectedRoute>} />
+
+                    {/* ── NEW: Booking Slot ── */}
+                    <Route path="/consultations/book/:doctorId" element={
+                        <ProtectedRoute allowedRoles={['user']}>
+                            <BookingSlot />
                         </ProtectedRoute>
                     } />
 
-                    {/* ===== USER ROUTES ===== */}
-                    <Route path="/consultations" element={
-                        <ProtectedRoute allowedRoles={['user']}>
-                            <Consultations />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/consultations/:id" element={
-                        <ProtectedRoute allowedRoles={['user', 'doctor']}>
-                            <ConsultationChat />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/pharmacy" element={
-                        <ProtectedRoute allowedRoles={['user']}>
-                            <Pharmacy />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/appointments" element={
-                        <ProtectedRoute allowedRoles={['user']}>
-                            <Appointments />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/payments" element={
-                        <ProtectedRoute allowedRoles={['user']}>
-                            <PaymentHistory />
-                        </ProtectedRoute>
-                    } />
+                    {/* ── NEW: Payment Result (Xendit redirect) ── */}
+                    <Route path="/payment/success" element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
+                    <Route path="/payment/failed"  element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
 
-                    {/* ===== DOCTOR ROUTES ===== */}
-                    <Route path="/doctor" element={
-                        <ProtectedRoute allowedRoles={['doctor']}>
-                            <DoctorDashboard />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/doctor/settings" element={
-                        <ProtectedRoute allowedRoles={['doctor']}>
-                            <DoctorSettings />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/doctor/sick-letters" element={
-                        <ProtectedRoute allowedRoles={['doctor']}>
-                            <DoctorSickLetters />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/doctor/consultations" element={
-                        <ProtectedRoute allowedRoles={['doctor']}>
-                            <DoctorConsultations />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/doctor/appointments" element={
-                        <ProtectedRoute allowedRoles={['doctor']}>
-                            <DoctorAppointments />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/doctor/patients" element={
-                        <ProtectedRoute allowedRoles={['doctor']}>
-                            <DoctorPatients />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/pharmacy" element={<ProtectedRoute allowedRoles={['user']}><Pharmacy /></ProtectedRoute>} />
+                    <Route path="/appointments" element={<ProtectedRoute allowedRoles={['user']}><Appointments /></ProtectedRoute>} />
+                    <Route path="/payments" element={<ProtectedRoute allowedRoles={['user']}><PaymentHistory /></ProtectedRoute>} />
 
-                    {/* ===== ADMIN ROUTES ===== */}
-                    <Route path="/admin" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <AdminDashboard />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/admin/verify-payments" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <VerifyPayments />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/admin/doctors" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <ManageDoctors />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/admin/users" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <ManageUsers />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/admin/consultations" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <ManageConsultations />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/admin/appointments" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <ManageAppointments />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/admin/pharmacy" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <ManagePharmacy />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/admin/manual-payments" element={
-                        <ProtectedRoute allowedRoles={['admin']}>
-                            <AdminManualPayment />
-                        </ProtectedRoute>
-                    } />
+                    {/* ===== DOCTOR ===== */}
+                    <Route path="/doctor" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />
+                    <Route path="/doctor/settings" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorSettings /></ProtectedRoute>} />
+                    <Route path="/doctor/sick-letters" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorSickLetters /></ProtectedRoute>} />
+                    <Route path="/doctor/consultations" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorConsultations /></ProtectedRoute>} />
+                    <Route path="/doctor/appointments" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorAppointments /></ProtectedRoute>} />
+                    <Route path="/doctor/patients" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorPatients /></ProtectedRoute>} />
 
-                    {/* ===== 404 NOT FOUND ===== */}
+                    {/* ===== ADMIN ===== */}
+                    <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+                    <Route path="/admin/verify-payments" element={<ProtectedRoute allowedRoles={['admin']}><VerifyPayments /></ProtectedRoute>} />
+                    <Route path="/admin/doctors" element={<ProtectedRoute allowedRoles={['admin']}><ManageDoctors /></ProtectedRoute>} />
+                    <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} />
+                    <Route path="/admin/consultations" element={<ProtectedRoute allowedRoles={['admin']}><ManageConsultations /></ProtectedRoute>} />
+                    <Route path="/admin/appointments" element={<ProtectedRoute allowedRoles={['admin']}><ManageAppointments /></ProtectedRoute>} />
+                    <Route path="/admin/pharmacy" element={<ProtectedRoute allowedRoles={['admin']}><ManagePharmacy /></ProtectedRoute>} />
+                    <Route path="/admin/manual-payments" element={<ProtectedRoute allowedRoles={['admin']}><AdminManualPayment /></ProtectedRoute>} />
+
+                    {/* ===== 404 ===== */}
                     <Route path="*" element={
                         <div className="text-center mt-5 py-5">
                             <h1 className="display-1 text-muted">404</h1>
@@ -234,13 +168,7 @@ function AppContent() {
                 </Routes>
             </main>
             <Footer />
-            <Toaster 
-                position="top-right" 
-                toastOptions={{ 
-                    duration: 4000, 
-                    style: { background: '#363636', color: '#fff' } 
-                }} 
-            />
+            <Toaster position="top-right" toastOptions={{ duration: 4000, style: { background: '#363636', color: '#fff' } }} />
         </div>
     );
 }
