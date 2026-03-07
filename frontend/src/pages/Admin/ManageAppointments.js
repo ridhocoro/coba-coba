@@ -1,934 +1,615 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+/**
+ * frontend/src/pages/Admin/ManageAppointments.js
+ *
+ * Admin panel untuk janji temu offline:
+ *  - Tab: Hari Ini / Semua / Report
+ *  - Search/filter (nama, dokter, status, tanggal)
+ *  - Manual check-in
+ *  - Override status
+ *  - Cancel dengan alasan
+ *  - Report per hari + no-show rate
+ */
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
-import {
-    Container, Row, Col, Card, Table, Badge, Button,
-    InputGroup, Form, Modal, Spinner, Alert
-} from 'react-bootstrap';
 import { toast } from 'react-hot-toast';
-import { Link } from 'react-router-dom';
-import {
-    FaCalendarAlt, FaSearch, FaFilter, FaArrowLeft,
-    FaEye, FaCheckCircle, FaTimesCircle,
-    FaUser, FaUserMd, FaClock, FaSync,
-    FaPhone, FaEnvelope, FaMapMarkerAlt, FaNotesMedical,
-    FaUserCheck, FaUserTimes, FaExclamationTriangle
-} from 'react-icons/fa';
 
-/* ─────────────────────────────────────────────────────────
-   STATUS CONFIG
-───────────────────────────────────────────────────────── */
-const STATUS_CONFIG = {
-    pending:    { bg: '#fef3c7', color: '#b45309', label: 'Menunggu'      },
-    confirmed:  { bg: '#dcfce7', color: '#166534', label: 'Dikonfirmasi'  },
-    checked_in: { bg: '#dbeafe', color: '#1e40af', label: 'Hadir ✓'      },
-    completed:  { bg: '#cffafe', color: '#0e7490', label: 'Selesai'       },
-    rejected:   { bg: '#fee2e2', color: '#b91c1c', label: 'Ditolak'       },
-    cancelled:  { bg: '#f1f5f9', color: '#475569', label: 'Dibatalkan'    },
+// ── Config ────────────────────────────────────────────────────────────────────
+const STATUS_CFG = {
+    scheduled           : { label: '📅 Terjadwal',          color: '#1d4ed8', bg: '#eff6ff' },
+    checked_in          : { label: '✅ Hadir',               color: '#166534', bg: '#dcfce7' },
+    completed           : { label: '🏁 Selesai',             color: '#0e7490', bg: '#ecfeff' },
+    no_show             : { label: '❌ Tidak Hadir',          color: '#b45309', bg: '#fffbeb' },
+    cancelled_by_user   : { label: '🚫 Batal (User)',        color: '#6b7280', bg: '#f3f4f6' },
+    cancelled_by_doctor : { label: '🚫 Batal (Dokter)',      color: '#b91c1c', bg: '#fef2f2' },
+    cancelled_by_admin  : { label: '🚫 Batal (Admin)',       color: '#b91c1c', bg: '#fef2f2' },
 };
 
-/* ─────────────────────────────────────────────────────────
-   COMPONENT
-───────────────────────────────────────────────────────── */
+const StatusBadge = ({ status }) => {
+    const c = STATUS_CFG[status] || { label: status, color: '#6b7280', bg: '#f3f4f6' };
+    return (
+        <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.color}30`, borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>
+            {c.label}
+        </span>
+    );
+};
+
+const fmtDT = (dateStr, timeStr) => {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    const tgl = d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+    return timeStr ? `${tgl}, ${timeStr} WIB` : tgl;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════════════════
 const ManageAppointments = () => {
+    const [tab, setTab] = useState('today'); // 'today' | 'all' | 'report'
 
-    const [appointments, setAppointments] = useState([]);
-    const [loading, setLoading]           = useState(true);
-    const [processingId, setProcessingId] = useState(null);
+    // Today tab
+    const [todayAppts,    setTodayAppts]    = useState([]);
+    const [loadingToday,  setLoadingToday]  = useState(true);
+    const [todayDate,     setTodayDate]     = useState('');
 
-    // Filter
-    const [search, setSearch]             = useState('');
-    const [filterStatus, setFilterStatus] = useState('all');
+    // All tab
+    const [allAppts,      setAllAppts]      = useState([]);
+    const [loadingAll,    setLoadingAll]    = useState(false);
+    const [search,        setSearch]        = useState('');
+    const [filterStatus,  setFilterStatus]  = useState('all');
+    const [filterDate,    setFilterDate]    = useState('');
+    const [doctors,       setDoctors]       = useState([]);
+    const [filterDoctor,  setFilterDoctor]  = useState('');
+
+    // Report tab
+    const [report,        setReport]        = useState(null);
+    const [loadingReport, setLoadingReport] = useState(false);
+    const [reportFrom,    setReportFrom]    = useState('');
+    const [reportTo,      setReportTo]      = useState('');
 
     // Modals
-    const [selected, setSelected]               = useState(null);
-    const [showDetailModal, setShowDetailModal] = useState(false);
-    const [showCancelModal, setShowCancelModal] = useState(false);
-    const [cancelReason, setCancelReason]       = useState('');
+    const [overrideTarget,   setOverrideTarget]   = useState(null);
+    const [overrideStatus,   setOverrideStatus]   = useState('');
+    const [overrideReason,   setOverrideReason]   = useState('');
+    const [overriding,       setOverriding]       = useState(false);
 
-    /* ─────────────────────────────────────────────────────
-       FETCH  — useCallback agar stabil di dependency array
-    ───────────────────────────────────────────────────── */
-    const fetchAppointments = useCallback(async () => {
-        setLoading(true);
-        try {
-            const res = await api.get('/api/admin/appointments');
-            setAppointments(res.data || []);
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Gagal memuat data janji temu');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+    const [cancelTarget,     setCancelTarget]     = useState(null);
+    const [cancelReason,     setCancelReason]     = useState('');
+    const [cancelling,       setCancelling]       = useState(false);
+
+    const [checkinTarget,    setCheckinTarget]    = useState(null);
+    const [checkingIn,       setCheckingIn]       = useState(false);
+
+    const [detailTarget,     setDetailTarget]     = useState(null);
+
+    const [processing,       setProcessing]       = useState({});
 
     useEffect(() => {
-        fetchAppointments();
-    }, [fetchAppointments]);
-
-    /* ─────────────────────────────────────────────────────
-       MODAL HELPERS
-    ───────────────────────────────────────────────────── */
-    const resetModals = useCallback(() => {
-        setShowDetailModal(false);
-        setShowCancelModal(false);
-        setCancelReason('');
-        setSelected(null);
+        fetchToday();
+        fetchDoctorList();
     }, []);
 
-    const openDetail = useCallback((apt) => {
-        setSelected(apt);
-        setShowDetailModal(true);
-    }, []);
-
-    const openCancel = useCallback((apt) => {
-        setSelected(apt);
-        setCancelReason('');
-        setShowCancelModal(true);
-        setShowDetailModal(false);
-    }, []);
-
-    /* ─────────────────────────────────────────────────────
-       ACTIONS
-    ───────────────────────────────────────────────────── */
-
-    const handleCheckIn = useCallback(async (id) => {
-        if (!window.confirm('Konfirmasi pasien sudah hadir?')) return;
-        setProcessingId(id);
+    // ── Fetch today ────────────────────────────────────────────────────────
+    const fetchToday = async () => {
+        setLoadingToday(true);
         try {
-            await api.put(`/api/admin/appointments/${id}/check-in`);
-            setAppointments(prev =>
-                prev.map(a => a._id === id ? { ...a, status: 'checked_in', checkedInAt: new Date() } : a)
-            );
-            setSelected(prev => prev?._id === id ? { ...prev, status: 'checked_in' } : prev);
-            toast.success('Pasien berhasil di-check-in');
-            setShowDetailModal(false);
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Gagal melakukan check-in');
-        } finally {
-            setProcessingId(null);
-        }
-    }, []);
-
-    // Konfirmasi — optimistic update langsung tanpa full refetch
-    const handleConfirm = useCallback(async (id) => {
-        if (!window.confirm('Konfirmasi janji temu ini?')) return;
-        setProcessingId(id);
-        try {
-            await api.put(`/api/admin/appointments/${id}/confirm`);
-
-            setAppointments(prev =>
-                prev.map(a => a._id === id ? { ...a, status: 'confirmed' } : a)
-            );
-            // Sync jika modal detail sedang terbuka
-            setSelected(prev =>
-                prev?._id === id ? { ...prev, status: 'confirmed' } : prev
-            );
-
-            toast.success('Janji temu berhasil dikonfirmasi');
-            setShowDetailModal(false);
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Gagal mengkonfirmasi janji temu');
-        } finally {
-            setProcessingId(null);
-        }
-    }, []);
-
-    // Batalkan — optimistic update + reason
-    const handleCancel = useCallback(async () => {
-        if (!selected) return;
-        setProcessingId(selected._id);
-        try {
-            await api.put(
-                `/api/admin/appointments/${selected._id}/cancel`,
-                { reason: cancelReason }
-            );
-
-            setAppointments(prev =>
-                prev.map(a =>
-                    a._id === selected._id
-                        ? { ...a, status: 'cancelled', rejectionReason: cancelReason }
-                        : a
-                )
-            );
-
-            toast.success('Janji temu berhasil dibatalkan');
-            resetModals();
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Gagal membatalkan janji temu');
-        } finally {
-            setProcessingId(null);
-        }
-    }, [selected, cancelReason, resetModals]);
-
-    /* ─────────────────────────────────────────────────────
-       HELPERS
-    ───────────────────────────────────────────────────── */
-    const getStatusBadge = (status) => {
-        const cfg = STATUS_CONFIG[status] || { bg: '#f1f5f9', color: '#475569', label: status };
-        return (
-            <span style={{
-                background: cfg.bg,
-                color: cfg.color,
-                padding: '4px 12px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: 500,
-                display: 'inline-block'
-            }}>
-                {cfg.label}
-            </span>
-        );
+            const r = await api.get('/api/appointments/admin/today');
+            setTodayAppts(r.data.appointments || []);
+            setTodayDate(r.data.date || '');
+        } catch { toast.error('Gagal memuat janji hari ini'); }
+        finally { setLoadingToday(false); }
     };
 
-    const formatDate = (date) => {
-        if (!date) return '-';
-        return new Date(date).toLocaleDateString('id-ID', {
-            day: 'numeric', month: 'short', year: 'numeric'
-        });
+    // ── Fetch all ──────────────────────────────────────────────────────────
+    const fetchAll = useCallback(async () => {
+        setLoadingAll(true);
+        try {
+            const params = new URLSearchParams();
+            if (filterStatus !== 'all') params.append('status', filterStatus);
+            if (filterDate) params.append('date', filterDate);
+            if (filterDoctor) params.append('doctorId', filterDoctor);
+            if (search) params.append('search', search);
+            params.append('limit', 100);
+            const r = await api.get(`/api/appointments/admin/list?${params}`);
+            setAllAppts(r.data.appointments || []);
+        } catch { toast.error('Gagal memuat data'); }
+        finally { setLoadingAll(false); }
+    }, [filterStatus, filterDate, filterDoctor, search]);
+
+    useEffect(() => {
+        if (tab === 'all') fetchAll();
+    }, [tab, fetchAll]);
+
+    // ── Fetch report ───────────────────────────────────────────────────────
+    const fetchReport = async () => {
+        setLoadingReport(true);
+        try {
+            const params = new URLSearchParams();
+            if (reportFrom) params.append('from', reportFrom);
+            if (reportTo)   params.append('to',   reportTo);
+            const r = await api.get(`/api/appointments/admin/report?${params}`);
+            setReport(r.data);
+        } catch { toast.error('Gagal memuat report'); }
+        finally { setLoadingReport(false); }
     };
 
-    const formatTime = (time) => {
-        if (!time) return '-';
-        return time;
+    useEffect(() => { if (tab === 'report') fetchReport(); }, [tab]);
+
+    const fetchDoctorList = async () => {
+        try {
+            const r = await api.get('/api/appointments/doctors-with-slots');
+            setDoctors(r.data.doctors?.map(d => d.doctor) || []);
+        } catch {}
     };
 
-    /* ─────────────────────────────────────────────────────
-       DERIVED STATE — useMemo, tidak re-compute tiap render
-    ───────────────────────────────────────────────────── */
-    const filteredAppointments = useMemo(() => {
-        const q = search.toLowerCase();
-        return appointments.filter(a => {
-            const matchSearch =
-                !search ||
-                a.userId?.name?.toLowerCase().includes(q) ||
-                a.doctorId?.name?.toLowerCase().includes(q) ||
-                a.complaint?.toLowerCase().includes(q);
-            const matchStatus =
-                filterStatus === 'all' || a.status === filterStatus;
-            return matchSearch && matchStatus;
-        });
-    }, [appointments, search, filterStatus]);
+    // ── Check-in ───────────────────────────────────────────────────────────
+    const handleCheckin = async () => {
+        setCheckingIn(true);
+        try {
+            await api.put(`/api/appointments/admin/${checkinTarget._id}/checkin`);
+            toast.success('Check-in berhasil ✅');
+            setCheckinTarget(null);
+            fetchToday();
+            if (tab === 'all') fetchAll();
+        } catch (err) { toast.error(err.response?.data?.message || 'Gagal check-in'); }
+        finally { setCheckingIn(false); }
+    };
 
-    const stats = useMemo(() => ({
-        total:     appointments.length,
-        pending:   appointments.filter(a => a.status === 'pending').length,
-        confirmed: appointments.filter(a => a.status === 'confirmed').length,
-        completed: appointments.filter(a => ['checked_in', 'completed'].includes(a.status)).length,
-    }), [appointments]);
+    // ── Cancel ─────────────────────────────────────────────────────────────
+    const handleCancel = async () => {
+        if (!cancelReason.trim() || cancelReason.length < 5) { toast.error('Alasan minimal 5 karakter'); return; }
+        setCancelling(true);
+        try {
+            await api.put(`/api/appointments/admin/${cancelTarget._id}/cancel`, { reason: cancelReason });
+            toast.success('Janji dibatalkan');
+            setCancelTarget(null);
+            setCancelReason('');
+            fetchToday();
+            if (tab === 'all') fetchAll();
+        } catch (err) { toast.error(err.response?.data?.message || 'Gagal membatalkan'); }
+        finally { setCancelling(false); }
+    };
 
-    /* ─────────────────────────────────────────────────────
-       LOADING STATE
-    ───────────────────────────────────────────────────── */
-    if (loading) return (
-        <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ textAlign: 'center' }}>
-                <Spinner animation="border" variant="primary" />
-                <p style={{ marginTop: 16, color: '#64748b' }}>Memuat data janji temu...</p>
-            </div>
-        </div>
-    );
+    // ── Override ───────────────────────────────────────────────────────────
+    const handleOverride = async () => {
+        if (!overrideStatus) { toast.error('Pilih status baru'); return; }
+        setOverriding(true);
+        try {
+            await api.put(`/api/appointments/admin/${overrideTarget._id}/override`, {
+                status : overrideStatus,
+                reason : overrideReason,
+            });
+            toast.success('Status berhasil diubah');
+            setOverrideTarget(null);
+            setOverrideStatus('');
+            setOverrideReason('');
+            fetchToday();
+            if (tab === 'all') fetchAll();
+        } catch (err) { toast.error(err.response?.data?.message || 'Gagal override'); }
+        finally { setOverriding(false); }
+    };
 
-    /* ─────────────────────────────────────────────────────
-       RENDER
-    ───────────────────────────────────────────────────── */
+    // ── Styles ─────────────────────────────────────────────────────────────
+    const s = {
+        root  : { minHeight: '100vh', background: '#f8fafc', fontFamily: "'Inter', sans-serif", padding: '24px 16px' },
+        inner : { maxWidth: 1000, margin: '0 auto' },
+        card  : { background: '#fff', borderRadius: 14, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 },
+        label : { color: '#374151', fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 },
+        sel   : { border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#374151', background: '#fff', cursor: 'pointer' },
+        inp   : { border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#374151', outline: 'none', background: '#fff' },
+    };
+
+    const tabStyle = (key) => ({
+        flex: 1, padding: '10px 8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+        background: tab === key ? '#fff' : 'transparent',
+        color: tab === key ? '#111827' : '#6b7280',
+        boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+    });
+
     return (
-        <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", padding: '24px' }}>
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-            
-            <style>{`
-                .page-header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    margin-bottom: 24px;
-                    flex-wrap: wrap;
-                    gap: 16px;
-                }
-                .header-left {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                }
-                .header-icon {
-                    width: 44px;
-                    height: 44px;
-                    background: #dbeafe;
-                    border-radius: 12px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: #2563eb;
-                }
-                .header-title h1 {
-                    font-size: 24px;
-                    font-weight: 600;
-                    color: #0f172a;
-                    margin-bottom: 4px;
-                }
-                .header-title p {
-                    font-size: 14px;
-                    color: #64748b;
-                    margin-bottom: 0;
-                }
-                .stats-card {
-                    background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 12px;
-                    padding: 20px;
-                    transition: all 0.2s ease;
-                }
-                .stats-card:hover {
-                    box-shadow: 0 8px 16px -4px rgba(0,0,0,0.05);
-                    transform: translateY(-2px);
-                }
-                .stats-value {
-                    font-size: 32px;
-                    font-weight: 600;
-                    color: #0f172a;
-                }
-                .stats-label {
-                    font-size: 14px;
-                    color: #64748b;
-                }
-                .search-container {
-                    position: relative;
-                    width: 100%;
-                }
-                .search-icon {
-                    position: absolute;
-                    left: 12px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    color: #94a3b8;
-                    font-size: 14px;
-                }
-                .search-input {
-                    width: 100%;
-                    padding: 10px 16px 10px 40px;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    font-size: 14px;
-                    background: #ffffff;
-                }
-                .search-input:focus {
-                    outline: none;
-                    border-color: #2563eb;
-                    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
-                }
-                .filter-select {
-                    padding: 10px 16px;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    font-size: 14px;
-                    background: #ffffff;
-                    width: 100%;
-                }
-                .filter-select:focus {
-                    outline: none;
-                    border-color: #2563eb;
-                    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
-                }
-                .table-container {
-                    background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 16px;
-                    overflow: hidden;
-                    margin-top: 24px;
-                }
-                .table-container table {
-                    width: 100%;
-                    border-collapse: collapse;
-                }
-                .table-container th {
-                    background: #f8fafc;
-                    padding: 16px;
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: #475569;
-                    text-align: left;
-                    border-bottom: 1px solid #e2e8f0;
-                }
-                .table-container td {
-                    padding: 16px;
-                    font-size: 14px;
-                    color: #0f172a;
-                    border-bottom: 1px solid #e2e8f0;
-                    vertical-align: middle;
-                }
-                .table-container tr:last-child td {
-                    border-bottom: none;
-                }
-                .queue-badge {
-                    background: #dbeafe;
-                    color: #1e40af;
-                    padding: 4px 10px;
-                    border-radius: 20px;
-                    font-size: 12px;
-                    font-weight: 500;
-                    display: inline-block;
-                }
-                .action-group {
-                    display: flex;
-                    gap: 6px;
-                    flex-wrap: wrap;
-                }
-                .action-btn {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 8px;
-                    border: none;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    font-size: 16px;
-                }
-                .action-btn.view {
-                    background: #dbeafe;
-                    color: #2563eb;
-                }
-                .action-btn.view:hover {
-                    background: #bfdbfe;
-                }
-                .action-btn.confirm {
-                    background: #dcfce7;
-                    color: #166534;
-                }
-                .action-btn.confirm:hover {
-                    background: #bbf7d0;
-                }
-                .action-btn.checkin {
-                    background: #dbeafe;
-                    color: #1e40af;
-                }
-                .action-btn.checkin:hover {
-                    background: #bfdbfe;
-                }
-                .action-btn.cancel {
-                    background: #fee2e2;
-                    color: #b91c1c;
-                }
-                .action-btn.cancel:hover {
-                    background: #fecaca;
-                }
-                .action-btn:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                .modal-custom .modal-content {
-                    border-radius: 20px;
-                    border: none;
-                    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.15);
-                }
-                .modal-header-custom {
-                    padding: 20px 24px;
-                    border-bottom: 1px solid #e2e8f0;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }
-                .modal-body-custom {
-                    padding: 24px;
-                }
-                .modal-footer-custom {
-                    padding: 16px 24px;
-                    border-top: 1px solid #e2e8f0;
-                    display: flex;
-                    justify-content: flex-end;
-                    gap: 8px;
-                }
-                .detail-card {
-                    background: #f8fafc;
-                    border-radius: 12px;
-                    padding: 16px;
-                    height: 100%;
-                }
-                .detail-label {
-                    color: #64748b;
-                    font-size: 12px;
-                    margin-bottom: 4px;
-                }
-                .detail-value {
-                    color: #0f172a;
-                    font-size: 14px;
-                    font-weight: 500;
-                }
-                .detail-row {
-                    display: flex;
-                    padding: 8px 0;
-                    border-bottom: 1px solid #f1f5f9;
-                }
-                .detail-row-label {
-                    width: 120px;
-                    color: #64748b;
-                    font-size: 13px;
-                }
-                .detail-row-value {
-                    flex: 1;
-                    color: #0f172a;
-                    font-size: 13px;
-                    font-weight: 500;
-                }
-                .btn-custom {
-                    padding: 8px 16px;
-                    border-radius: 8px;
-                    font-size: 13px;
-                    font-weight: 500;
-                    border: 1px solid #e2e8f0;
-                    background: #ffffff;
-                    color: #475569;
-                    transition: all 0.2s ease;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    cursor: pointer;
-                }
-                .btn-custom:hover {
-                    background: #f1f5f9;
-                }
-                .btn-custom-primary {
-                    background: #2563eb;
-                    border-color: #2563eb;
-                    color: white;
-                }
-                .btn-custom-primary:hover {
-                    background: #1d4ed8;
-                }
-                .btn-custom-success {
-                    background: #16a34a;
-                    border-color: #16a34a;
-                    color: white;
-                }
-                .btn-custom-success:hover {
-                    background: #15803d;
-                }
-                .btn-custom-danger {
-                    background: #b91c1c;
-                    border-color: #b91c1c;
-                    color: white;
-                }
-                .btn-custom-danger:hover {
-                    background: #991b1b;
-                }
-                .info-alert {
-                    background: #dbeafe;
-                    border: none;
-                    border-radius: 10px;
-                    padding: 12px 16px;
-                    color: #1e40af;
-                    font-size: 13px;
-                }
-                .warning-alert {
-                    background: #fef3c7;
-                    border: none;
-                    border-radius: 10px;
-                    padding: 12px 16px;
-                    color: #b45309;
-                    font-size: 13px;
-                }
-            `}</style>
+        <div style={s.root}>
+            <div style={s.inner}>
 
-            <Container fluid style={{ maxWidth: 1400, margin: '0 auto' }}>
-                {/* ── HEADER ── */}
-                <div className="page-header">
-                    <div className="header-left">
-                        <div className="header-icon">
-                            <FaCalendarAlt size={24} />
-                        </div>
-                        <div className="header-title">
-                            <h1>Kelola Janji Temu</h1>
-                            <p>Manajemen jadwal dan konfirmasi janji temu pasien</p>
-                        </div>
-                    </div>
-                    <button className="btn-custom" onClick={fetchAppointments}>
-                        <FaSync /> Refresh
-                    </button>
+                {/* Header */}
+                <div style={{ marginBottom: 24 }}>
+                    <h1 style={{ fontSize: 24, fontWeight: 700, color: '#111827', marginBottom: 4 }}>Manajemen Janji Temu</h1>
+                    <p style={{ color: '#6b7280', fontSize: 14 }}>Kelola semua janji temu offline di klinik</p>
                 </div>
 
-                {/* ── STATS ── */}
-                <Row className="g-3 mb-4">
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: '#2563eb', fontSize: 14 }}>Total</div>
-                                <FaCalendarAlt style={{ color: '#2563eb', opacity: 0.5 }} size={20} />
-                            </div>
-                            <div className="stats-value">{stats.total}</div>
-                            <div className="stats-label">Seluruh janji temu</div>
-                        </div>
-                    </Col>
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: '#b45309', fontSize: 14 }}>Menunggu</div>
-                                <FaClock style={{ color: '#b45309', opacity: 0.5 }} size={20} />
-                            </div>
-                            <div className="stats-value">{stats.pending}</div>
-                            <div className="stats-label">Perlu konfirmasi</div>
-                        </div>
-                    </Col>
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: '#166534', fontSize: 14 }}>Dikonfirmasi</div>
-                                <FaCheckCircle style={{ color: '#166534', opacity: 0.5 }} size={20} />
-                            </div>
-                            <div className="stats-value">{stats.confirmed}</div>
-                            <div className="stats-label">Siap dilayani</div>
-                        </div>
-                    </Col>
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: '#0e7490', fontSize: 14 }}>Selesai</div>
-                                <FaUserCheck style={{ color: '#0e7490', opacity: 0.5 }} size={20} />
-                            </div>
-                            <div className="stats-value">{stats.completed}</div>
-                            <div className="stats-label">Telah dilayani</div>
-                        </div>
-                    </Col>
-                </Row>
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: 4, background: '#f3f4f6', borderRadius: 10, padding: 4, marginBottom: 24 }}>
+                    <button style={tabStyle('today')}  onClick={() => setTab('today')}>📋 Hari Ini</button>
+                    <button style={tabStyle('all')}    onClick={() => setTab('all')}>🗂️ Semua</button>
+                    <button style={tabStyle('report')} onClick={() => setTab('report')}>📊 Laporan</button>
+                </div>
 
-                {/* ── FILTER ── */}
-                <Row className="g-3 mb-3">
-                    <Col md={5}>
-                        <div className="search-container">
-                            <FaSearch className="search-icon" />
-                            <input
-                                type="text"
-                                className="search-input"
-                                placeholder="Cari pasien, dokter, atau keluhan..."
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
+                {/* ═══ TAB: HARI INI ═══════════════════════════════════════ */}
+                {tab === 'today' && (
+                    <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: '#374151' }}>
+                                📅 {todayDate ? new Date(todayDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : 'Hari Ini'}
+                                <span style={{ marginLeft: 10, background: '#eff6ff', color: '#2563eb', borderRadius: 12, padding: '2px 10px', fontSize: 13 }}>
+                                    {todayAppts.length} janji
+                                </span>
+                            </div>
+                            <button onClick={fetchToday} style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: 8, background: '#fff', color: '#374151', cursor: 'pointer', fontSize: 13 }}>
+                                🔄 Refresh
+                            </button>
+                        </div>
+
+                        {/* Summary hari ini */}
+                        {todayAppts.length > 0 && (
+                            <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+                                {Object.entries({
+                                    scheduled  : { label: 'Terjadwal', color: '#2563eb' },
+                                    checked_in : { label: 'Hadir', color: '#16a34a' },
+                                    completed  : { label: 'Selesai', color: '#0e7490' },
+                                    no_show    : { label: 'Tidak Hadir', color: '#b45309' },
+                                }).map(([key, cfg]) => {
+                                    const count = todayAppts.filter(a => a.status === key).length;
+                                    if (count === 0) return null;
+                                    return (
+                                        <div key={key} style={{ background: '#fff', borderRadius: 10, border: '1px solid #e5e7eb', padding: '10px 16px', textAlign: 'center', minWidth: 80 }}>
+                                            <div style={{ fontSize: 20, fontWeight: 800, color: cfg.color }}>{count}</div>
+                                            <div style={{ fontSize: 11, color: '#6b7280' }}>{cfg.label}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {loadingToday ? (
+                            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Memuat...</div>
+                        ) : todayAppts.length === 0 ? (
+                            <div style={{ ...s.card, textAlign: 'center', padding: 40 }}>
+                                <div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
+                                <div style={{ color: '#6b7280' }}>Tidak ada janji temu hari ini</div>
+                            </div>
+                        ) : (
+                            todayAppts.map(a => (
+                                <ApptRow key={a._id} appt={a}
+                                    onCheckin={() => setCheckinTarget(a)}
+                                    onCancel={() => { setCancelTarget(a); setCancelReason(''); }}
+                                    onOverride={() => { setOverrideTarget(a); setOverrideStatus(''); setOverrideReason(''); }}
+                                    onDetail={() => setDetailTarget(a)}
+                                />
+                            ))
+                        )}
+                    </>
+                )}
+
+                {/* ═══ TAB: SEMUA ════════════════════════════════════════════ */}
+                {tab === 'all' && (
+                    <>
+                        {/* Filter row */}
+                        <div style={s.card}>
+                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                <div style={{ flex: '1 1 180px' }}>
+                                    <label style={s.label}>Cari Pasien / Dokter</label>
+                                    <input value={search} onChange={e => setSearch(e.target.value)}
+                                        placeholder="Nama atau nomor HP..."
+                                        style={{ ...s.inp, width: '100%', boxSizing: 'border-box' }} />
+                                </div>
+                                <div>
+                                    <label style={s.label}>Status</label>
+                                    <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={s.sel}>
+                                        <option value="all">Semua</option>
+                                        {Object.entries(STATUS_CFG).map(([k, v]) => (
+                                            <option key={k} value={k}>{v.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style={s.label}>Tanggal</label>
+                                    <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...s.inp }} />
+                                </div>
+                                <div>
+                                    <label style={s.label}>Dokter</label>
+                                    <select value={filterDoctor} onChange={e => setFilterDoctor(e.target.value)} style={s.sel}>
+                                        <option value="">Semua Dokter</option>
+                                        {doctors.map(d => <option key={d._id} value={d._id}>dr. {d.name}</option>)}
+                                    </select>
+                                </div>
+                                <button onClick={fetchAll} style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                                    🔍 Cari
+                                </button>
+                                <button onClick={() => { setSearch(''); setFilterStatus('all'); setFilterDate(''); setFilterDoctor(''); }}
+                                    style={{ padding: '9px 14px', border: '1px solid #d1d5db', borderRadius: 8, background: '#fff', color: '#374151', cursor: 'pointer', fontSize: 13 }}>
+                                    Reset
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ color: '#6b7280', fontSize: 13, marginBottom: 10 }}>
+                            {loadingAll ? 'Memuat...' : `${allAppts.length} janji ditemukan`}
+                        </div>
+
+                        {!loadingAll && allAppts.length === 0 && (
+                            <div style={{ ...s.card, textAlign: 'center', padding: 40 }}>
+                                <div style={{ fontSize: 40, marginBottom: 10 }}>🔍</div>
+                                <div style={{ color: '#6b7280' }}>Tidak ada data yang cocok</div>
+                            </div>
+                        )}
+
+                        {!loadingAll && allAppts.map(a => (
+                            <ApptRow key={a._id} appt={a}
+                                onCheckin={a.status === 'scheduled' ? () => setCheckinTarget(a) : null}
+                                onCancel={['scheduled','checked_in'].includes(a.status) ? () => { setCancelTarget(a); setCancelReason(''); } : null}
+                                onOverride={() => { setOverrideTarget(a); setOverrideStatus(''); setOverrideReason(''); }}
+                                onDetail={() => setDetailTarget(a)}
                             />
-                        </div>
-                    </Col>
-                    <Col md={3}>
-                        <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                            <option value="all">Semua Status</option>
-                            {Object.entries(STATUS_CONFIG).map(([key, val]) => (
-                                <option key={key} value={key}>{val.label}</option>
-                            ))}
-                        </select>
-                    </Col>
-                    <Col md={4} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                        <span style={{ fontSize: 14, color: '#64748b' }}>
-                            {filteredAppointments.length} janji temu ditemukan
-                        </span>
-                    </Col>
-                </Row>
+                        ))}
+                    </>
+                )}
 
-                {/* ── TABLE ── */}
-                <div className="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>No. Antrian</th>
-                                <th>Pasien</th>
-                                <th>Dokter</th>
-                                <th>Tanggal & Waktu</th>
-                                <th>Keluhan</th>
-                                <th>Status</th>
-                                <th style={{ textAlign: 'center' }}>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredAppointments.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} style={{ textAlign: 'center', padding: '48px' }}>
-                                        <div style={{ width: 60, height: 60, background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                                            <FaCalendarAlt size={24} style={{ color: '#94a3b8' }} />
-                                        </div>
-                                        <h6 style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada data janji temu</h6>
-                                        <p style={{ color: '#64748b', fontSize: 13 }}>Belum ada janji temu yang terdaftar</p>
-                                    </td>
-                                </tr>
-                            ) : filteredAppointments.map(a => (
-                                <tr key={a._id}>
-                                    <td>
-                                        <span className="queue-badge">#{a.queueNumber || '-'}</span>
-                                    </td>
-                                    <td>
-                                        <div style={{ fontWeight: 500 }}>{a.userId?.name || '-'}</div>
-                                        <div style={{ fontSize: 12, color: '#64748b' }}>
-                                            {a.userId?.phone || a.userId?.email}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div style={{ fontWeight: 500 }}>dr. {a.doctorId?.name || '-'}</div>
-                                        <div style={{ fontSize: 12, color: '#64748b' }}>{a.doctorId?.specialization}</div>
-                                    </td>
-                                    <td>
-                                        <div>{formatDate(a.appointmentDate)}</div>
-                                        <div style={{ fontSize: 12, color: '#64748b' }}>
-                                            <FaClock size={10} style={{ marginRight: 4 }} />
-                                            {a.appointmentTime || '-'}
-                                        </div>
-                                    </td>
-                                    <td style={{ maxWidth: 150 }}>
-                                        <div style={{ fontSize: 13, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {a.complaint || '-'}
-                                        </div>
-                                    </td>
-                                    <td>{getStatusBadge(a.status)}</td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        <div className="action-group" style={{ justifyContent: 'center' }}>
-                                            {/* Detail */}
-                                            <button
-                                                className="action-btn view"
-                                                title="Lihat Detail"
-                                                onClick={() => openDetail(a)}
-                                            >
-                                                <FaEye />
-                                            </button>
-
-                                            {/* Konfirmasi — hanya pending */}
-                                            {a.status === 'pending' && (
-                                                <button
-                                                    className="action-btn confirm"
-                                                    title="Konfirmasi"
-                                                    disabled={processingId === a._id}
-                                                    onClick={() => handleConfirm(a._id)}
-                                                >
-                                                    {processingId === a._id
-                                                        ? <Spinner size="sm" animation="border" />
-                                                        : <FaCheckCircle />}
-                                                </button>
-                                            )}
-
-                                            {/* Check-in — hanya confirmed */}
-                                            {a.status === 'confirmed' && (
-                                                <button
-                                                    className="action-btn checkin"
-                                                    title="Pasien Hadir"
-                                                    disabled={processingId === a._id}
-                                                    onClick={() => handleCheckIn(a._id)}
-                                                >
-                                                    {processingId === a._id
-                                                        ? <Spinner size="sm" animation="border" />
-                                                        : <FaUserCheck />}
-                                                </button>
-                                            )}
-
-                                            {/* Batalkan — pending atau confirmed */}
-                                            {['pending', 'confirmed'].includes(a.status) && (
-                                                <button
-                                                    className="action-btn cancel"
-                                                    title="Batalkan"
-                                                    disabled={processingId === a._id}
-                                                    onClick={() => openCancel(a)}
-                                                >
-                                                    <FaTimesCircle />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* ══════════════════════════════════════════════
-                    DETAIL MODAL
-                ══════════════════════════════════════════════ */}
-                <Modal show={showDetailModal} onHide={resetModals} centered dialogClassName="modal-custom">
-                    <div className="modal-header-custom">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 40, height: 40, background: '#dbeafe', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                <FaEye size={20} />
+                {/* ═══ TAB: REPORT ════════════════════════════════════════════ */}
+                {tab === 'report' && (
+                    <>
+                        {/* Filter range */}
+                        <div style={s.card}>
+                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                <div>
+                                    <label style={s.label}>Dari Tanggal</label>
+                                    <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} style={s.inp} />
+                                </div>
+                                <div>
+                                    <label style={s.label}>Sampai Tanggal</label>
+                                    <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} style={s.inp} />
+                                </div>
+                                <button onClick={fetchReport} style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                                    📊 Generate Report
+                                </button>
                             </div>
-                            <h5 style={{ fontWeight: 600, marginBottom: 0 }}>Detail Janji Temu</h5>
                         </div>
-                        <button onClick={resetModals} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
-                    </div>
-                    
-                    <div className="modal-body-custom">
-                        {selected && (
-                            <>
-                                <Row className="g-3 mb-3">
-                                    <Col md={6}>
-                                        <div className="detail-card">
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                                <div style={{ width: 32, height: 32, background: '#dbeafe', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                                    <FaUser size={16} />
-                                                </div>
-                                                <span style={{ fontSize: 13, fontWeight: 600, color: '#2563eb' }}>PASIEN</span>
-                                            </div>
-                                            <div style={{ fontWeight: 500, marginBottom: 4 }}>{selected.userId?.name}</div>
-                                            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 2 }}>
-                                                <FaEnvelope size={10} style={{ marginRight: 6 }} /> {selected.userId?.email}
-                                            </div>
-                                            <div style={{ fontSize: 12, color: '#64748b' }}>
-                                                <FaPhone size={10} style={{ marginRight: 6 }} /> {selected.userId?.phone || '-'}
-                                            </div>
-                                        </div>
-                                    </Col>
-                                    <Col md={6}>
-                                        <div className="detail-card">
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                                <div style={{ width: 32, height: 32, background: '#dcfce7', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#166534' }}>
-                                                    <FaUserMd size={16} />
-                                                </div>
-                                                <span style={{ fontSize: 13, fontWeight: 600, color: '#166534' }}>DOKTER</span>
-                                            </div>
-                                            <div style={{ fontWeight: 500, marginBottom: 4 }}>dr. {selected.doctorId?.name}</div>
-                                            <div style={{ fontSize: 12, color: '#64748b' }}>{selected.doctorId?.specialization}</div>
-                                        </div>
-                                    </Col>
-                                </Row>
 
-                                <div className="detail-card" style={{ marginBottom: 16 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 12 }}>INFORMASI JANJI TEMU</div>
-                                    
-                                    <div className="detail-row">
-                                        <div className="detail-row-label">No. Antrian</div>
-                                        <div className="detail-row-value">
-                                            <span className="queue-badge">#{selected.queueNumber || '-'}</span>
+                        {loadingReport ? (
+                            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Memuat laporan...</div>
+                        ) : report ? (
+                            <>
+                                {/* Summary */}
+                                <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+                                    {[
+                                        { label: 'Total Janji',   val: report.summary.total,       color: '#2563eb' },
+                                        { label: 'Selesai',       val: report.summary.completed,   color: '#16a34a' },
+                                        { label: 'Tidak Hadir',   val: report.summary.no_show,     color: '#b45309' },
+                                        { label: 'No-Show Rate',  val: `${report.summary.noShowRate}%`, color: report.summary.noShowRate > 20 ? '#ef4444' : '#16a34a' },
+                                    ].map(item => (
+                                        <div key={item.label} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 20px', flex: '1 1 120px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: 26, fontWeight: 800, color: item.color }}>{item.val}</div>
+                                            <div style={{ fontSize: 12, color: '#6b7280' }}>{item.label}</div>
                                         </div>
-                                    </div>
-                                    <div className="detail-row">
-                                        <div className="detail-row-label">Tanggal</div>
-                                        <div className="detail-row-value">{formatDate(selected.appointmentDate)}</div>
-                                    </div>
-                                    <div className="detail-row">
-                                        <div className="detail-row-label">Waktu</div>
-                                        <div className="detail-row-value">{selected.appointmentTime || '-'}</div>
-                                    </div>
-                                    <div className="detail-row">
-                                        <div className="detail-row-label">Keluhan</div>
-                                        <div className="detail-row-value">{selected.complaint || '-'}</div>
-                                    </div>
-                                    <div className="detail-row">
-                                        <div className="detail-row-label">Status</div>
-                                        <div className="detail-row-value">{getStatusBadge(selected.status)}</div>
-                                    </div>
-                                    {selected.rejectionReason && (
-                                        <div className="detail-row">
-                                            <div className="detail-row-label">Alasan Batal</div>
-                                            <div className="detail-row-value" style={{ color: '#b91c1c' }}>{selected.rejectionReason}</div>
-                                        </div>
-                                    )}
-                                    {selected.doctorNotes && (
-                                        <div className="detail-row">
-                                            <div className="detail-row-label">Catatan Dokter</div>
-                                            <div className="detail-row-value">{selected.doctorNotes}</div>
+                                    ))}
+                                </div>
+
+                                {/* Per hari */}
+                                <div style={s.card}>
+                                    <div style={{ fontWeight: 700, fontSize: 15, color: '#111827', marginBottom: 14 }}>📅 Statistik Per Hari</div>
+                                    {Object.keys(report.byDay).length === 0 ? (
+                                        <div style={{ color: '#6b7280', fontSize: 13 }}>Tidak ada data</div>
+                                    ) : (
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                                <thead>
+                                                    <tr style={{ background: '#f9fafb' }}>
+                                                        {['Tanggal','Total','Selesai','Tidak Hadir','Dibatalkan','Terjadwal'].map(h => (
+                                                            <th key={h} style={{ padding: '10px 12px', textAlign: 'left', color: '#6b7280', fontWeight: 600, borderBottom: '1px solid #e5e7eb' }}>{h}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {Object.entries(report.byDay).sort(([a],[b]) => a.localeCompare(b)).map(([day, data]) => (
+                                                        <tr key={day} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                            <td style={{ padding: '10px 12px', color: '#374151', fontWeight: 600 }}>
+                                                                {new Date(day).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}
+                                                            </td>
+                                                            <td style={{ padding: '10px 12px', color: '#111827', fontWeight: 700 }}>{data.total}</td>
+                                                            <td style={{ padding: '10px 12px', color: '#16a34a' }}>{data.completed}</td>
+                                                            <td style={{ padding: '10px 12px', color: '#b45309' }}>{data.no_show}</td>
+                                                            <td style={{ padding: '10px 12px', color: '#6b7280' }}>{data.cancelled}</td>
+                                                            <td style={{ padding: '10px 12px', color: '#2563eb' }}>{data.scheduled}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     )}
                                 </div>
 
-                                {selected.status === 'pending' && (
-                                    <div className="warning-alert" style={{ marginTop: 8 }}>
-                                        <FaClock style={{ marginRight: 8 }} />
-                                        Janji temu ini belum dikonfirmasi. Anda dapat mengkonfirmasi atau membatalkannya.
+                                {/* Per dokter */}
+                                <div style={s.card}>
+                                    <div style={{ fontWeight: 700, fontSize: 15, color: '#111827', marginBottom: 14 }}>👨‍⚕️ Statistik Per Dokter</div>
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                            <thead>
+                                                <tr style={{ background: '#f9fafb' }}>
+                                                    {['Dokter','Total','Selesai','Tidak Hadir','No-Show Rate'].map(h => (
+                                                        <th key={h} style={{ padding: '10px 12px', textAlign: 'left', color: '#6b7280', fontWeight: 600, borderBottom: '1px solid #e5e7eb' }}>{h}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {Object.entries(report.byDoctor).map(([name, data]) => {
+                                                    const rate = data.total > 0 ? Math.round((data.no_show / data.total) * 100) : 0;
+                                                    return (
+                                                        <tr key={name} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                            <td style={{ padding: '10px 12px', color: '#374151', fontWeight: 600 }}>dr. {name}</td>
+                                                            <td style={{ padding: '10px 12px', color: '#111827', fontWeight: 700 }}>{data.total}</td>
+                                                            <td style={{ padding: '10px 12px', color: '#16a34a' }}>{data.completed}</td>
+                                                            <td style={{ padding: '10px 12px', color: '#b45309' }}>{data.no_show}</td>
+                                                            <td style={{ padding: '10px 12px', color: rate > 20 ? '#ef4444' : '#16a34a', fontWeight: 600 }}>{rate}%</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                )}
+                                </div>
                             </>
-                        )}
-                    </div>
-                    
-                    <div className="modal-footer-custom">
-                        <button type="button" className="btn-custom" onClick={resetModals}>
-                            Tutup
-                        </button>
-
-                        {selected?.status === 'pending' && (
-                            <>
-                                <button type="button" className="btn-custom btn-custom-danger" onClick={() => openCancel(selected)}>
-                                    <FaTimesCircle style={{ marginRight: 4 }} /> Batalkan
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn-custom btn-custom-success"
-                                    disabled={processingId === selected._id}
-                                    onClick={() => handleConfirm(selected._id)}
-                                >
-                                    {processingId === selected._id
-                                        ? <><Spinner size="sm" animation="border" style={{ marginRight: 4 }} /> Memproses...</>
-                                        : <><FaCheckCircle style={{ marginRight: 4 }} /> Konfirmasi</>}
-                                </button>
-                            </>
-                        )}
-
-                        {selected?.status === 'confirmed' && (
-                            <>
-                                <button type="button" className="btn-custom btn-custom-danger" onClick={() => openCancel(selected)}>
-                                    <FaTimesCircle style={{ marginRight: 4 }} /> Batalkan
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn-custom btn-custom-primary"
-                                    disabled={processingId === selected._id}
-                                    onClick={() => handleCheckIn(selected._id)}
-                                >
-                                    {processingId === selected._id
-                                        ? <><Spinner size="sm" animation="border" style={{ marginRight: 4 }} /> Memproses...</>
-                                        : <><FaUserCheck style={{ marginRight: 4 }} /> Pasien Hadir</>}
-                                </button>
-                            </>
-                        )}
-                    </div>
-                </Modal>
-
-                {/* ══════════════════════════════════════════════
-                    CANCEL MODAL
-                ══════════════════════════════════════════════ */}
-                <Modal show={showCancelModal} onHide={resetModals} centered dialogClassName="modal-custom">
-                    <div className="modal-header-custom">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 40, height: 40, background: '#fee2e2', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b91c1c' }}>
-                                <FaTimesCircle size={20} />
+                        ) : (
+                            <div style={{ ...s.card, textAlign: 'center', padding: 40, color: '#6b7280' }}>
+                                Pilih rentang tanggal dan klik "Generate Report"
                             </div>
-                            <h5 style={{ fontWeight: 600, marginBottom: 0 }}>Batalkan Janji Temu</h5>
-                        </div>
-                        <button onClick={resetModals} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
+                        )}
+                    </>
+                )}
+            </div>
+
+            {/* ── Check-in Modal ──────────────────────────────────────────── */}
+            {checkinTarget && (
+                <ModalBox onClose={() => setCheckinTarget(null)} title="✅ Manual Check-in">
+                    <div style={{ marginBottom: 16, fontSize: 14, color: '#374151' }}>
+                        Konfirmasi check-in untuk:<br />
+                        <strong>{checkinTarget.userId?.name}</strong> — {checkinTarget.appointmentTime} WIB<br />
+                        Dokter: dr. {checkinTarget.doctorId?.name}
                     </div>
-                    
-                    <div className="modal-body-custom">
-                        <p style={{ marginBottom: 16, fontSize: 14 }}>
-                            Batalkan janji temu <strong>{selected?.userId?.name}</strong>{' '}
-                            dengan <strong>dr. {selected?.doctorId?.name}</strong>?
-                        </p>
-                        
-                        <Form.Group>
-                            <Form.Label style={{ fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 8 }}>
-                                Alasan Pembatalan <span style={{ color: '#64748b', fontWeight: 'normal' }}>(opsional)</span>
-                            </Form.Label>
-                            <Form.Control
-                                as="textarea"
-                                rows={3}
-                                value={cancelReason}
-                                onChange={e => setCancelReason(e.target.value)}
-                                placeholder="Contoh: Dokter berhalangan, jadwal penuh, dll."
-                                style={{ borderRadius: 10, borderColor: '#e2e8f0' }}
-                            />
-                        </Form.Group>
-                        
-                        <div className="warning-alert" style={{ marginTop: 16 }}>
-                            <FaExclamationTriangle style={{ marginRight: 8 }} />
-                            Tindakan ini tidak dapat dibatalkan.
-                        </div>
-                    </div>
-                    
-                    <div className="modal-footer-custom">
-                        <button type="button" className="btn-custom" onClick={resetModals}>
-                            Batal
-                        </button>
-                        <button
-                            type="button"
-                            className="btn-custom btn-custom-danger"
-                            disabled={processingId === selected?._id}
-                            onClick={handleCancel}
-                        >
-                            {processingId === selected?._id
-                                ? <><Spinner size="sm" animation="border" style={{ marginRight: 4 }} /> Memproses...</>
-                                : 'Ya, Batalkan'}
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        <button onClick={() => setCheckinTarget(null)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontWeight: 600 }}>Batal</button>
+                        <button onClick={handleCheckin} disabled={checkingIn}
+                            style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: checkingIn ? 0.6 : 1 }}>
+                            {checkingIn ? '...' : '✅ Konfirmasi Check-in'}
                         </button>
                     </div>
-                </Modal>
-            </Container>
+                </ModalBox>
+            )}
+
+            {/* ── Cancel Modal ────────────────────────────────────────────── */}
+            {cancelTarget && (
+                <ModalBox onClose={() => setCancelTarget(null)} title="❌ Batalkan Janji Temu">
+                    <div style={{ marginBottom: 14, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#b91c1c' }}>
+                        <strong>{cancelTarget.userId?.name}</strong> — {cancelTarget.appointmentTime} WIB akan dibatalkan (oleh admin).
+                    </div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Alasan Pembatalan *</label>
+                    <textarea value={cancelReason} rows={3} onChange={e => setCancelReason(e.target.value)}
+                        placeholder="Masukkan alasan pembatalan..."
+                        style={{ width: '100%', border: '1px solid #d1d5db', borderRadius: 8, padding: '9px 12px', fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }} />
+                    <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                        <button onClick={() => setCancelTarget(null)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontWeight: 600 }}>Batal</button>
+                        <button onClick={handleCancel} disabled={cancelling}
+                            style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: cancelling ? 0.6 : 1 }}>
+                            {cancelling ? 'Memproses...' : 'Konfirmasi Pembatalan'}
+                        </button>
+                    </div>
+                </ModalBox>
+            )}
+
+            {/* ── Override Modal ───────────────────────────────────────────── */}
+            {overrideTarget && (
+                <ModalBox onClose={() => setOverrideTarget(null)} title="⚙️ Override Status">
+                    <div style={{ marginBottom: 14, fontSize: 13, color: '#374151' }}>
+                        <strong>{overrideTarget.userId?.name}</strong> — {overrideTarget.appointmentTime} WIB<br />
+                        Status saat ini: <StatusBadge status={overrideTarget.status} />
+                    </div>
+                    <div style={{ marginBottom: 14 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Status Baru *</label>
+                        <select value={overrideStatus} onChange={e => setOverrideStatus(e.target.value)}
+                            style={{ width: '100%', border: '1px solid #d1d5db', borderRadius: 8, padding: '9px 12px', fontSize: 14, background: '#fff' }}>
+                            <option value="">— Pilih Status —</option>
+                            <option value="scheduled">📅 Terjadwal</option>
+                            <option value="checked_in">✅ Hadir</option>
+                            <option value="completed">🏁 Selesai</option>
+                            <option value="no_show">❌ Tidak Hadir</option>
+                            <option value="cancelled_by_admin">🚫 Dibatalkan Admin</option>
+                        </select>
+                    </div>
+                    <div style={{ marginBottom: 14 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Keterangan (opsional)</label>
+                        <textarea value={overrideReason} rows={2} onChange={e => setOverrideReason(e.target.value)}
+                            placeholder="Alasan perubahan status..."
+                            style={{ width: '100%', border: '1px solid #d1d5db', borderRadius: 8, padding: '9px 12px', fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        <button onClick={() => setOverrideTarget(null)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontWeight: 600 }}>Batal</button>
+                        <button onClick={handleOverride} disabled={overriding || !overrideStatus}
+                            style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!overrideStatus || overriding) ? 0.5 : 1 }}>
+                            {overriding ? 'Memproses...' : '⚙️ Terapkan Override'}
+                        </button>
+                    </div>
+                </ModalBox>
+            )}
+
+            {/* ── Detail Modal ─────────────────────────────────────────────── */}
+            {detailTarget && (
+                <ModalBox onClose={() => setDetailTarget(null)} title="📋 Detail Janji Temu">
+                    <div style={{ fontSize: 13, lineHeight: 2, color: '#374151' }}>
+                        <div><strong>Pasien</strong>: {detailTarget.userId?.name}</div>
+                        <div><strong>Email</strong>: {detailTarget.userId?.email || '-'}</div>
+                        <div><strong>No. HP</strong>: {detailTarget.userId?.phone || '-'}</div>
+                        <div><strong>Dokter</strong>: dr. {detailTarget.doctorId?.name} ({detailTarget.doctorId?.specialization})</div>
+                        <div><strong>Jadwal</strong>: {fmtDT(detailTarget.appointmentDate, detailTarget.appointmentTime)}</div>
+                        <div><strong>Status</strong>: <StatusBadge status={detailTarget.status} /></div>
+                        {detailTarget.complaint && <div><strong>Keluhan</strong>: {detailTarget.complaint}</div>}
+                        {detailTarget.doctorNotes && <div><strong>Catatan Dokter</strong>: {detailTarget.doctorNotes}</div>}
+                        {detailTarget.cancelReason && <div><strong>Alasan Batal</strong>: {detailTarget.cancelReason}</div>}
+                        {detailTarget.rescheduledFrom?.appointmentTime && (
+                            <div><strong>Di-reschedule dari</strong>: {detailTarget.rescheduledFrom.appointmentTime} WIB</div>
+                        )}
+                        <div><strong>Dibuat</strong>: {new Date(detailTarget.createdAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</div>
+                    </div>
+                </ModalBox>
+            )}
         </div>
     );
 };
+
+// ── ApptRow ──────────────────────────────────────────────────────────────────
+const ApptRow = ({ appt, onCheckin, onCancel, onOverride, onDetail }) => (
+    <div style={{
+        background: '#fff', borderRadius: 12,
+        border: `1px solid ${appt.status === 'checked_in' ? '#86efac' : '#e5e7eb'}`,
+        padding: '14px 20px', marginBottom: 10,
+        borderLeft: `4px solid ${STATUS_CFG[appt.status]?.color || '#e5e7eb'}`,
+    }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{appt.userId?.name || '-'}</span>
+                    <span style={{ fontSize: 12, color: '#6b7280' }}>→ dr. {appt.doctorId?.name}</span>
+                    <StatusBadge status={appt.status} />
+                </div>
+                <div style={{ fontSize: 13, color: '#374151' }}>
+                    🕐 {fmtDT(appt.appointmentDate, appt.appointmentTime)}
+                    {appt.userId?.phone && <span style={{ marginLeft: 10, color: '#6b7280' }}>📞 {appt.userId.phone}</span>}
+                </div>
+                {appt.complaint && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Keluhan: {appt.complaint}</div>}
+                {appt.cancelReason && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 4 }}>Alasan batal: {appt.cancelReason}</div>}
+            </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button onClick={onDetail}
+                style={{ padding: '6px 12px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                👁 Detail
+            </button>
+            {onCheckin && (
+                <button onClick={onCheckin}
+                    style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    ✅ Check-in
+                </button>
+            )}
+            {onCancel && (
+                <button onClick={onCancel}
+                    style={{ padding: '6px 12px', background: '#fff', color: '#ef4444', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    ❌ Batalkan
+                </button>
+            )}
+            <button onClick={onOverride}
+                style={{ padding: '6px 12px', background: '#fff', color: '#7c3aed', border: '1px solid #ddd6fe', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                ⚙️ Override
+            </button>
+        </div>
+    </div>
+);
+
+const ModalBox = ({ children, onClose, title }) => (
+    <div style={{ position: 'fixed', inset: 0, background: '#00000066', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <span style={{ fontWeight: 700, fontSize: 16, color: '#111827' }}>{title}</span>
+                <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#6b7280' }}>×</button>
+            </div>
+            {children}
+        </div>
+    </div>
+);
 
 export default ManageAppointments;

@@ -1,11 +1,3 @@
-// src/App.js  — VERSI UPDATE (tambah route booking slot & payment result)
-// Salin isi ini ke frontend/src/App.js
-// Perubahan dari versi lama:
-//   1. Import BookingSlot & PaymentResult
-//   2. Tambah route /consultations/book/:doctorId
-//   3. Tambah route /payment/success dan /payment/failed
-//   4. Ganti import DoctorConsultations dengan versi baru (.jsx)
-
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
@@ -30,25 +22,20 @@ import BloodPressureChecker from './pages/HealthCheck/BloodPressureChecker';
 import Consultations from './pages/Consultations';
 import ConsultationChat from './pages/Consultations/ConsultationChat';
 import Pharmacy from './pages/Pharmacy';
-import Appointments from './pages/Appointments';
 import PaymentHistory from './pages/PaymentHistory';
 import UserDashboard from './pages/user/Dashboard';
 import Profile from './pages/user/Profile';
-
-// ── NEW: Booking & Payment Result ──────────────────────────────────────────────
 import BookingSlot from './pages/user/BookingSlot';
 import PaymentResult from './pages/user/PaymentResult';
-// ──────────────────────────────────────────────────────────────────────────────
+import UserAppointments from './pages/user/Appointments';   // ← Janji Temu Offline
 
 // Doctor Pages
 import DoctorDashboard from './pages/doctor/Dashboard';
 import DoctorSickLetters from './pages/doctor/SickLetters';
 import DoctorAppointments from './pages/doctor/Appointments';
 import DoctorPatients from './pages/doctor/Patients';
-
-// ── NEW: Updated DoctorConsultations (ganti import lama) ──────────────────────
 import DoctorConsultations from './pages/doctor/DoctorConsultations';
-// ──────────────────────────────────────────────────────────────────────────────
+import AppointmentSchedule from './pages/doctor/AppointmentSchedule'; // ← Jadwal Offline Dokter
 
 // Role-specific Home Pages
 import AdminHome from './pages/Admin/Home';
@@ -61,7 +48,7 @@ import VerifyPayments from './pages/Admin/VerifyPayments';
 import ManageDoctors from './pages/Admin/ManageDoctors';
 import ManageUsers from './pages/Admin/ManageUsers';
 import ManageConsultations from './pages/Admin/ManageConsultations';
-import ManageAppointments from './pages/Admin/ManageAppointments';
+import ManageAppointments from './pages/Admin/ManageAppointments';   // ← Admin Janji Temu (baru)
 import ManagePharmacy from './pages/Admin/ManagePharmacy';
 import AdminManualPayment from './pages/Admin/ManualPayment';
 
@@ -70,7 +57,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { NotificationProvider } from './context/NotificationContext';
 
-// ── Protected Route ────────────────────────────────────────────────────────────
 const ProtectedRoute = ({ children, allowedRoles }) => {
     const { user, loading } = useAuth();
     if (loading) return null;
@@ -122,40 +108,45 @@ function AppContent() {
 
                     {/* ===== USER ===== */}
                     <Route path="/consultations" element={<ProtectedRoute allowedRoles={['user']}><Consultations /></ProtectedRoute>} />
-                    <Route path="/consultations/:id" element={<ProtectedRoute allowedRoles={['user','doctor']}><ConsultationChat /></ProtectedRoute>} />
 
-                    {/* ── NEW: Booking Slot ── */}
+                    {/* ⚠️ /book/:doctorId HARUS di atas /:id */}
                     <Route path="/consultations/book/:doctorId" element={
-                        <ProtectedRoute allowedRoles={['user']}>
-                            <BookingSlot />
-                        </ProtectedRoute>
+                        <ProtectedRoute allowedRoles={['user']}><BookingSlot /></ProtectedRoute>
+                    } />
+                    <Route path="/consultations/:id" element={
+                        <ProtectedRoute allowedRoles={['user', 'doctor']}><ConsultationChat /></ProtectedRoute>
                     } />
 
-                    {/* ── NEW: Payment Result (Xendit redirect) ── */}
                     <Route path="/payment/success" element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
                     <Route path="/payment/failed"  element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
 
-                    <Route path="/pharmacy" element={<ProtectedRoute allowedRoles={['user']}><Pharmacy /></ProtectedRoute>} />
-                    <Route path="/appointments" element={<ProtectedRoute allowedRoles={['user']}><Appointments /></ProtectedRoute>} />
-                    <Route path="/payments" element={<ProtectedRoute allowedRoles={['user']}><PaymentHistory /></ProtectedRoute>} />
+                    <Route path="/pharmacy"     element={<ProtectedRoute allowedRoles={['user']}><Pharmacy /></ProtectedRoute>} />
+                    <Route path="/payments"     element={<ProtectedRoute allowedRoles={['user']}><PaymentHistory /></ProtectedRoute>} />
+
+                    {/* ── Janji Temu Offline (user) ── */}
+                    <Route path="/appointments" element={
+                        <ProtectedRoute allowedRoles={['user']}><UserAppointments /></ProtectedRoute>
+                    } />
 
                     {/* ===== DOCTOR ===== */}
-                    <Route path="/doctor" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />
-                    <Route path="/doctor/settings" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorSettings /></ProtectedRoute>} />
-                    <Route path="/doctor/sick-letters" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorSickLetters /></ProtectedRoute>} />
-                    <Route path="/doctor/consultations" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorConsultations /></ProtectedRoute>} />
-                    <Route path="/doctor/appointments" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorAppointments /></ProtectedRoute>} />
-                    <Route path="/doctor/patients" element={<ProtectedRoute allowedRoles={['doctor']}><DoctorPatients /></ProtectedRoute>} />
+                    <Route path="/doctor"                       element={<ProtectedRoute allowedRoles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />
+                    <Route path="/doctor/settings"              element={<ProtectedRoute allowedRoles={['doctor']}><DoctorSettings /></ProtectedRoute>} />
+                    <Route path="/doctor/sick-letters"          element={<ProtectedRoute allowedRoles={['doctor']}><DoctorSickLetters /></ProtectedRoute>} />
+                    <Route path="/doctor/consultations"         element={<ProtectedRoute allowedRoles={['doctor']}><DoctorConsultations /></ProtectedRoute>} />
+                    <Route path="/doctor/patients"              element={<ProtectedRoute allowedRoles={['doctor']}><DoctorPatients /></ProtectedRoute>} />
+
+                    {/* ── Jadwal + Janji Temu Offline (doctor) ── */}
+                    <Route path="/doctor/appointments"          element={<ProtectedRoute allowedRoles={['doctor']}><AppointmentSchedule /></ProtectedRoute>} />
 
                     {/* ===== ADMIN ===== */}
-                    <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
-                    <Route path="/admin/verify-payments" element={<ProtectedRoute allowedRoles={['admin']}><VerifyPayments /></ProtectedRoute>} />
-                    <Route path="/admin/doctors" element={<ProtectedRoute allowedRoles={['admin']}><ManageDoctors /></ProtectedRoute>} />
-                    <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} />
-                    <Route path="/admin/consultations" element={<ProtectedRoute allowedRoles={['admin']}><ManageConsultations /></ProtectedRoute>} />
-                    <Route path="/admin/appointments" element={<ProtectedRoute allowedRoles={['admin']}><ManageAppointments /></ProtectedRoute>} />
-                    <Route path="/admin/pharmacy" element={<ProtectedRoute allowedRoles={['admin']}><ManagePharmacy /></ProtectedRoute>} />
-                    <Route path="/admin/manual-payments" element={<ProtectedRoute allowedRoles={['admin']}><AdminManualPayment /></ProtectedRoute>} />
+                    <Route path="/admin"                        element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+                    <Route path="/admin/verify-payments"        element={<ProtectedRoute allowedRoles={['admin']}><VerifyPayments /></ProtectedRoute>} />
+                    <Route path="/admin/doctors"                element={<ProtectedRoute allowedRoles={['admin']}><ManageDoctors /></ProtectedRoute>} />
+                    <Route path="/admin/users"                  element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} />
+                    <Route path="/admin/consultations"          element={<ProtectedRoute allowedRoles={['admin']}><ManageConsultations /></ProtectedRoute>} />
+                    <Route path="/admin/appointments"           element={<ProtectedRoute allowedRoles={['admin']}><ManageAppointments /></ProtectedRoute>} />
+                    <Route path="/admin/pharmacy"               element={<ProtectedRoute allowedRoles={['admin']}><ManagePharmacy /></ProtectedRoute>} />
+                    <Route path="/admin/manual-payments"        element={<ProtectedRoute allowedRoles={['admin']}><AdminManualPayment /></ProtectedRoute>} />
 
                     {/* ===== 404 ===== */}
                     <Route path="*" element={

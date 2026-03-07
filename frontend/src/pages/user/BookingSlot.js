@@ -82,9 +82,11 @@ const BookingSlot = () => {
     const [consultType, setConsultType]     = useState('chat');
     const [symptoms, setSymptoms]     = useState('');
     const [medHistory, setMedHistory] = useState('');
+    const [attachments, setAttachments] = useState([]); // { file, name, size, type }
     const [loading, setLoading]       = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [noAvailability, setNoAvailability] = useState(false);
+    const fileInputRef = React.useRef(null);
 
     // Fetch doctor & slots
     const fetchData = useCallback(async () => {
@@ -122,20 +124,41 @@ const BookingSlot = () => {
     const activeDate = dates[activeDateIdx];
     const daySlots = grouped[activeDate] || [];
 
+    const handleFileAdd = (e) => {
+        const files = Array.from(e.target.files);
+        const allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp','application/pdf'];
+        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+        const remaining = 5 - attachments.length;
+        if (remaining <= 0) { toast.error('Maksimal 5 lampiran'); return; }
+        const toAdd = files.slice(0, remaining).filter(f => {
+            if (!allowed.includes(f.type)) { toast.error(`${f.name}: tipe file tidak didukung (hanya gambar/PDF)`); return false; }
+            if (f.size > MAX_SIZE) { toast.error(`${f.name}: ukuran melebihi 10MB`); return false; }
+            return true;
+        });
+        setAttachments(prev => [...prev, ...toAdd.map(f => ({ file: f, name: f.name, size: f.size, type: f.type }))]);
+        e.target.value = '';
+    };
+    const removeAttachment = (idx) => setAttachments(prev => prev.filter((_,i) => i !== idx));
+    const fmtSize = (b) => b < 1024*1024 ? `${(b/1024).toFixed(0)} KB` : `${(b/1024/1024).toFixed(1)} MB`;
+
     const handleSubmit = async () => {
         if (!selectedSlot) return toast.error('Pilih slot waktu terlebih dahulu');
         if (!symptoms.trim()) return toast.error('Keluhan wajib diisi');
 
         setSubmitting(true);
         try {
-            // Step 1: Buat konsultasi (lock slot)
-            const createRes = await api.post('/api/consultations/create', {
-                doctorId,
-                consultationType: consultType,
-                scheduledAt : selectedSlot.startUtc,
-                scheduledEnd: selectedSlot.endUtc,
-                symptoms,
-                medicalHistory: medHistory,
+            // Step 1: Buat konsultasi (lock slot) — pakai FormData untuk support lampiran
+            const fd = new FormData();
+            fd.append('doctorId', doctorId);
+            fd.append('consultationType', consultType);
+            fd.append('scheduledAt',  selectedSlot.startUtc);
+            fd.append('scheduledEnd', selectedSlot.endUtc);
+            fd.append('symptoms', symptoms);
+            fd.append('medicalHistory', medHistory);
+            attachments.forEach(a => fd.append('attachments', a.file));
+
+            const createRes = await api.post('/api/consultations/create', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
             });
 
             const { consultation } = createRes.data;
@@ -274,7 +297,7 @@ const BookingSlot = () => {
                                     onChange={e => setSymptoms(e.target.value)}
                                 />
                             </div>
-                            <div>
+                            <div style={{ marginBottom: 14 }}>
                                 <label style={S.label}>Riwayat Penyakit / Alergi (opsional)</label>
                                 <textarea
                                     style={{ ...S.input, minHeight: 70 }}
@@ -282,6 +305,51 @@ const BookingSlot = () => {
                                     value={medHistory}
                                     onChange={e => setMedHistory(e.target.value)}
                                 />
+                            </div>
+
+                            {/* Lampiran */}
+                            <div>
+                                <label style={S.label}>
+                                    Lampiran Medis (opsional)
+                                    <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: 12, marginLeft: 6 }}>
+                                        Foto, hasil lab, atau dokumen (PDF/gambar, maks 5 file × 10MB)
+                                    </span>
+                                </label>
+
+                                {/* File list */}
+                                {attachments.length > 0 && (
+                                    <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        {attachments.map((a, i) => (
+                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px' }}>
+                                                <span style={{ fontSize: 18 }}>{a.type === 'application/pdf' ? '📄' : '🖼️'}</span>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: 13, color: '#111827', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                                                    <div style={{ fontSize: 11, color: '#9ca3af' }}>{fmtSize(a.size)}</div>
+                                                </div>
+                                                <button onClick={() => removeAttachment(i)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>×</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {attachments.length < 5 && (
+                                    <>
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            multiple
+                                            accept=".jpg,.jpeg,.png,.gif,.webp,.pdf"
+                                            style={{ display: 'none' }}
+                                            onChange={handleFileAdd}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', border: '1.5px dashed #d1d5db', borderRadius: 8, background: '#fafafa', color: '#6b7280', fontSize: 13, cursor: 'pointer', width: '100%', justifyContent: 'center' }}>
+                                            📎 Tambah Lampiran ({attachments.length}/5)
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
 

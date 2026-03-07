@@ -538,12 +538,14 @@ const NewConsultationWizard = ({ onCreated }) => {
 };
 
 // ── History Card ──────────────────────────────────────────────────
-const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate, onRefund }) => {
+const ConsultationCard = ({ cons, onPay, onChat, onDownload, onDownloadPrescription, onDownloadMedRecord, onRate, onRefund }) => {
   const [expanded, setExpanded] = useState(false);
   const needsPay = cons.status === 'pending_payment';
   const canChat = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(cons.status);
   const isCompleted = cons.status === 'completed';
   const hasSickLetter = cons.sickLetter?.status === 'issued';
+  const hasPrescription = !!(cons.prescriptionData?.prescriptionNumber || cons.prescription);
+  const hasMedRecord = !!cons.medicalRecord?.isCompleted;
   const canRefund = ['cancelled_by_doctor', 'doctor_no_show'].includes(cons.status);
   const isRefundPending = cons.status === 'refund_requested';
   const isRefundFailed = cons.status === 'refund_failed';
@@ -610,7 +612,19 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate, onRefund })
           {hasSickLetter && (
             <button onClick={onDownload}
               style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
-              📄 Unduh Surat Sakit
+              📄 Surat Sakit
+            </button>
+          )}
+          {hasPrescription && (
+            <button onClick={onDownloadPrescription}
+              style={{ background: '#0891b2', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              💊 Resep PDF
+            </button>
+          )}
+          {hasMedRecord && (
+            <button onClick={onDownloadMedRecord}
+              style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              📋 Rekam Medis
             </button>
           )}
           {canRefund && (
@@ -635,7 +649,36 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onRate, onRefund })
         <div style={{ borderTop: '1px solid #f3f4f6', padding: '12px 16px', background: '#fafafa' }}>
           {cons.symptoms && <div style={{ marginBottom: 8 }}><span style={{ color: '#6b7280', fontSize: 12 }}>Keluhan: </span><span style={{ color: '#111827', fontSize: 13 }}>{cons.symptoms}</span></div>}
           {cons.medicalHistory && <div style={{ marginBottom: 8 }}><span style={{ color: '#6b7280', fontSize: 12 }}>Riwayat: </span><span style={{ color: '#111827', fontSize: 13 }}>{cons.medicalHistory}</span></div>}
-          {cons.prescription && <div style={{ marginBottom: 8 }}><span style={{ color: '#6b7280', fontSize: 12 }}>Resep: </span><span style={{ color: '#16a34a', fontSize: 13 }}>{cons.prescription}</span></div>}
+
+          {/* Rekam medis ringkasan */}
+          {cons.medicalRecord?.assessment && (
+            <div style={{ marginBottom: 8, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '8px 12px' }}>
+              <div style={{ color: '#0369a1', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>📋 REKAM MEDIS</div>
+              <div style={{ fontSize: 13, color: '#111827' }}><span style={{ color: '#6b7280' }}>Diagnosis: </span>{cons.medicalRecord.assessment}</div>
+              {cons.medicalRecord.plan && <div style={{ fontSize: 13, color: '#111827', marginTop: 2 }}><span style={{ color: '#6b7280' }}>Rencana: </span>{cons.medicalRecord.plan}</div>}
+            </div>
+          )}
+
+          {/* Resep ringkasan */}
+          {cons.prescriptionData?.medicines?.length > 0 ? (
+            <div style={{ marginBottom: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px' }}>
+              <div style={{ color: '#15803d', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>💊 RESEP — No. {cons.prescriptionData.prescriptionNumber}</div>
+              {cons.prescriptionData.medicines.slice(0, 3).map((m, i) => (
+                <div key={i} style={{ fontSize: 12, color: '#374151' }}>
+                  {i+1}. {m.name}{m.dose ? ' '+m.dose : ''} — {m.frequency}
+                </div>
+              ))}
+              {cons.prescriptionData.medicines.length > 3 && (
+                <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>+{cons.prescriptionData.medicines.length - 3} obat lainnya</div>
+              )}
+              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                Berlaku s/d: {cons.prescriptionData.validUntil ? new Date(cons.prescriptionData.validUntil).toLocaleDateString('id-ID') : '-'} · {cons.prescriptionData.isUsed ? '✓ Sudah digunakan' : '○ Belum digunakan'}
+              </div>
+            </div>
+          ) : cons.prescription ? (
+            <div style={{ marginBottom: 8 }}><span style={{ color: '#6b7280', fontSize: 12 }}>Resep: </span><span style={{ color: '#16a34a', fontSize: 13 }}>{cons.prescription}</span></div>
+          ) : null}
+
           {cons.rating && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ color: '#6b7280', fontSize: 12 }}>Rating: </span>
@@ -875,6 +918,27 @@ const Consultations = () => {
     } catch { toast.error('Gagal mengunduh surat sakit'); }
   };
 
+  const handleDownloadPrescription = async (cons) => {
+    try {
+      const r = await api.get(`/api/consultations/${cons._id}/prescription/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const rxNum = cons.prescriptionData?.prescriptionNumber || cons._id;
+      const a = document.createElement('a'); a.href = url; a.download = `resep-${rxNum}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      toast.success('Resep PDF diunduh');
+    } catch { toast.error('Gagal mengunduh resep PDF'); }
+  };
+
+  const handleDownloadMedRecord = async (cons) => {
+    try {
+      const r = await api.get(`/api/consultations/${cons._id}/medical-record/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a'); a.href = url; a.download = `rekam-medis-${cons._id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      toast.success('Rekam medis PDF diunduh');
+    } catch { toast.error('Gagal mengunduh rekam medis'); }
+  };
+
   const active = consultations.filter(c => ['pending_payment', 'waiting_verification', 'confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(c.status));
   const needsAction = consultations.filter(c => ['cancelled_by_doctor', 'doctor_no_show', 'refund_requested', 'refund_failed'].includes(c.status));
   const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show', 'refunded'].includes(c.status));
@@ -916,6 +980,8 @@ const Consultations = () => {
                     onPay={() => setPayModal({ consultation: cons, amount: cons.doctorId?.consultationFee, deadline: cons.paymentDeadline })}
                     onChat={() => navigate(`/consultations/${cons._id}`)}
                     onDownload={() => handleDownloadPDF(cons)}
+                    onDownloadPrescription={() => handleDownloadPrescription(cons)}
+                    onDownloadMedRecord={() => handleDownloadMedRecord(cons)}
                     onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
                     onRefund={() => setRefundModal(cons)}
                   />
@@ -932,6 +998,8 @@ const Consultations = () => {
                     onPay={() => {}}
                     onChat={() => navigate(`/consultations/${cons._id}`)}
                     onDownload={() => handleDownloadPDF(cons)}
+                    onDownloadPrescription={() => handleDownloadPrescription(cons)}
+                    onDownloadMedRecord={() => handleDownloadMedRecord(cons)}
                     onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
                     onRefund={() => setRefundModal(cons)}
                   />
@@ -961,6 +1029,8 @@ const Consultations = () => {
                     onPay={() => {}}
                     onChat={() => navigate(`/consultations/${cons._id}`)}
                     onDownload={() => handleDownloadPDF(cons)}
+                    onDownloadPrescription={() => handleDownloadPrescription(cons)}
+                    onDownloadMedRecord={() => handleDownloadMedRecord(cons)}
                     onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
                     onRefund={() => setRefundModal(cons)}
                   />

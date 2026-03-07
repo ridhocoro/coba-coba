@@ -238,7 +238,7 @@ const PrescriptionModal = ({ consultation, onClose, onSave, isDoctor }) => {
 
 // ── Sick Letter Modal ─────────────────────────────────────────────
 const SickLetterModal = ({ onClose, onSave }) => {
-  const [form, setForm] = useState({ diagnosis: '', restDays: 3, notes: '', patientAge: '', patientGender: '' });
+  const [form, setForm] = useState({ diagnosis: '', restDays: 3, notes: '', patientAge: '', patientGender: '', patientWeight: '' });
   const [saving, setSaving] = useState(false);
   const handleSave = async (e) => { e.preventDefault(); if (!form.diagnosis || !form.restDays) return; setSaving(true); await onSave(form); setSaving(false); };
   const inp = { width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14, boxSizing: 'border-box' };
@@ -253,7 +253,7 @@ const SickLetterModal = ({ onClose, onSave }) => {
         <form onSubmit={handleSave} style={{ padding: 20 }}>
           {/* Identitas Pasien */}
           <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Identitas Pasien</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 18 }}>
             <div>
               {lbl('Umur')}
               <input value={form.patientAge} onChange={e => setForm(p => ({ ...p, patientAge: e.target.value }))} placeholder="Contoh: 21 Tahun" style={inp} />
@@ -265,6 +265,10 @@ const SickLetterModal = ({ onClose, onSave }) => {
                 <option value="Laki-laki">Laki-laki</option>
                 <option value="Perempuan">Perempuan</option>
               </select>
+            </div>
+            <div>
+              {lbl('Berat Badan')}
+              <input value={form.patientWeight} onChange={e => setForm(p => ({ ...p, patientWeight: e.target.value }))} placeholder="Contoh: 60 kg" style={inp} />
             </div>
           </div>
 
@@ -859,14 +863,15 @@ const ConsultationChat = () => {
   const isCompleted = ['completed', 'no_show'].includes(consultation?.status);
 
   // Dokter: bisa akses room kecuali saat pending_payment/expired
-  // User: hanya saat confirmed/live/completed dan waktu sudah tiba
+  // User: bisa akses room saat confirmed/live/completed — terlepas dari waktu
+  //       (jika belum waktunya → tampilkan UI locked, bukan redirect)
   const DOCTOR_BLOCKED = ['pending_payment', 'expired', 'cancelled', 'cancelled_by_doctor'];
   const timeHasArrived = consultation?.scheduledAt
     ? msUntil(consultation.scheduledAt) <= 0
     : true;
   const canAccessRoom = isDoctor
     ? !DOCTOR_BLOCKED.includes(consultation?.status)
-    : (isConfirmed || isLive || isCompleted) && (timeHasArrived || isCompleted);
+    : (isConfirmed || isLive || isCompleted); // ← BUGFIX: hapus syarat timeHasArrived di sini
 
   // Bisa chat hanya saat live: dokter kapan saja, user perlu waktu sudah tiba
   const canChat = isLive && (isDoctor || timeHasArrived);
@@ -878,9 +883,15 @@ const ConsultationChat = () => {
       const r = await api.get(`/api/consultations/${id}`);
       setConsultation(r.data);
       setMessages(r.data.messages || []);
-    } catch {
-      toast.error('Gagal memuat konsultasi');
-      navigate(isDoctor ? '/doctor/consultations' : '/consultations');
+    } catch (err) {
+      // Hanya navigate away jika benar-benar 403/404, bukan error jaringan sementara
+      if (err.response?.status === 403 || err.response?.status === 404) {
+        toast.error('Konsultasi tidak ditemukan atau akses ditolak');
+        navigate(isDoctor ? '/doctor/consultations' : '/consultations');
+      } else {
+        toast.error('Gagal memuat konsultasi, mencoba lagi...');
+        // Jangan navigate — bisa jadi error jaringan sementara
+      }
     } finally { setLoading(false); }
   }, [id, navigate, isDoctor]);
 
@@ -1472,18 +1483,22 @@ const ConsultationChat = () => {
               </div>
             )}
 
-            {/* Lock overlay untuk user sebelum waktu konsultasi */}
+            {/* Banner terkunci untuk USER — tampilkan jadwal + countdown di atas chat (bukan overlay) */}
             {isLockedForUser && (
-              <div style={{ position: 'absolute', inset: 0, background: 'rgba(13,17,23,0.88)', backdropFilter: 'blur(4px)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 0, flexDirection: 'column', gap: 12, padding: 24 }}>
-                <div style={{ fontSize: 48 }}>🔒</div>
-                <div style={{ color: '#e6edf3', fontWeight: 700, fontSize: 17, textAlign: 'center' }}>Ruang Chat Belum Terbuka</div>
-                <div style={{ color: '#8b949e', fontSize: 13, textAlign: 'center', lineHeight: 1.6, maxWidth: 300 }}>
-                  Konsultasi Anda terkonfirmasi. Chat akan aktif saat waktu yang dijadwalkan tiba.
-                </div>
-                <div style={{ background: '#161b22', border: '1px solid #1f6feb40', borderRadius: 12, padding: '14px 20px', textAlign: 'center', minWidth: 220 }}>
-                  <div style={{ color: '#8b949e', fontSize: 11, marginBottom: 4 }}>Jadwal Konsultasi</div>
-                  <div style={{ color: '#58a6ff', fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{fmtDT(consultation.scheduledAt)}</div>
-                  <CountdownBanner scheduledAt={consultation.scheduledAt} />
+              <div style={{ background: 'linear-gradient(135deg,#0d1f3c,#162032)', border: '1px solid #1f6feb50', borderRadius: 12, padding: '16px 20px', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ fontSize: 32, flexShrink: 0 }}>🔒</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#e6edf3', fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Ruang Chat Terkunci</div>
+                    <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 8 }}>
+                      Konsultasi Anda terkonfirmasi. Chat akan aktif otomatis saat jadwal tiba.
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0d1117', borderRadius: 8, padding: '8px 12px', width: 'fit-content' }}>
+                      <span style={{ color: '#8b949e', fontSize: 11 }}>Jadwal:</span>
+                      <span style={{ color: '#58a6ff', fontWeight: 700, fontSize: 12 }}>{fmtDT(consultation.scheduledAt)}</span>
+                    </div>
+                    <div style={{ marginTop: 8 }}><CountdownBanner scheduledAt={consultation.scheduledAt} /></div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1582,43 +1597,28 @@ const ConsultationChat = () => {
             </div>
           )}
 
-          {/* Chat input — aktif saat canChat, disabled (preview) saat isLockedForUser */}
+          {/* Chat input footer — selalu render saat canChat ATAU isLockedForUser */}
           {(canChat || isLockedForUser) && (
-            <div style={{ ...s.footer, opacity: isLockedForUser ? 0.45 : 1, pointerEvents: isLockedForUser ? 'none' : 'auto' }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
-                <button type="button" disabled
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: 'none', color: '#8b949e', cursor: 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  📎
-                </button>
-                <input value={isLockedForUser ? '' : newMessage}
-                  onChange={e => { if (!isLockedForUser) { setNewMessage(e.target.value); handleTyping(); } }}
-                  onKeyDown={e => { if (!isLockedForUser && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }}
-                  placeholder={isLockedForUser ? '🔒 Chat terbuka saat jadwal tiba...' : 'Ketik pesan... (Enter untuk kirim)'}
-                  readOnly={isLockedForUser}
-                  style={{ flex: 1, background: '#21262d', border: 'none', borderRadius: 20, padding: '9px 16px', color: '#e6edf3', fontSize: 14, outline: 'none', cursor: isLockedForUser ? 'not-allowed' : 'text' }} />
-                <button type="button" disabled
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: 'none', color: '#fff', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  ➤
-                </button>
-              </div>
-            </div>
-          )}
-          {canChat && !isLockedForUser && (
             <div style={s.footer}>
-              <form onSubmit={sendMessage} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <form onSubmit={canChat ? sendMessage : e => e.preventDefault()}
+                style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
-                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingImg}
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: 'none', color: uploadingImg ? '#3fb950' : '#8b949e', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <button type="button"
+                  onClick={() => canChat && fileInputRef.current?.click()}
+                  disabled={!canChat || uploadingImg}
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: 'none', color: uploadingImg ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {uploadingImg ? '⏳' : '📎'}
                 </button>
-                <input value={newMessage}
-                  onChange={e => { setNewMessage(e.target.value); handleTyping(); }}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }}
-                  placeholder="Ketik pesan... (Enter untuk kirim)"
-                  style={{ flex: 1, background: '#21262d', border: 'none', borderRadius: 20, padding: '9px 16px', color: '#e6edf3', fontSize: 14, outline: 'none' }} />
-                <button type="submit" disabled={!newMessage.trim() || sending}
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: newMessage.trim() && !sending ? '#1f6feb' : '#21262d', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <input
+                  value={canChat ? newMessage : ''}
+                  readOnly={!canChat}
+                  onChange={e => { if (canChat) { setNewMessage(e.target.value); handleTyping(); } }}
+                  onKeyDown={e => { if (canChat && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }}
+                  placeholder={isLockedForUser ? '🔒 Chat aktif saat jadwal tiba — silakan lihat UI di atas' : 'Ketik pesan... (Enter untuk kirim)'}
+                  style={{ flex: 1, background: isLockedForUser ? '#0d1117' : '#21262d', border: isLockedForUser ? '1px solid #30363d' : 'none', borderRadius: 20, padding: '9px 16px', color: isLockedForUser ? '#484f58' : '#e6edf3', fontSize: 14, outline: 'none', cursor: isLockedForUser ? 'not-allowed' : 'text' }} />
+                <button type="submit"
+                  disabled={!canChat || !newMessage.trim() || sending}
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: (canChat && newMessage.trim() && !sending) ? '#1f6feb' : '#21262d', border: 'none', color: '#fff', cursor: (canChat && !sending) ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {sending ? '⏳' : '➤'}
                 </button>
               </form>

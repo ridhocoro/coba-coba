@@ -32,15 +32,31 @@ const UserDashboard = () => {
             const waiting = consultations.filter(c => ['pending_payment', 'paid', 'scheduled'].includes(c.status)).length;
             setRecentConsultations(consultations.slice(0, 5));
 
-            const appointments = apptRes.status === 'fulfilled' ? (apptRes.value.data || []) : [];
+            // Gabungkan legacy appointments + sistem baru (offline)
+            const legacyAppts = apptRes.status === 'fulfilled' ? (apptRes.value.data || []) : [];
+            let offlineAppts = [];
+            try {
+                const offlineRes = await api.get('/api/appointments/my');
+                offlineAppts = offlineRes.data.appointments || [];
+            } catch {}
+
+            const allAppts = [
+                ...legacyAppts,
+                ...offlineAppts.filter(o => !legacyAppts.find(l => l._id === o._id)),
+            ];
+
             const now = new Date();
-            const upcoming = appointments
-                .filter(a => ['pending', 'confirmed'].includes(a.status) && new Date(a.appointmentDate) >= now)
-                .sort((a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate))
+            const upcoming = allAppts
+                .filter(a => ['pending', 'confirmed', 'scheduled', 'checked_in'].includes(a.status) && new Date(a.appointmentDate) >= now)
+                .sort((a, b) => {
+                    const dateA = a.scheduledAt ? new Date(a.scheduledAt) : new Date(a.appointmentDate);
+                    const dateB = b.scheduledAt ? new Date(b.scheduledAt) : new Date(b.appointmentDate);
+                    return dateA - dateB;
+                })
                 .slice(0, 3);
             setUpcomingAppointments(upcoming);
 
-            setStats({ consultations: consultations.length, appointments: appointments.length, ongoing, completed, waiting });
+            setStats({ consultations: consultations.length, appointments: allAppts.length, ongoing, completed, waiting });
         } catch (error) {
             console.error('Error fetching user data:', error);
         } finally {
@@ -73,11 +89,17 @@ const UserDashboard = () => {
 
     const getAppointmentBadge = (status) => {
         const map = { 
-            pending: ['warning','Menunggu Konfirmasi'], 
-            confirmed: ['success','Dikonfirmasi'], 
-            completed: ['primary','Selesai'], 
-            cancelled: ['danger','Dibatalkan'], 
-            rejected: ['danger','Ditolak'] 
+            pending             : ['warning','Menunggu Konfirmasi'], 
+            confirmed           : ['success','Dikonfirmasi'],
+            scheduled           : ['primary','Terjadwal'],
+            checked_in          : ['success','Hadir ✓'],
+            completed           : ['info','Selesai'], 
+            cancelled           : ['danger','Dibatalkan'],
+            cancelled_by_user   : ['secondary','Dibatalkan'],
+            cancelled_by_doctor : ['danger','Dibatalkan Dokter'],
+            cancelled_by_admin  : ['danger','Dibatalkan Admin'],
+            no_show             : ['warning','Tidak Hadir'],
+            rejected            : ['danger','Ditolak'] 
         };
         const [bg, label] = map[status] || ['secondary', status];
         return <Badge bg={bg} className="rounded-pill px-3 py-1 fw-normal">{label}</Badge>;

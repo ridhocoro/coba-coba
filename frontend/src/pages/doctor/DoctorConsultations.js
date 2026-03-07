@@ -148,9 +148,9 @@ const DoctorConsultations = () => {
 
     // ── Card ─────────────────────────────────────────────────────────────────────
     const ConsultCard = ({ c }) => {
-        const canStart = ['confirmed', 'paid', 'scheduled', 'ongoing'].includes(c.status) && c.status !== 'in_progress';
+        const canStart = c.status === 'confirmed'; // backend /start hanya menerima 'confirmed'
         const canEnd   = c.status === 'in_progress';
-        const canChat  = ['confirmed', 'in_progress', 'completed', 'paid', 'scheduled', 'ongoing'].includes(c.status);
+        const canChat  = ['confirmed', 'in_progress', 'completed', 'no_show', 'paid', 'scheduled', 'ongoing'].includes(c.status); // no_show: dokter masih bisa isi rekam medis
         const isProc   = processing[c._id];
 
         return (

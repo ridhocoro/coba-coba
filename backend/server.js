@@ -48,7 +48,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/manual-payment', require('./routes/manualpayment'));
 app.use('/api/xendit', require('./routes/xendit'));
 
-// 🔔 TAMBAHKAN ROUTE NOTIFIKASI
+// 🔔 Notifikasi
 app.use('/api/notifications', require('./routes/notifications'));
 
 // Socket.io for real-time chat
@@ -62,6 +62,9 @@ require('./utils/DoctorNoShowCron').startCron(io);
 
 // Cron: expired order checker (setiap 1 menit)
 require('./utils/ExpiredOrderCron').startCron();
+
+// ── Cron: appointment — auto no-show & reminder H-24 ─────────────────────────
+require('./utils/AppointmentCron').startCron(io);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

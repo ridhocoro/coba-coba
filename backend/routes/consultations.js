@@ -70,7 +70,7 @@ router.get('/my-consultations', auth, async (req, res) => {
         const consultations = await Consultation.find({ userId: req.userId })
             .populate('doctorId', 'name specialization consultationFee rating photo isOnline')
             .populate('paymentId')
-            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate issuedAt' })
+            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate issuedAt patientAge patientGender' })
             // medicalRecord & prescriptionData adalah embedded subdocument, tidak di-populate
             .sort('-createdAt');
         res.json(consultations);
@@ -1391,7 +1391,7 @@ router.get('/:id', auth, async (req, res) => {
             .populate('userId', 'name email')
             .populate('doctorId', 'name specialization photo isOnline userId')
             .populate('paymentId')
-            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate sickLeaveDays notes issuedAt' });
+            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate sickLeaveDays notes issuedAt patientAge patientGender patientWeight' });
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
