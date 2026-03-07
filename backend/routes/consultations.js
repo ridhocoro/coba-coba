@@ -37,7 +37,16 @@ const attachStorage = multer.diskStorage({
         cb(null, `attach-${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`);
     }
 });
-const uploadAttachment = multer({ storage: attachStorage, limits: { fileSize: 5 * 1024 * 1024 } });
+const uploadAttachment = multer({
+    storage: attachStorage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB untuk PDF
+    fileFilter: (req, file, cb) => {
+        const allowed = /jpeg|jpg|png|gif|webp|pdf|doc|docx/i;
+        const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+        if (allowed.test(ext)) return cb(null, true);
+        cb(new Error('File harus berupa gambar, PDF, atau dokumen Word'));
+    }
+});
 
 // ── Helper: cek apakah user/dokter bisa akses konsultasi ─────────────────────
 const canAccess = (consultation, userId, userRole) => {
@@ -61,7 +70,8 @@ router.get('/my-consultations', auth, async (req, res) => {
         const consultations = await Consultation.find({ userId: req.userId })
             .populate('doctorId', 'name specialization consultationFee rating photo isOnline')
             .populate('paymentId')
-            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate' })
+            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate issuedAt' })
+            // medicalRecord & prescriptionData adalah embedded subdocument, tidak di-populate
             .sort('-createdAt');
         res.json(consultations);
     } catch (err) {
@@ -347,6 +357,14 @@ router.put('/:id/verify-payment', auth, async (req, res) => {
             return res.status(400).json({ message: `Status harus waiting_verification, saat ini: ${consultation.status}` });
         }
 
+        // ── BUGFIX: jangan konfirmasi jika jadwal sudah berakhir ──────────────
+        // (mencegah konfirmasi terlambat yang langsung ditangkap cron sebagai doctor_no_show)
+        if (consultation.scheduledEnd && consultation.scheduledEnd < new Date()) {
+            return res.status(400).json({
+                message: `Tidak bisa mengkonfirmasi — jadwal konsultasi sudah berakhir (${new Date(consultation.scheduledEnd).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB). Batalkan dan minta pasien booking ulang.`
+            });
+        }
+
         consultation.status = 'confirmed';
         consultation.paymentVerified = true;
         consultation.verifiedAt = new Date();
@@ -458,6 +476,7 @@ router.put('/:id/cancel-by-doctor', auth, async (req, res) => {
 // ── Dokter: Start → in_progress ──────────────────────────────────────────────
 router.put('/:id/start', auth, async (req, res) => {
     try {
+        // Ambil dulu untuk pengecekan hak akses & waktu
         const consultation = await Consultation.findById(req.params.id)
             .populate('doctorId', 'userId');
 
@@ -468,39 +487,68 @@ router.put('/:id/start', auth, async (req, res) => {
             return res.status(403).json({ message: 'Hanya dokter yang bersangkutan yang dapat memulai' });
         }
 
-        // Izinkan dari confirmed ATAU in_progress (sudah di-auto-start oleh cron)
-        if (!['confirmed', 'in_progress'].includes(consultation.status)) {
-            return res.status(400).json({ message: `Status harus confirmed atau in_progress, saat ini: ${consultation.status}` });
-        }
-
         // Jika sudah in_progress (auto oleh cron), kembalikan saja
         if (consultation.status === 'in_progress') {
             return res.json({ success: true, message: 'Konsultasi sudah berjalan', consultation });
         }
 
-        consultation.status = 'in_progress';
-        consultation.startTime = new Date();
-        await consultation.save();
+        if (consultation.status !== 'confirmed') {
+            return res.status(400).json({ message: `Status harus confirmed, saat ini: ${consultation.status}` });
+        }
+
+        // ── Cek waktu: boleh start 5 menit sebelum scheduledAt s/d scheduledEnd ──
+        const now = new Date();
+        const EARLY_GRACE_MS = 5 * 60 * 1000; // 5 menit sebelum boleh start
+        if (consultation.scheduledAt) {
+            const earliest = new Date(consultation.scheduledAt.getTime() - EARLY_GRACE_MS);
+            if (now < earliest) {
+                const menit = Math.ceil((earliest - now) / 60000);
+                return res.status(400).json({
+                    message: `Sesi belum bisa dimulai. Tunggu ${menit} menit lagi (jadwal: ${consultation.scheduledAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB)`,
+                    scheduledAt: consultation.scheduledAt,
+                    earliestStart: earliest
+                });
+            }
+            if (consultation.scheduledEnd && now > consultation.scheduledEnd) {
+                return res.status(400).json({ message: 'Waktu konsultasi sudah habis. Sesi tidak bisa dimulai.' });
+            }
+        }
+
+        // ── Atomic update: hanya update jika status masih 'confirmed' ──────────
+        const updated = await Consultation.findOneAndUpdate(
+            { _id: req.params.id, status: 'confirmed' },
+            { $set: { status: 'in_progress', startTime: now } },
+            { new: true }
+        ).populate('doctorId', 'userId');
+
+        if (!updated) {
+            // Status sudah berubah (race condition atau cron mendahului)
+            const fresh = await Consultation.findById(req.params.id);
+            if (fresh?.status === 'in_progress') {
+                return res.json({ success: true, message: 'Konsultasi sudah berjalan', consultation: fresh });
+            }
+            return res.status(409).json({ message: 'Status konsultasi sudah berubah, silakan refresh halaman.' });
+        }
 
         await createNotification({
-            userId: consultation.userId,
+            userId: updated.userId,
             type: 'consultation_started',
             title: 'Konsultasi Dimulai 🩺',
             message: 'Dokter telah memulai sesi konsultasi Anda. Silakan mulai chat.',
-            data: { consultationId: consultation._id },
+            data: { consultationId: updated._id },
             io: req.app.get('io')
         });
 
         // Emit socket real-time
         const io = req.app.get('io');
         if (io) {
-            io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
-                consultationId: consultation._id.toString(),
+            io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                consultationId: updated._id.toString(),
                 status: 'in_progress',
             });
         }
 
-        res.json({ success: true, message: 'Konsultasi dimulai', consultation });
+        res.json({ success: true, message: 'Konsultasi dimulai', consultation: updated });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
@@ -527,31 +575,45 @@ router.put('/:id/end', auth, async (req, res) => {
             m => m.senderId?.toString() === consultation.userId?.toString()
         );
         const finalStatus = userMessages.length === 0 ? 'no_show' : 'completed';
+        const now = new Date();
 
-        consultation.status = finalStatus;
-        consultation.endTime = new Date();
-        await consultation.save();
+        // ── Atomic update ──────────────────────────────────────────────────────
+        const updated = await Consultation.findOneAndUpdate(
+            { _id: req.params.id, status: 'in_progress' },
+            { $set: { status: finalStatus, endTime: now } },
+            { new: true }
+        );
+
+        if (!updated) {
+            return res.status(409).json({ message: 'Status konsultasi sudah berubah, silakan refresh halaman.' });
+        }
 
         await createNotification({
-            userId: consultation.userId,
+            userId: updated.userId,
             type: 'consultation_ended',
             title: finalStatus === 'no_show' ? 'Sesi Berakhir — Tidak Hadir' : 'Konsultasi Selesai ✅',
             message: finalStatus === 'no_show'
                 ? 'Dokter telah mengakhiri sesi namun Anda tidak mengirim pesan. Status: Tidak Hadir.'
                 : 'Konsultasi Anda telah selesai. Silakan beri rating.',
-            data: { consultationId: consultation._id },
+            data: { consultationId: updated._id },
             io: req.app.get('io')
         });
 
         const io = req.app.get('io');
         if (io) {
-            io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
-                consultationId: consultation._id.toString(),
+            io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                consultationId: updated._id.toString(),
                 status        : finalStatus,
             });
+            // Emit event khusus agar frontend tampilkan rating modal
+            if (finalStatus === 'completed') {
+                io.to(`user-${updated.userId}`).emit('show-rating-modal', {
+                    consultationId: updated._id.toString(),
+                });
+            }
         }
 
-        res.json({ success: true, message: `Konsultasi ${finalStatus}`, consultation });
+        res.json({ success: true, message: `Konsultasi ${finalStatus}`, consultation: updated });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
@@ -675,7 +737,6 @@ router.put('/:id/cancel', auth, async (req, res) => {
         const consultation = await Consultation.findById(req.params.id);
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        // User hanya bisa cancel saat pending_payment
         if (req.userRole === 'user') {
             if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
             if (consultation.status !== 'pending_payment') {
@@ -694,49 +755,6 @@ router.put('/:id/cancel', auth, async (req, res) => {
         }
 
         await consultation.save();
-        res.json({ success: true, consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
-});
-
-// ── Admin: Verifikasi pembayaran manual → confirmed/scheduled ─────────────────
-router.put('/:id/mark-paid', auth, async (req, res) => {
-    try {
-        const consultation = await Consultation.findById(req.params.id)
-            .populate('userId', 'name')
-            .populate('doctorId', 'name userId');
-
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Hanya admin' });
-        if (consultation.status !== 'pending_payment') {
-            return res.status(400).json({ message: `Status saat ini: ${consultation.status}` });
-        }
-
-        consultation.paymentVerified = true;
-        consultation.verifiedAt = new Date();
-
-        if (consultation.scheduleType === 'instant') {
-            consultation.status = 'ongoing';
-            consultation.startTime = new Date();
-        } else {
-            consultation.status = 'scheduled';
-        }
-
-        await consultation.save();
-
-        // Notif user
-        await createNotification({
-            userId: consultation.userId._id,
-            type: 'payment_verified',
-            title: 'Pembayaran Terverifikasi',
-            message: consultation.scheduleType === 'instant'
-                ? 'Pembayaran dikonfirmasi, konsultasi Anda dimulai!'
-                : `Pembayaran dikonfirmasi. Konsultasi dijadwalkan pada ${consultation.scheduledAt?.toLocaleString('id-ID') || '-'}`,
-            data: { consultationId: consultation._id, url: `/consultations/${consultation._id}` },
-            io: req.app.get('io')
-        });
-
         res.json({ success: true, consultation });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
@@ -839,7 +857,7 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 5. RESEP DIGITAL (dokter)
+// 5. RESEP DIGITAL TERSTRUKTUR (dokter)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.put('/:id/prescription', auth, doctorAuth, async (req, res) => {
@@ -847,43 +865,287 @@ router.put('/:id/prescription', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ userId: req.userId });
         if (!doctor) return res.status(404).json({ message: 'Data dokter tidak ditemukan' });
 
-        const consultation = await Consultation.findById(req.params.id);
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('userId', 'name');
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
         if (consultation.doctorId.toString() !== doctor._id.toString()) {
             return res.status(403).json({ message: 'Anda bukan dokter konsultasi ini' });
         }
-        if (!['ongoing', 'completed'].includes(consultation.status)) {
+        const allowedStatuses = ['in_progress', 'ongoing', 'completed', 'no_show'];
+        if (!allowedStatuses.includes(consultation.status)) {
             return res.status(400).json({ message: 'Resep hanya bisa dikirim saat konsultasi berlangsung atau selesai' });
         }
 
-        consultation.prescription = req.body.prescription;
+        // Terima format terstruktur (prescriptionData) atau plain text (legacy)
+        if (req.body.medicines && Array.isArray(req.body.medicines)) {
+            // Format terstruktur
+            const count = await require('../models/Consultation').countDocuments({ 'prescriptionData.prescriptionNumber': { $exists: true } });
+            const rxNum = 'RX-' + Date.now().toString().slice(-6) + '-' + (count + 1).toString().padStart(3, '0');
+            const issuedAt  = new Date();
+            const validUntil = new Date(issuedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+            consultation.prescriptionData = {
+                prescriptionNumber: rxNum,
+                issuedAt,
+                validUntil,
+                patientAge:    req.body.patientAge    || '',
+                patientGender: req.body.patientGender || '',
+                patientWeight: req.body.patientWeight || '',
+                medicines:     req.body.medicines,
+                doctorNotes:   req.body.doctorNotes   || '',
+                isUsed:        false,
+            };
+            // Juga update legacy field untuk backward compat
+            consultation.prescription = req.body.medicines.map((m, i) =>
+                `${i + 1}. ${m.name}${m.dose ? ' ' + m.dose : ''} — ${m.frequency || ''} ${m.instructions ? '(' + m.instructions + ')' : ''}`
+            ).join('\n');
+        } else {
+            // Legacy plain text
+            consultation.prescription = req.body.prescription;
+        }
+
         if (req.body.diagnosis) consultation.diagnosis = req.body.diagnosis;
         await consultation.save();
 
-        // Notif user
         await createNotification({
             userId: consultation.userId,
             type: 'prescription_sent',
-            title: 'Resep Digital Dikirim',
-            message: `dr. ${doctor.name} telah mengirimkan resep untuk Anda`,
-            data: { consultationId: consultation._id, url: `/consultations/${consultation._id}` },
+            title: 'Resep Digital Diterbitkan 💊',
+            message: `dr. ${doctor.name} telah menerbitkan resep untuk Anda. Berlaku 7 hari, 1x pembelian.`,
+            data: { consultationId: consultation._id },
             io: req.app.get('io')
         });
 
-        // Emit via socket
         const io = req.app.get('io');
         if (io) {
             io.to(`consultation-${consultation._id}`).emit('prescription-update', {
-                prescription: consultation.prescription,
-                diagnosis: consultation.diagnosis
+                prescription:     consultation.prescription,
+                prescriptionData: consultation.prescriptionData,
+                diagnosis:        consultation.diagnosis
             });
         }
 
-        res.json({ success: true, prescription: consultation.prescription });
+        res.json({ success: true, prescription: consultation.prescription, prescriptionData: consultation.prescriptionData });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
+
+// ── GET /:id/prescription/pdf ─────────────────────────────────────────────────
+router.get('/:id/prescription/pdf', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('userId', 'name')
+            .populate('doctorId', 'name specialization userId');
+
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (!canAccess(consultation, req.userId, req.userRole)) return res.status(403).json({ message: 'Akses ditolak' });
+
+        const rx = consultation.prescriptionData;
+        if (!rx && !consultation.prescription) return res.status(404).json({ message: 'Resep tidak ditemukan' });
+
+        const doc = new PDFDocument({ margin: 50 });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=resep-${rx?.prescriptionNumber || consultation._id}.pdf`);
+        doc.pipe(res);
+
+        // Header
+        doc.fontSize(18).font('Helvetica-Bold').text('RESEP DIGITAL', { align: 'center' });
+        doc.fontSize(11).font('Helvetica').text('Klinik Pratama IPB', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.5);
+
+        // Info resep
+        if (rx) {
+            doc.fontSize(10).text(`Nomor Resep : ${rx.prescriptionNumber || '-'}`);
+            doc.text(`Tanggal     : ${rx.issuedAt ? new Date(rx.issuedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}`);
+            doc.text(`Berlaku s/d : ${rx.validUntil ? new Date(rx.validUntil).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}`);
+        } else {
+            doc.fontSize(10).text(`Tanggal: ${new Date(consultation.createdAt).toLocaleDateString('id-ID')}`);
+        }
+        doc.moveDown(0.5);
+
+        // Info pasien
+        doc.font('Helvetica-Bold').text('Identitas Pasien');
+        doc.font('Helvetica');
+        doc.text(`Nama           : ${consultation.userId.name}`);
+        if (rx?.patientAge)    doc.text(`Umur           : ${rx.patientAge}`);
+        if (rx?.patientGender) doc.text(`Jenis Kelamin  : ${rx.patientGender}`);
+        if (rx?.patientWeight) doc.text(`Berat Badan    : ${rx.patientWeight}`);
+        doc.moveDown(0.5);
+
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.5);
+        doc.font('Helvetica-Bold').fontSize(12).text('R/');
+        doc.font('Helvetica').fontSize(10);
+        doc.moveDown(0.3);
+
+        // Daftar obat
+        if (rx?.medicines?.length > 0) {
+            rx.medicines.forEach((m, i) => {
+                doc.font('Helvetica-Bold').text(`${i + 1}. ${m.name}${m.dose ? ' ' + m.dose : ''}${m.form ? ' ' + m.form : ''}`);
+                doc.font('Helvetica');
+                if (m.frequency)    doc.text(`   Dosis      : ${m.frequency}`);
+                if (m.instructions) doc.text(`   Cara Pakai : ${m.instructions}`);
+                if (m.quantity)     doc.text(`   Jumlah     : ${m.quantity}`);
+                doc.moveDown(0.3);
+            });
+        } else if (consultation.prescription) {
+            doc.text(consultation.prescription);
+        }
+
+        doc.moveDown(0.5);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.5);
+
+        if (rx?.doctorNotes || consultation.diagnosis) {
+            doc.font('Helvetica-Bold').text('Catatan Dokter:');
+            doc.font('Helvetica');
+            if (consultation.diagnosis) doc.text(`Diagnosis: ${consultation.diagnosis}`);
+            if (rx?.doctorNotes) doc.text(rx.doctorNotes);
+            doc.moveDown(0.5);
+        }
+
+        // TTD dokter
+        doc.moveDown(1);
+        doc.text(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { align: 'right' });
+        doc.moveDown(2.5);
+        doc.text(`dr. ${consultation.doctorId.name}`, { align: 'right' });
+        if (consultation.doctorId.specialization) {
+            doc.fontSize(9).text(consultation.doctorId.specialization, { align: 'right' });
+        }
+
+        doc.moveDown(1);
+        doc.fontSize(8).fillColor('#666').text('*Resep berlaku 7 hari dan hanya dapat digunakan 1x pembelian.', { align: 'center' });
+
+        doc.end();
+    } catch (err) {
+        res.status(500).json({ message: 'Gagal generate PDF resep', error: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 5b. REKAM MEDIS (SOAP) — dokter isi setelah/saat konsultasi
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.put('/:id/medical-record', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ message: 'Data dokter tidak ditemukan' });
+
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('userId', 'name');
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.doctorId.toString() !== doctor._id.toString()) {
+            return res.status(403).json({ message: 'Anda bukan dokter konsultasi ini' });
+        }
+        const allowedStatuses = ['in_progress', 'ongoing', 'completed', 'no_show'];
+        if (!allowedStatuses.includes(consultation.status)) {
+            return res.status(400).json({ message: 'Rekam medis hanya bisa diisi saat/setelah konsultasi berlangsung' });
+        }
+
+        const { objectiveFindings, assessment, plan, doctorNotes, markComplete } = req.body;
+
+        consultation.medicalRecord = {
+            objectiveFindings: objectiveFindings || '',
+            assessment:        assessment       || '',
+            plan:              plan             || '',
+            doctorNotes:       doctorNotes      || '',
+            isCompleted:       markComplete === true || markComplete === 'true',
+            completedAt:       (markComplete === true || markComplete === 'true') ? new Date() : consultation.medicalRecord?.completedAt,
+        };
+
+        // Sync diagnosis ke field utama
+        if (assessment) consultation.diagnosis = assessment;
+
+        await consultation.save();
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`consultation-${consultation._id}`).emit('medical-record-update', {
+                medicalRecord: consultation.medicalRecord
+            });
+        }
+
+        res.json({ success: true, medicalRecord: consultation.medicalRecord });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── GET /:id/medical-record/pdf ───────────────────────────────────────────────
+router.get('/:id/medical-record/pdf', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('userId', 'name email')
+            .populate('doctorId', 'name specialization userId');
+
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (!canAccess(consultation, req.userId, req.userRole)) return res.status(403).json({ message: 'Akses ditolak' });
+
+        const mr = consultation.medicalRecord;
+        if (!mr) return res.status(404).json({ message: 'Rekam medis belum dibuat' });
+
+        const doc = new PDFDocument({ margin: 50 });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=rekam-medis-${consultation._id}.pdf`);
+        doc.pipe(res);
+
+        // Header
+        doc.fontSize(18).font('Helvetica-Bold').text('REKAM MEDIS', { align: 'center' });
+        doc.fontSize(11).font('Helvetica').text('Klinik Pratama IPB', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.5);
+
+        const tgl = new Date(consultation.endTime || consultation.scheduledAt || consultation.createdAt)
+            .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+        doc.fontSize(10);
+        doc.text(`Pasien         : ${consultation.userId.name}`);
+        doc.text(`ID Pasien      : ${consultation.userId._id.toString().slice(-8).toUpperCase()}`);
+        doc.text(`Tanggal        : ${tgl}`);
+        doc.text(`Dokter         : dr. ${consultation.doctorId.name}`);
+        if (consultation.doctorId.specialization) {
+            doc.text(`Spesialisasi   : ${consultation.doctorId.specialization}`);
+        }
+        doc.moveDown(0.5);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.5);
+
+        // SOAP
+        const section = (label, content) => {
+            doc.font('Helvetica-Bold').text(label);
+            doc.font('Helvetica').text(content || '-');
+            doc.moveDown(0.5);
+        };
+
+        section('S — Keluhan (Subjective)', consultation.symptoms || '-');
+        if (consultation.medicalHistory) {
+            doc.font('Helvetica-Bold').text('Riwayat Penyakit');
+            doc.font('Helvetica').text(consultation.medicalHistory);
+            doc.moveDown(0.5);
+        }
+        section('O — Pemeriksaan (Objective)', mr.objectiveFindings);
+        section('A — Diagnosis (Assessment)',  mr.assessment);
+        section('P — Rencana (Plan)',          mr.plan);
+        if (mr.doctorNotes) section('Catatan Dokter', mr.doctorNotes);
+
+        doc.moveDown(1);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.5);
+        doc.text(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { align: 'right' });
+        doc.moveDown(2.5);
+        doc.font('Helvetica-Bold').text(`dr. ${consultation.doctorId.name}`, { align: 'right' });
+        doc.font('Helvetica').fontSize(9).text(consultation.doctorId.specialization || '', { align: 'right' });
+
+        doc.end();
+    } catch (err) {
+        res.status(500).json({ message: 'Gagal generate PDF rekam medis', error: err.message });
+    }
+});
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 6. RATING (pasien, setelah completed)
@@ -928,7 +1190,7 @@ router.post('/:id/rating', auth, async (req, res) => {
 
 router.post('/:id/sick-letter', auth, doctorAuth, async (req, res) => {
     try {
-        const { diagnosis, restDays, notes } = req.body;
+        const { diagnosis, restDays, notes, patientAge, patientGender, patientWeight } = req.body;
         if (!diagnosis || !restDays) return res.status(400).json({ message: 'Diagnosis dan hari istirahat wajib diisi' });
 
         const consultation = await Consultation.findById(req.params.id)
@@ -936,7 +1198,7 @@ router.post('/:id/sick-letter', auth, doctorAuth, async (req, res) => {
             .populate('doctorId', 'name specialization consultationFee userId');
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (!['ongoing', 'completed'].includes(consultation.status)) return res.status(400).json({ message: 'Konsultasi harus ongoing atau completed' });
+        if (!['in_progress', 'ongoing', 'completed', 'no_show'].includes(consultation.status)) return res.status(400).json({ message: 'Konsultasi harus dalam status berlangsung atau selesai' });
 
         const doctor = await Doctor.findOne({ userId: req.userId });
         if (!doctor || consultation.doctorId._id.toString() !== doctor._id.toString()) {
@@ -956,6 +1218,9 @@ router.post('/:id/sick-letter', auth, doctorAuth, async (req, res) => {
             doctorId: doctor._id,
             diagnosis,
             notes: notes || '',
+            patientAge: patientAge || '',
+            patientGender: patientGender || '',
+            patientWeight: patientWeight || '',
             startDate,
             endDate,
             status: 'draft'
@@ -1019,7 +1284,7 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id)
             .populate('userId', 'name')
-            .populate('doctorId', 'name userId')
+            .populate('doctorId', 'name specialization userId')
             .populate('sickLetter');
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
@@ -1032,30 +1297,84 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         const sickLetter = consultation.sickLetter;
         if (!sickLetter) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
 
-        const doc = new PDFDocument();
+        const doc = new PDFDocument({ margin: 70, size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=sick-letter-${sickLetter.letterNumber || 'draft'}.pdf`);
         doc.pipe(res);
 
-        doc.fontSize(18).text('SURAT KETERANGAN SAKIT', { align: 'center' });
-        doc.moveDown();
-        doc.fontSize(11).text(`Nomor: ${sickLetter.letterNumber || 'DRAFT'}`, { align: 'center' });
+        const tglPemeriksaan = new Date(consultation.scheduledAt || consultation.createdAt)
+            .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglBogor = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+        const days = Math.ceil((new Date(sickLetter.endDate) - new Date(sickLetter.startDate)) / (1000 * 60 * 60 * 24)) + 1;
+        const daysWord = ['nol','satu','dua','tiga','empat','lima','enam','tujuh','delapan','sembilan','sepuluh'][days] || days.toString();
+        const tglMulai = new Date(sickLetter.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglSelesai = new Date(sickLetter.endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+        // ── Header ────────────────────────────────────────────────────────────────
+        doc.fontSize(16).font('Helvetica-Bold').text('SURAT KETERANGAN SAKIT', { align: 'center' });
+        doc.fontSize(11).font('Helvetica').text('Klinik Pratama IPB', { align: 'center' });
+        doc.moveDown(0.3);
+        doc.fontSize(10).text(`Nomor : ${sickLetter.letterNumber || 'DRAFT'}`, { align: 'center' });
+        doc.moveDown(0.8);
+        doc.moveTo(70, doc.y).lineTo(525, doc.y).strokeColor('#cccccc').stroke();
+        doc.moveDown(0.8);
+
+        // ── Body ─────────────────────────────────────────────────────────────────
+        doc.font('Helvetica').fontSize(11);
+        doc.text('Yang bertanda tangan di bawah ini menerangkan bahwa:');
+        doc.moveDown(0.8);
+
+        // Identitas pasien (format tabel sederhana)
+        const rowH = 18;
+        const col1 = 70, col2 = 170;
+        const rows = [
+            ['Nama Pasien', `: ${consultation.userId.name}`],
+            ...(sickLetter.patientAge ? [['Umur', `: ${sickLetter.patientAge}`]] : []),
+            ...(sickLetter.patientGender ? [['Jenis Kelamin', `: ${sickLetter.patientGender}`]] : []),
+        ];
+        rows.forEach(([k, v]) => {
+            doc.text(k, col1, doc.y, { continued: true, width: col2 - col1 });
+            doc.text(v);
+            doc.moveDown(0.2);
+        });
+
+        doc.moveDown(0.8);
+        doc.text('Telah menjalani pemeriksaan pada:');
+        doc.moveDown(0.4);
+        doc.text('Tanggal', col1, doc.y, { continued: true, width: col2 - col1 });
+        doc.text(`: ${tglPemeriksaan}`);
+        doc.moveDown(0.8);
+
+        doc.text(`Berdasarkan hasil pemeriksaan, yang bersangkutan didiagnosis mengalami:`);
+        doc.moveDown(0.4);
+        doc.font('Helvetica-Bold').text(`       ${sickLetter.diagnosis}`);
+        doc.font('Helvetica').moveDown(0.8);
+
+        doc.text('Sehubungan dengan hal tersebut, pasien disarankan untuk beristirahat selama:');
+        doc.moveDown(0.4);
+        doc.font('Helvetica-Bold').text(`       ${days} (${daysWord}) hari`);
+        doc.font('Helvetica').text(`terhitung mulai tanggal ${tglMulai} sampai dengan ${tglSelesai}.`);
+        doc.moveDown(0.8);
+
+        if (sickLetter.notes) {
+            doc.text(`Catatan: ${sickLetter.notes}`);
+            doc.moveDown(0.8);
+        }
+
+        doc.text('Demikian surat keterangan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.');
         doc.moveDown(2);
-        doc.text(`Yang bertanda tangan di bawah ini menerangkan bahwa:`);
-        doc.moveDown();
-        doc.text(`Nama   : ${consultation.userId.name}`);
-        doc.text(`Tanggal Konsultasi: ${new Date(consultation.createdAt).toLocaleDateString('id-ID')}`);
-        doc.text(`Diagnosis: ${sickLetter.diagnosis}`);
-        doc.moveDown();
-        const days = Math.ceil((sickLetter.endDate - sickLetter.startDate) / (1000 * 60 * 60 * 24)) + 1;
-        doc.text(`Dianjurkan istirahat selama ${days} hari (${sickLetter.startDate.toLocaleDateString('id-ID')} s/d ${sickLetter.endDate.toLocaleDateString('id-ID')}).`);
-        if (sickLetter.notes) { doc.moveDown(); doc.text(`Catatan: ${sickLetter.notes}`); }
+
+        // ── Tanda tangan ─────────────────────────────────────────────────────────
+        doc.text(`Bogor, ${tglBogor}`, { align: 'right' });
+        doc.moveDown(0.4);
+        doc.text('Dokter', { align: 'right' });
         doc.moveDown(3);
-        doc.text(`Bogor, ${new Date().toLocaleDateString('id-ID')}`);
-        doc.moveDown();
-        doc.text(`Dokter,`);
-        doc.moveDown(3);
-        doc.text(`dr. ${consultation.doctorId.name}`);
+        doc.font('Helvetica-Bold').text(`dr. ${consultation.doctorId.name}`, { align: 'right' });
+        if (consultation.doctorId.specialization) {
+            doc.font('Helvetica').fontSize(9).text(consultation.doctorId.specialization, { align: 'right' });
+        }
+
         doc.end();
     } catch (err) {
         res.status(500).json({ message: 'Gagal generate PDF', error: err.message });
@@ -1072,7 +1391,7 @@ router.get('/:id', auth, async (req, res) => {
             .populate('userId', 'name email')
             .populate('doctorId', 'name specialization photo isOnline userId')
             .populate('paymentId')
-            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate sickLeaveDays notes' });
+            .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate sickLeaveDays notes issuedAt' });
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 

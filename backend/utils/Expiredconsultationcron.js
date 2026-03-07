@@ -142,8 +142,7 @@ const checkDoctorNoShow = async () => {
     }
 };
 
-// ── 4. User no show (setelah in_progress berakhir tanpa pesan dari user) ──────
-// Ini untuk kasus dokter tidak klik End setelah scheduledEnd
+// ── 4. User no show / auto end (setelah in_progress berakhir tanpa klik End) ──
 const checkUserNoShow = async () => {
     const now = new Date();
     const gracePeriodMs = 15 * 60 * 1000;
@@ -161,54 +160,85 @@ const checkUserNoShow = async () => {
         );
         const finalStatus = userMessages.length === 0 ? 'no_show' : 'completed';
 
-        c.status  = finalStatus;
-        c.endTime = c.scheduledEnd;
-        await c.save();
+        // Atomic: hanya update jika masih in_progress
+        const updated = await Consultation.findOneAndUpdate(
+            { _id: c._id, status: 'in_progress' },
+            { $set: { status: finalStatus, endTime: c.scheduledEnd } },
+            { new: true }
+        );
+        if (!updated) continue;
 
         await createNotification({
-            userId  : c.userId,
+            userId  : updated.userId,
             type    : 'consultation_ended',
             title   : finalStatus === 'no_show' ? 'Sesi Berakhir — Tidak Hadir' : 'Konsultasi Selesai ✅',
             message : finalStatus === 'no_show'
                 ? 'Sesi konsultasi telah berakhir. Anda tercatat tidak hadir.'
-                : 'Sesi konsultasi telah selesai secara otomatis.',
-            data    : { consultationId: c._id },
+                : 'Sesi konsultasi telah selesai secara otomatis. Silakan beri rating.',
+            data    : { consultationId: updated._id },
             io      : _io,
         });
 
         if (_io) {
-            _io.to(`user-${c.userId}`).emit('consultation-status-update', {
-                consultationId: c._id.toString(),
+            _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                consultationId: updated._id.toString(),
                 status        : finalStatus,
             });
+            // Trigger rating modal untuk user
+            if (finalStatus === 'completed') {
+                _io.to(`user-${updated.userId}`).emit('show-rating-modal', {
+                    consultationId: updated._id.toString(),
+                });
+            }
         }
 
-        console.log(`[CRON] Consultation ${c._id} → ${finalStatus} (auto-close, ${fmtWIB(now)})`);
+        console.log(`[CRON] Consultation ${updated._id} → ${finalStatus} (auto-close, ${fmtWIB(now)})`);
     }
 };
 
 // ── Trigger refund placeholder ───────────────────────────────────────────────
 const triggerRefund = async (consultation, io) => {
     try {
-        // Placeholder: set status refunded
-        // Ganti dengan Xendit Refund API saat sudah punya akses
-        consultation.status       = 'refunded';
-        consultation.cancelReason = (consultation.cancelReason || '') + ' — Refund diproses admin';
+        const User = require('../models/User');
+
+        // Set refund_requested (bukan refunded) karena belum ada Xendit Refund API
+        // Admin akan memproses secara manual
+        consultation.status = 'refund_requested';
+        consultation.refund = {
+            bankName: 'Proses Admin',
+            accountNumber: '-',
+            accountName: '-',
+            requestedAt: new Date(),
+            notes: 'Auto-refund: dokter tidak hadir pada jadwal konsultasi'
+        };
         await consultation.save();
 
         await createNotification({
             userId  : consultation.userId,
-            type    : 'payment_verified',
-            title   : 'Refund Dijadwalkan 💰',
+            type    : 'doctor_no_show',
+            title   : 'Refund Otomatis Dijadwalkan 💰',
             message : 'Dokter tidak hadir pada jadwal konsultasi Anda. Refund akan diproses oleh admin dalam 3-5 hari kerja.',
             data    : { consultationId: consultation._id },
             io,
         });
 
+        // Notif admin
+        const admins = await User.find({ role: 'admin' });
+        for (const admin of admins) {
+            await createNotification({
+                userId: admin._id,
+                type: 'refund_requested',
+                title: 'Refund Otomatis: Dokter Tidak Hadir',
+                message: `Konsultasi perlu diproses refundnya (dokter tidak hadir).`,
+                data: { consultationId: consultation._id },
+                io
+            });
+        }
+
         if (io) {
             io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
                 consultationId: consultation._id.toString(),
-                status        : 'refunded',
+                status        : 'refund_requested',
             });
         }
     } catch (err) {

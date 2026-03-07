@@ -14,100 +14,105 @@ const refundSchema = new mongoose.Schema({
     bankName:      { type: String },
     accountNumber: { type: String },
     accountName:   { type: String },
-    proofUrl:      { type: String },   // bukti pembayaran asli (untuk cross-check)
+    proofUrl:      { type: String },
     requestedAt:   { type: Date },
     processedAt:   { type: Date },
-    failReason:    { type: String },   // alasan admin tolak refund
-    adminId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    failReason:    { type: String },
+    adminId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    notes:         { type: String }
 });
+
+// Obat dalam resep
+const medicineItemSchema = new mongoose.Schema({
+    name:         { type: String, required: true },
+    dose:         String,   // misal "500 mg"
+    form:         String,   // tablet/kapsul/sirup
+    frequency:    String,   // "3x sehari"
+    instructions: String,   // "sesudah makan"
+    quantity:     String,   // "10 tablet"
+}, { _id: false });
+
+// Resep digital terstruktur
+const prescriptionDataSchema = new mongoose.Schema({
+    prescriptionNumber: String,
+    issuedAt:           Date,
+    validUntil:         Date,   // berlaku 7 hari
+    patientAge:         String,
+    patientGender:      String,
+    patientWeight:      String,
+    medicines:          [medicineItemSchema],
+    doctorNotes:        String,
+    isUsed:             { type: Boolean, default: false }, // 1x pembelian
+    usedAt:             Date,
+}, { _id: false });
+
+// Rekam Medis (SOAP)
+const medicalRecordSchema = new mongoose.Schema({
+    // S = Subjective (keluhan — sudah ada di consultation.symptoms)
+    // O = Objective
+    objectiveFindings:   String,   // pemeriksaan fisik / temuan objektif
+    // A = Assessment
+    assessment:          String,   // diagnosis
+    // P = Plan
+    plan:                String,   // rencana terapi
+    doctorNotes:         String,   // catatan tambahan dokter
+    isCompleted:         { type: Boolean, default: false },
+    completedAt:         Date,
+}, { _id: false });
 
 const consultationSchema = new mongoose.Schema({
     userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User',   required: true },
     doctorId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
-    paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'ManualPayment' },
-    sickLetter:{ type: mongoose.Schema.Types.ObjectId, ref: 'SickLetter' },
+    paymentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'ManualPayment' },
+    sickLetter: { type: mongoose.Schema.Types.ObjectId, ref: 'SickLetter' },
+    // medicalRecord & prescriptionData disimpan sebagai embedded subdocument (lihat bawah)
+    // prescriptionDoc & medicalRecord sebagai ObjectId REF dihapus untuk menghindari schema conflict
 
-    // Tipe konsultasi (voice_call sudah dihapus)
-    consultationType: {
-        type: String,
-        enum: ['chat', 'video_call'],
-        default: 'chat'
-    },
+    consultationType: { type: String, enum: ['chat', 'video_call'], default: 'chat' },
+    scheduleType:     { type: String, enum: ['instant', 'scheduled'], default: 'scheduled' },
 
-    // Slot terjadwal (selalu scheduled, instant tidak lagi dipakai untuk konsultasi online)
-    scheduleType: {
-        type: String,
-        enum: ['instant', 'scheduled'],
-        default: 'scheduled'
-    },
-
-    // Jadwal slot (WIB disimpan sebagai UTC di MongoDB)
-    scheduledAt:    Date,   // waktu mulai slot
-    scheduledEnd:   Date,   // waktu selesai slot (scheduledAt + 30 menit)
-
-    // Lock slot: slot di-lock 15 mnt sejak pending_payment
+    scheduledAt:     Date,
+    scheduledEnd:    Date,
     slotLockExpires: Date,
 
-    // ── Status ────────────────────────────────────────────────────────────────
-    // pending_payment  → user pilih slot, belum bayar (slot terkunci 15 mnt)
-    // waiting_verification → user sudah upload bukti, menunggu admin
-    // confirmed        → admin verifikasi bayar
-    // in_progress      → dokter klik Start
-    // completed        → dokter klik End
-    // no_show          → dokter End tapi user tidak merespons
-    // doctor_no_show   → dokter tidak klik Start 15 mnt setelah jam mulai
-    // cancelled_by_doctor → admin/dokter batalkan setelah confirmed
-    // expired          → tidak bayar dalam 15 menit
-    // refund_requested → user ajukan refund setelah cancelled_by_doctor
-    // refunded         → admin sudah transfer refund
-    // refund_failed    → admin tolak refund
     status: {
         type: String,
         enum: [
-            'pending_payment',
-            'waiting_verification',
-            'confirmed',
-            'in_progress',
-            'completed',
-            'no_show',
-            'doctor_no_show',
-            'cancelled_by_doctor',
-            'expired',
-            'refund_requested',
-            'refunded',
-            'refund_failed',
-            // legacy (tetap ada agar tidak error pada data lama)
+            'pending_payment', 'waiting_verification', 'confirmed',
+            'in_progress', 'completed', 'no_show', 'doctor_no_show',
+            'cancelled_by_doctor', 'expired', 'refund_requested',
+            'refunded', 'refund_failed',
+            // legacy
             'draft', 'paid', 'scheduled', 'ongoing', 'cancelled', 'rejected_payment'
         ],
         default: 'pending_payment'
     },
 
-    // Deadline bayar 15 menit (= slotLockExpires)
     paymentDeadline: Date,
+    symptoms:        String,
+    medicalHistory:  String,
+    attachmentUrls:  [String],
 
-    // ── Keluhan ───────────────────────────────────────────────────────────────
-    symptoms:       String,
-    medicalHistory: String,
-    attachmentUrls: [String],
+    // ── Hasil Konsultasi ──────────────────────────────────────────
+    diagnosis:        String,      // legacy single string
+    prescription:     String,      // legacy single string
 
-    // ── Hasil Konsultasi ──────────────────────────────────────────────────────
-    diagnosis:    String,
-    prescription: String,
+    // ── Rekam Medis (SOAP) ────────────────────────────────────────
+    medicalRecord: medicalRecordSchema,
 
-    // ── Rating ───────────────────────────────────────────────────────────────
+    // ── Resep Digital Terstruktur ─────────────────────────────────
+    prescriptionData: prescriptionDataSchema,
+
+    // ── Rating ────────────────────────────────────────────────────
     rating:        { type: Number, min: 1, max: 5 },
     ratingComment: String,
     ratedAt:       Date,
 
-    // ── Waktu sesi ────────────────────────────────────────────────────────────
     startTime: Date,
     endTime:   Date,
+    messages:  [messageSchema],
 
-    // ── Chat ─────────────────────────────────────────────────────────────────
-    messages: [messageSchema],
-
-    // ── Pembayaran ────────────────────────────────────────────────────────────
-    paymentProofUrl:  String,    // bukti transfer dari user
+    paymentProofUrl:  String,
     transferDate:     Date,
     paymentVerified:  { type: Boolean, default: false },
     verifiedAt:       Date,
@@ -115,17 +120,14 @@ const consultationSchema = new mongoose.Schema({
     rejectedAt:       Date,
     rejectionReason:  String,
 
-    // ── Xendit ───────────────────────────────────────────────────────────────
-    xenditInvoiceId:  { type: String },   // Xendit invoice ID (mis. "inv_xxx")
-    xenditExternalId: { type: String },   // external_id yang kita buat
-    xenditRefundId:   { type: String },   // Xendit refund ID setelah refund diproses
-    xenditPaymentMethod: { type: String },// metode bayar yang dipakai user (VA/OVO/dll)
-    paidAt:           { type: Date },     // waktu pembayaran dikonfirmasi Xendit
+    xenditInvoiceId:     { type: String },
+    xenditExternalId:    { type: String },
+    xenditRefundId:      { type: String },
+    xenditPaymentMethod: { type: String },
+    paidAt:              { type: Date },
 
-    // ── Refund ────────────────────────────────────────────────────────────────
     refund: refundSchema,
 
-    // ── Cancel ───────────────────────────────────────────────────────────────
     cancelledAt:  Date,
     cancelledBy:  { type: String, enum: ['user', 'doctor', 'admin', 'system'] },
     cancelReason: String,
@@ -136,6 +138,6 @@ const consultationSchema = new mongoose.Schema({
 consultationSchema.index({ userId: 1, createdAt: -1 });
 consultationSchema.index({ doctorId: 1, status: 1 });
 consultationSchema.index({ status: 1, paymentDeadline: 1 });
-consultationSchema.index({ doctorId: 1, scheduledAt: 1, status: 1 }); // untuk cek race condition slot
+consultationSchema.index({ doctorId: 1, scheduledAt: 1, status: 1 });
 
 module.exports = mongoose.model('Consultation', consultationSchema);

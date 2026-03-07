@@ -875,7 +875,7 @@ const Consultations = () => {
     } catch { toast.error('Gagal mengunduh surat sakit'); }
   };
 
-  const active = consultations.filter(c => ['pending_payment', 'confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(c.status));
+  const active = consultations.filter(c => ['pending_payment', 'waiting_verification', 'confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(c.status));
   const needsAction = consultations.filter(c => ['cancelled_by_doctor', 'doctor_no_show', 'refund_requested', 'refund_failed'].includes(c.status));
   const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show', 'refunded'].includes(c.status));
 

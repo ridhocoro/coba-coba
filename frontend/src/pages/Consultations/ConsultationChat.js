@@ -66,45 +66,170 @@ const CountdownBanner = ({ scheduledAt }) => {
 };
 
 // ── Prescription Modal ────────────────────────────────────────────
-const PrescriptionModal = ({ value, onClose, onSave, isDoctor }) => {
-  const [text, setText] = useState(value || '');
-  const [diagnosis, setDiagnosis] = useState('');
+const EMPTY_MEDICINE = () => ({ name: '', dose: '', form: '', frequency: '', instructions: '', quantity: '' });
+
+const PrescriptionModal = ({ consultation, onClose, onSave, isDoctor }) => {
+  const rx = consultation?.prescriptionData;
+  const [medicines, setMedicines] = useState(
+    rx?.medicines?.length > 0 ? rx.medicines : [EMPTY_MEDICINE()]
+  );
+  const [patientAge,    setPatientAge]    = useState(rx?.patientAge    || '');
+  const [patientGender, setPatientGender] = useState(rx?.patientGender || '');
+  const [patientWeight, setPatientWeight] = useState(rx?.patientWeight || '');
+  const [doctorNotes,   setDoctorNotes]   = useState(rx?.doctorNotes   || '');
   const [saving, setSaving] = useState(false);
-  const handleSave = async () => { setSaving(true); await onSave(text, diagnosis); setSaving(false); };
+
+  const addMed    = () => setMedicines(m => [...m, EMPTY_MEDICINE()]);
+  const removeMed = (i) => setMedicines(m => m.filter((_, idx) => idx !== i));
+  const updateMed = (i, key, val) => setMedicines(m => m.map((med, idx) => idx === i ? { ...med, [key]: val } : med));
+
+  const handleSave = async () => {
+    const validMeds = medicines.filter(m => m.name.trim());
+    if (!validMeds.length) return;
+    setSaving(true);
+    await onSave({ medicines: validMeds, patientAge, patientGender, patientWeight, doctorNotes });
+    setSaving(false);
+  };
+
+  const inp = { width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: '7px 10px', color: '#e6edf3', fontSize: 13 };
+
+  if (!isDoctor) {
+    // User: tampilkan resep terstruktur
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+        <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0d1117', zIndex: 1 }}>
+            <span style={{ color: '#e6edf3', fontWeight: 700 }}>💊 Resep Digital</span>
+            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 22, cursor: 'pointer' }}>×</button>
+          </div>
+          <div style={{ padding: 20 }}>
+            {rx ? (
+              <>
+                <div style={{ background: '#161b22', borderRadius: 10, padding: '12px 16px', marginBottom: 14 }}>
+                  <div style={{ color: '#8b949e', fontSize: 11, marginBottom: 4 }}>Nomor Resep</div>
+                  <div style={{ color: '#58a6ff', fontWeight: 700, fontSize: 15 }}>{rx.prescriptionNumber}</div>
+                  <div style={{ color: '#8b949e', fontSize: 11, marginTop: 6 }}>
+                    Tanggal: {rx.issuedAt ? new Date(rx.issuedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'} &nbsp;|&nbsp;
+                    Berlaku s/d: {rx.validUntil ? new Date(rx.validUntil).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', marginBottom: 6 }}>Identitas Pasien</div>
+                  {[['Nama', consultation?.userId?.name || '-'], ['Umur', rx.patientAge || '-'], ['Jenis Kelamin', rx.patientGender || '-'], ['Berat Badan', rx.patientWeight || '-']].map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', gap: 8, marginBottom: 3, fontSize: 13 }}>
+                      <span style={{ color: '#8b949e', width: 110 }}>{k}</span>
+                      <span style={{ color: '#c9d1d9' }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', marginBottom: 6 }}>R/ Daftar Obat</div>
+                  {rx.medicines?.map((m, i) => (
+                    <div key={i} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                      <div style={{ color: '#3fb950', fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{i + 1}. {m.name}{m.dose ? ' ' + m.dose : ''}{m.form ? ' ' + m.form : ''}</div>
+                      {m.frequency    && <div style={{ color: '#c9d1d9', fontSize: 12 }}>Dosis&nbsp;&nbsp;&nbsp;&nbsp;: {m.frequency}</div>}
+                      {m.instructions && <div style={{ color: '#c9d1d9', fontSize: 12 }}>Cara pakai : {m.instructions}</div>}
+                      {m.quantity     && <div style={{ color: '#c9d1d9', fontSize: 12 }}>Jumlah&nbsp;&nbsp;: {m.quantity}</div>}
+                    </div>
+                  ))}
+                </div>
+                {rx.doctorNotes && (
+                  <div style={{ background: '#0a3d1e', border: '1px solid #2ea04330', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                    <div style={{ color: '#8b949e', fontSize: 11, marginBottom: 4 }}>Catatan Dokter</div>
+                    <div style={{ color: '#c9d1d9', fontSize: 13 }}>{rx.doctorNotes}</div>
+                  </div>
+                )}
+                <div style={{ background: '#161b22', borderRadius: 8, padding: '8px 12px', fontSize: 11, color: '#8b949e', textAlign: 'center', marginBottom: 14 }}>
+                  *Resep berlaku 7 hari dan hanya dapat digunakan 1x pembelian
+                </div>
+              </>
+            ) : (
+              <div style={{ color: '#c9d1d9', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 13, background: '#161b22', borderRadius: 8, padding: 14 }}>
+                {consultation?.prescription || 'Belum ada resep'}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Dokter: form isi resep terstruktur
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 500 }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: '#e6edf3', fontWeight: 700 }}>💊 {isDoctor ? 'Tulis Resep Digital' : 'Resep Dokter'}</span>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 20, cursor: 'pointer' }}>×</button>
+    <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 600, maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0d1117', zIndex: 1 }}>
+          <span style={{ color: '#e6edf3', fontWeight: 700 }}>💊 Tulis Resep Digital</span>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 22, cursor: 'pointer' }}>×</button>
         </div>
         <div style={{ padding: 20 }}>
-          {isDoctor ? (
-            <>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>Diagnosis</label>
-                <input value={diagnosis} onChange={e => setDiagnosis(e.target.value)} placeholder="Contoh: ISPA, Demam akut..."
-                  style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14 }} />
+          {/* Identitas pasien */}
+          <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', marginBottom: 10 }}>Identitas Pasien</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 18 }}>
+            {[['Umur', patientAge, setPatientAge, 'Contoh: 25 tahun'], ['Jenis Kelamin', patientGender, setPatientGender, 'Laki-laki / Perempuan'], ['Berat Badan', patientWeight, setPatientWeight, 'Contoh: 60 kg']].map(([label, val, setter, ph]) => (
+              <div key={label}>
+                <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 4 }}>{label}</label>
+                <input value={val} onChange={e => setter(e.target.value)} placeholder={ph} style={inp} />
               </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>Resep</label>
-                <textarea value={text} rows={6} onChange={e => setText(e.target.value)}
-                  placeholder={"Contoh:\n1. Paracetamol 500mg — 3×1 sehari\n2. Vitamin C — 1×1"}
-                  style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14, resize: 'vertical', fontFamily: 'monospace' }} />
+            ))}
+          </div>
+
+          {/* Daftar obat */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>R/ Daftar Obat</div>
+            <button onClick={addMed} style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: 6, padding: '4px 12px', color: '#58a6ff', fontSize: 12, cursor: 'pointer' }}>+ Tambah Obat</button>
+          </div>
+
+          {medicines.map((m, i) => (
+            <div key={i} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 14, marginBottom: 10, position: 'relative' }}>
+              <div style={{ color: '#58a6ff', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Obat {i + 1}</div>
+              {medicines.length > 1 && (
+                <button onClick={() => removeMed(i)} style={{ position: 'absolute', top: 10, right: 10, background: 'transparent', border: 'none', color: '#f85149', fontSize: 16, cursor: 'pointer' }}>×</button>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 3 }}>Nama Obat *</label>
+                  <input value={m.name} onChange={e => updateMed(i, 'name', e.target.value)} placeholder="Contoh: Paracetamol" style={inp} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 3 }}>Dosis</label>
+                  <input value={m.dose} onChange={e => updateMed(i, 'dose', e.target.value)} placeholder="Contoh: 500 mg" style={inp} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 3 }}>Bentuk Sediaan</label>
+                  <input value={m.form} onChange={e => updateMed(i, 'form', e.target.value)} placeholder="tablet / kapsul / sirup" style={inp} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 3 }}>Aturan Pakai</label>
+                  <input value={m.frequency} onChange={e => updateMed(i, 'frequency', e.target.value)} placeholder="Contoh: 3×1 sehari" style={inp} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 3 }}>Cara Pakai</label>
+                  <input value={m.instructions} onChange={e => updateMed(i, 'instructions', e.target.value)} placeholder="Sesudah / Sebelum makan" style={inp} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 3 }}>Jumlah</label>
+                  <input value={m.quantity} onChange={e => updateMed(i, 'quantity', e.target.value)} placeholder="Contoh: 10 tablet" style={inp} />
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
-                <button onClick={handleSave} disabled={!text.trim() || saving}
-                  style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#1a7f37', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!text.trim() || saving) ? 0.5 : 1 }}>
-                  {saving ? 'Menyimpan...' : '✓ Kirim Resep'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div style={{ background: '#161b22', borderRadius: 10, padding: 16, whiteSpace: 'pre-wrap', color: '#3fb950', fontFamily: 'monospace', fontSize: 14 }}>
-              {value || 'Belum ada resep'}
             </div>
-          )}
+          ))}
+
+          {/* Catatan dokter */}
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 6 }}>Catatan Dokter</label>
+            <textarea value={doctorNotes} rows={3} onChange={e => setDoctorNotes(e.target.value)}
+              placeholder="Anjuran, larangan, atau catatan tambahan untuk pasien..."
+              style={{ ...inp, resize: 'vertical' }} />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
+            <button onClick={handleSave} disabled={!medicines.some(m => m.name.trim()) || saving}
+              style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#1a7f37', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!medicines.some(m => m.name.trim()) || saving) ? 0.5 : 1 }}>
+              {saving ? 'Menyimpan...' : '✓ Kirim Resep ke Pasien'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -113,35 +238,53 @@ const PrescriptionModal = ({ value, onClose, onSave, isDoctor }) => {
 
 // ── Sick Letter Modal ─────────────────────────────────────────────
 const SickLetterModal = ({ onClose, onSave }) => {
-  const [form, setForm] = useState({ diagnosis: '', restDays: 3, notes: '' });
+  const [form, setForm] = useState({ diagnosis: '', restDays: 3, notes: '', patientAge: '', patientGender: '' });
   const [saving, setSaving] = useState(false);
-  const handleSave = async (e) => { e.preventDefault(); setSaving(true); await onSave(form); setSaving(false); };
+  const handleSave = async (e) => { e.preventDefault(); if (!form.diagnosis || !form.restDays) return; setSaving(true); await onSave(form); setSaving(false); };
+  const inp = { width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14, boxSizing: 'border-box' };
+  const lbl = (t) => <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>{t}</label>;
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 440 }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: '#e6edf3', fontWeight: 700 }}>📋 Buat Surat Sakit</span>
+      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0d1117', zIndex: 1 }}>
+          <span style={{ color: '#e6edf3', fontWeight: 700 }}>📋 Buat Surat Keterangan Sakit</span>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 20, cursor: 'pointer' }}>×</button>
         </div>
         <form onSubmit={handleSave} style={{ padding: 20 }}>
-          {[
-            { key: 'diagnosis', label: 'Diagnosis *', type: 'textarea', placeholder: 'Contoh: Demam akut, ISPA...' },
-            { key: 'restDays', label: 'Hari Istirahat *', type: 'number', placeholder: '3' },
-            { key: 'notes', label: 'Catatan', type: 'textarea', placeholder: 'Anjuran / larangan (opsional)' },
-          ].map(f => (
-            <div key={f.key} style={{ marginBottom: 14 }}>
-              <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>{f.label}</label>
-              {f.type === 'textarea' ? (
-                <textarea value={form[f.key]} rows={2} required={f.label.includes('*')}
-                  onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder}
-                  style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14, resize: 'vertical' }} />
-              ) : (
-                <input type={f.type} value={form[f.key]} min={1} max={30} required
-                  onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                  style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14 }} />
-              )}
+          {/* Identitas Pasien */}
+          <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Identitas Pasien</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+            <div>
+              {lbl('Umur')}
+              <input value={form.patientAge} onChange={e => setForm(p => ({ ...p, patientAge: e.target.value }))} placeholder="Contoh: 21 Tahun" style={inp} />
             </div>
-          ))}
+            <div>
+              {lbl('Jenis Kelamin')}
+              <select value={form.patientGender} onChange={e => setForm(p => ({ ...p, patientGender: e.target.value }))} style={{ ...inp, appearance: 'none' }}>
+                <option value="">— Pilih —</option>
+                <option value="Laki-laki">Laki-laki</option>
+                <option value="Perempuan">Perempuan</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Data Surat */}
+          <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Data Surat Sakit</div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Diagnosis / Keterangan Sakit *')}
+            <textarea value={form.diagnosis} rows={2} required onChange={e => setForm(p => ({ ...p, diagnosis: e.target.value }))} placeholder="Contoh: Demam Akut, ISPA, Gastroenteritis..."
+              style={{ ...inp, resize: 'vertical' }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Lama Istirahat (hari) *')}
+            <input type="number" value={form.restDays} min={1} max={30} required onChange={e => setForm(p => ({ ...p, restDays: e.target.value }))} style={inp} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Catatan / Anjuran Tambahan')}
+            <textarea value={form.notes} rows={2} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Opsional: anjuran minum obat, larangan aktivitas..."
+              style={{ ...inp, resize: 'vertical' }} />
+          </div>
+
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button type="button" onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
             <button type="submit" disabled={saving}
@@ -250,7 +393,25 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
     };
 
     pc.oniceconnectionstatechange = () => {
-      if (['disconnected', 'failed', 'closed'].includes(pc.iceConnectionState)) {
+      console.log('[WebRTC] ICE state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'disconnected') {
+        // Coba ICE restart setelah 3 detik
+        setTimeout(() => {
+          if (pcRef.current?.iceConnectionState === 'disconnected') {
+            console.log('[WebRTC] Attempting ICE restart...');
+            socket.emit('vc-ice-restart', { consultationId });
+            if (isDoctor) {
+              // Dokter: buat offer baru dengan iceRestart
+              pcRef.current?.createOffer({ iceRestart: true })
+                .then(offer => {
+                  pcRef.current?.setLocalDescription(offer);
+                  socket.emit('vc-offer', { consultationId, offer });
+                }).catch(() => {});
+            }
+          }
+        }, 3000);
+      }
+      if (['failed', 'closed'].includes(pc.iceConnectionState)) {
         setCallState('ended');
       }
     };
@@ -356,12 +517,24 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
     socket.on('vc-answer',        onAnswer);
     socket.on('vc-ice-candidate', onIce);
     socket.on('vc-end',           onEnd);
+    // Handle ICE restart request from remote peer
+    socket.on('vc-ice-restart', async () => {
+      if (!isDoctor && pcRef.current) {
+        // User side: create answer untuk ICE restart offer
+        const offer = await pcRef.current.createOffer({ iceRestart: true }).catch(() => null);
+        if (offer) {
+          await pcRef.current.setLocalDescription(offer);
+          socket.emit('vc-answer', { consultationId, answer: offer });
+        }
+      }
+    });
 
     return () => {
       socket.off('vc-offer',         onOffer);
       socket.off('vc-answer',        onAnswer);
       socket.off('vc-ice-candidate', onIce);
       socket.off('vc-end',           onEnd);
+      socket.off('vc-ice-restart');
     };
   }, [socket, isDoctor, answerCall, cleanup, onClose]);
 
@@ -457,6 +630,193 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
   );
 };
 
+// ── Medical Record Modal (SOAP) ───────────────────────────────────
+const MedicalRecordModal = ({ existing, consultation, onClose, onSave }) => {
+  const mr = existing;
+  const [form, setForm] = useState({
+    objectiveFindings: mr?.objectiveFindings || '',
+    assessment:        mr?.assessment        || '',
+    plan:              mr?.plan              || '',
+    doctorNotes:       mr?.doctorNotes       || '',
+    markComplete:      mr?.isCompleted       || false,
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const handleSave = async () => { setSaving(true); await onSave(form); setSaving(false); };
+
+  const inp  = { width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '9px 12px', color: '#e6edf3', fontSize: 13, resize: 'vertical' };
+  const lbl  = (t) => <label style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t}</label>;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0d1117', zIndex: 1 }}>
+          <span style={{ color: '#e6edf3', fontWeight: 700 }}>📋 Rekam Medis (SOAP)</span>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 22, cursor: 'pointer' }}>×</button>
+        </div>
+        <div style={{ padding: 20 }}>
+          {/* Info Pasien — read-only */}
+          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '10px 14px', marginBottom: 18 }}>
+            <div style={{ color: '#8b949e', fontSize: 11, marginBottom: 6 }}>Identitas Pasien</div>
+            <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 13 }}>{consultation?.userId?.name || '-'}</div>
+            <div style={{ color: '#8b949e', fontSize: 12, marginTop: 2 }}>ID: {consultation?.userId?._id?.toString().slice(-8).toUpperCase() || '-'}</div>
+          </div>
+
+          {/* S - Subjective */}
+          <div style={{ marginBottom: 14 }}>
+            {lbl('S — Keluhan (Subjective)')}
+            <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '9px 12px', color: '#c9d1d9', fontSize: 13 }}>
+              {consultation?.symptoms || '-'}
+              {consultation?.medicalHistory && <div style={{ marginTop: 6, color: '#8b949e', fontSize: 12 }}>Riwayat: {consultation.medicalHistory}</div>}
+            </div>
+          </div>
+
+          {/* O - Objective */}
+          <div style={{ marginBottom: 14 }}>
+            {lbl('O — Pemeriksaan (Objective)')}
+            <textarea rows={3} value={form.objectiveFindings} onChange={e => set('objectiveFindings', e.target.value)}
+              placeholder="Hasil pemeriksaan, tanda-tanda vital, kondisi umum pasien..."
+              style={inp} />
+          </div>
+
+          {/* A - Assessment */}
+          <div style={{ marginBottom: 14 }}>
+            {lbl('A — Diagnosis (Assessment)')}
+            <textarea rows={2} value={form.assessment} onChange={e => set('assessment', e.target.value)}
+              placeholder="Diagnosis utama, misalnya: ISPA, Demam akut, Gastritis..."
+              style={inp} />
+          </div>
+
+          {/* P - Plan */}
+          <div style={{ marginBottom: 14 }}>
+            {lbl('P — Rencana / Terapi (Plan)')}
+            <textarea rows={3} value={form.plan} onChange={e => set('plan', e.target.value)}
+              placeholder="Rencana terapi: obat, istirahat, kontrol ulang, rujukan..."
+              style={inp} />
+          </div>
+
+          {/* Catatan */}
+          <div style={{ marginBottom: 16 }}>
+            {lbl('Catatan Tambahan')}
+            <textarea rows={2} value={form.doctorNotes} onChange={e => set('doctorNotes', e.target.value)}
+              placeholder="Pesan atau catatan khusus untuk pasien (opsional)"
+              style={inp} />
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.markComplete} onChange={e => set('markComplete', e.target.checked)}
+              style={{ width: 16, height: 16 }} />
+            <span style={{ color: '#c9d1d9', fontSize: 13 }}>Tandai rekam medis sebagai selesai (pasien dapat mengunduh)</span>
+          </label>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
+            <button onClick={handleSave} disabled={saving}
+              style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#1f6feb', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
+              {saving ? 'Menyimpan...' : '✓ Simpan Rekam Medis'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Attachment Viewer (lampiran dari pasien) ──────────────────────
+const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+const isImage = (url) => IMAGE_EXTS.some(ext => url.toLowerCase().endsWith(ext));
+
+const AttachmentViewer = ({ attachmentUrls }) => {
+  const [lightbox, setLightbox] = useState(null); // url gambar yang dibuka
+  return (
+    <>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid #21262d' }}>
+        <span style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, display: 'block' }}>
+          📎 Lampiran Pasien ({attachmentUrls.length})
+        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {attachmentUrls.map((url, i) => {
+            const filename = url.split('/').pop();
+            const img = isImage(url);
+            return (
+              <div key={i}>
+                {img ? (
+                  <div
+                    onClick={() => setLightbox(`${API_URL}${url}`)}
+                    style={{ cursor: 'zoom-in', borderRadius: 8, overflow: 'hidden', border: '1px solid #30363d', position: 'relative' }}
+                  >
+                    <img
+                      src={`${API_URL}${url}`}
+                      alt={filename}
+                      style={{ width: '100%', maxHeight: 140, objectFit: 'cover', display: 'block' }}
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                    <div style={{ position: 'absolute', bottom: 4, right: 6, background: 'rgba(0,0,0,.55)', borderRadius: 4, padding: '1px 6px', fontSize: 10, color: '#c9d1d9' }}>
+                      🔍 Klik untuk perbesar
+                    </div>
+                  </div>
+                ) : (
+                  <a
+                    href={`${API_URL}${url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, textDecoration: 'none' }}
+                  >
+                    <span style={{ fontSize: 18 }}>📄</span>
+                    <span style={{ color: '#58a6ff', fontSize: 12, wordBreak: 'break-all' }}>{filename}</span>
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, cursor: 'zoom-out' }}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+            <img src={lightbox} alt="lampiran" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 10, objectFit: 'contain', boxShadow: '0 8px 40px rgba(0,0,0,.8)' }} />
+            <button
+              onClick={() => setLightbox(null)}
+              style={{ position: 'absolute', top: -14, right: -14, width: 32, height: 32, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#e6edf3', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}
+            >×</button>
+            <a
+              href={lightbox}
+              download
+              onClick={e => e.stopPropagation()}
+              style={{ position: 'absolute', bottom: -40, left: '50%', transform: 'translateX(-50%)', background: '#1f6feb', color: '#fff', padding: '6px 18px', borderRadius: 20, fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
+            >⬇ Unduh</a>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+// ── Session end countdown ─────────────────────────────────────────
+const SessionEndCountdown = ({ scheduledEnd }) => {
+  const [remaining, setRemaining] = useState('');
+  useEffect(() => {
+    const tick = () => {
+      const ms = msUntil(scheduledEnd);
+      if (ms <= 0) { setRemaining('00:00'); return; }
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      setRemaining(h > 0 ? `${h}j ${m}m` : m > 0 ? `${m}m ${s}d` : `${s}d`);
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [scheduledEnd]);
+  const isUrgent = remaining && parseInt(remaining) <= 5 && remaining.includes('m');
+  return <span style={{ color: isUrgent ? '#f85149' : '#3fb950', fontWeight: 700 }}>{remaining}</span>;
+};
+
 // ══════════════════════════════════════════════════════════════════
 // MAIN CONSULTATION CHAT
 // ══════════════════════════════════════════════════════════════════
@@ -475,6 +835,7 @@ const ConsultationChat = () => {
   const [showSickLetter,   setShowSickLetter]   = useState(false);
   const [showRating,       setShowRating]       = useState(false);
   const [showVideoCall,    setShowVideoCall]     = useState(false);
+  const [showMedicalRecord,setShowMedicalRecord] = useState(false);
   const [incomingCall,     setIncomingCall]      = useState(null); // { offer }
   const [uploadingImg, setUploadingImg] = useState(false);
   const [ending,   setEnding]   = useState(false);
@@ -498,14 +859,14 @@ const ConsultationChat = () => {
   const isCompleted = ['completed', 'no_show'].includes(consultation?.status);
 
   // Dokter: bisa akses room kecuali saat pending_payment/expired
-  // User: hanya saat confirmed/live dan waktu sudah tiba
+  // User: hanya saat confirmed/live/completed dan waktu sudah tiba
   const DOCTOR_BLOCKED = ['pending_payment', 'expired', 'cancelled', 'cancelled_by_doctor'];
   const timeHasArrived = consultation?.scheduledAt
     ? msUntil(consultation.scheduledAt) <= 0
     : true;
   const canAccessRoom = isDoctor
     ? !DOCTOR_BLOCKED.includes(consultation?.status)
-    : (isConfirmed || isLive) && timeHasArrived;
+    : (isConfirmed || isLive || isCompleted) && (timeHasArrived || isCompleted);
 
   // Bisa chat hanya saat live: dokter kapan saja, user perlu waktu sudah tiba
   const canChat = isLive && (isDoctor || timeHasArrived);
@@ -534,10 +895,28 @@ const ConsultationChat = () => {
     const sock = io(API_URL, {
       auth: { token: localStorage.getItem('token') },
       query: { userId: user.id },
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
+
+    // Re-join rooms setelah reconnect
+    sock.on('reconnect', () => {
+      console.log('[Socket] Reconnected — rejoining rooms');
+      sock.emit('join-user', user.id);
+      if (id) {
+        sock.emit('join-consultation', id);
+      }
+    });
+
+    sock.on('connect_error', (err) => {
+      console.warn('[Socket] Connection error:', err.message);
+    });
+
     setSocket(sock);
     return () => sock.close();
-  }, [user]);
+  }, [user, id]);
 
   // ── Socket listeners ───────────────────────────────────────────
   useEffect(() => {
@@ -556,30 +935,45 @@ const ConsultationChat = () => {
     const onVcOffer = ({ offer }) => {
       if (!isDoctor) setIncomingCall({ offer });
     };
-    // Status update (e.g. cron auto-started)
+    // Status update (e.g. cron auto-started, auto-ended)
     const onStatusUpdate = ({ consultationId, status }) => {
       if (consultationId === consultation._id?.toString()) {
         setConsultation(c => ({ ...c, status }));
         if (status === 'in_progress') toast.success('Sesi konsultasi dimulai!');
+        if (status === 'completed') toast.success('Konsultasi telah selesai ✅');
+        if (status === 'no_show') toast('Sesi berakhir — tidak ada respons dari pasien');
+        if (status === 'refund_requested') toast('Refund otomatis diajukan ke admin');
+        // Refresh untuk dapat data terbaru (endTime dll)
+        if (['completed', 'no_show', 'refund_requested'].includes(status)) {
+          fetchConsultation();
+        }
+      }
+    };
+    // Trigger rating modal (dari server setelah dokter klik End atau auto-end)
+    const onShowRating = ({ consultationId }) => {
+      if (consultationId === consultation._id?.toString() && isUser) {
+        setShowRating(true);
       }
     };
 
-    socket.on('receive-message',          onReceive);
-    socket.on('user-typing',              () => { setTyping(true); setTimeout(() => setTyping(false), 3000); });
-    socket.on('user-stop-typing',         () => setTyping(false));
-    socket.on('prescription-update',      onPrescription);
-    socket.on('vc-offer',                 onVcOffer);
-    socket.on('consultation-status-update', onStatusUpdate);
+    socket.on('receive-message',             onReceive);
+    socket.on('user-typing',                 () => { setTyping(true); setTimeout(() => setTyping(false), 3000); });
+    socket.on('user-stop-typing',            () => setTyping(false));
+    socket.on('prescription-update',         onPrescription);
+    socket.on('vc-offer',                    onVcOffer);
+    socket.on('consultation-status-update',  onStatusUpdate);
+    socket.on('show-rating-modal',           onShowRating);
 
     return () => {
-      socket.off('receive-message',          onReceive);
+      socket.off('receive-message',            onReceive);
       socket.off('user-typing');
       socket.off('user-stop-typing');
-      socket.off('prescription-update',      onPrescription);
-      socket.off('vc-offer',                 onVcOffer);
+      socket.off('prescription-update',        onPrescription);
+      socket.off('vc-offer',                   onVcOffer);
       socket.off('consultation-status-update', onStatusUpdate);
+      socket.off('show-rating-modal',          onShowRating);
     };
-  }, [socket, consultation, myId, isDoctor]);
+  }, [socket, consultation, myId, isDoctor, isUser, fetchConsultation]);
 
   useEffect(() => { msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, typing]);
 
@@ -650,13 +1044,26 @@ const ConsultationChat = () => {
     finally { setEnding(false); }
   };
 
-  const handleSendPrescription = async (prescription, diagnosis) => {
+  const handleSendPrescription = async (payload) => {
     try {
-      await api.put(`/api/consultations/${id}/prescription`, { prescription, diagnosis });
-      setConsultation(c => ({ ...c, prescription, diagnosis }));
-      toast.success('Resep dikirim!');
+      if (payload && payload.medicines) {
+        await api.put(`/api/consultations/${id}/prescription`, payload);
+      } else {
+        await api.put(`/api/consultations/${id}/prescription`, { prescription: payload });
+      }
+      toast.success('Resep berhasil dikirim ke pasien!');
       setShowPrescription(false);
-    } catch { toast.error('Gagal kirim resep'); }
+      fetchConsultation();
+    } catch (err) { toast.error(err.response?.data?.message || 'Gagal kirim resep'); }
+  };
+
+  const handleSaveMedicalRecord = async (form) => {
+    try {
+      await api.put(`/api/consultations/${id}/medical-record`, form);
+      toast.success('Rekam medis tersimpan!');
+      setShowMedicalRecord(false);
+      fetchConsultation();
+    } catch (err) { toast.error(err.response?.data?.message || 'Gagal simpan rekam medis'); }
   };
 
   const handleCreateSickLetter = async (form) => {
@@ -676,13 +1083,34 @@ const ConsultationChat = () => {
     } catch { toast.error('Gagal menerbitkan'); }
   };
 
-  const downloadPDF = async () => {
+  const downloadSickLetterPDF = async () => {
     try {
       const r = await api.get(`/api/consultations/${id}/sick-letter/pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([r.data]));
       const a = document.createElement('a'); a.href = url; a.download = `surat-sakit-${id}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
-    } catch { toast.error('Gagal unduh PDF'); }
+      toast.success('Surat sakit diunduh');
+    } catch { toast.error('Gagal unduh surat sakit'); }
+  };
+
+  const downloadPrescriptionPDF = async () => {
+    try {
+      const r = await api.get(`/api/consultations/${id}/prescription/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a'); a.href = url; a.download = `resep-${id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      toast.success('Resep diunduh');
+    } catch { toast.error('Gagal unduh resep PDF'); }
+  };
+
+  const downloadMedicalRecordPDF = async () => {
+    try {
+      const r = await api.get(`/api/consultations/${id}/medical-record/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a'); a.href = url; a.download = `rekam-medis-${id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      toast.success('Rekam medis diunduh');
+    } catch { toast.error('Gagal unduh rekam medis'); }
   };
 
   // ── Styles ──────────────────────────────────────────────────────
@@ -753,55 +1181,9 @@ const ConsultationChat = () => {
       </>
     );
   }
-  // User confirmed tapi belum waktunya — tampilkan halaman tunggu
-  if (isUser && isConfirmed && !timeHasArrived) {
-    return (
-      <>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <div style={{ ...s.root, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0 }}>
-          <div style={{ textAlign: 'center', maxWidth: 400, padding: 32 }}>
-            <div style={{ fontSize: 64, marginBottom: 16 }}>🔒</div>
-            <div style={{ color: '#e6edf3', fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Ruang Konsultasi Belum Terbuka</div>
-            <div style={{ color: '#8b949e', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
-              Konsultasi Anda terkonfirmasi. Ruang chat akan terbuka otomatis saat waktu yang dijadwalkan tiba.
-            </div>
 
-            {/* Countdown card */}
-            <div style={{ background: '#161b22', border: '1px solid #1f6feb40', borderRadius: 14, padding: '20px 24px', marginBottom: 24 }}>
-              <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 8 }}>Jadwal Konsultasi</div>
-              <div style={{ color: '#58a6ff', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>
-                {fmtDT(consultation.scheduledAt)}
-              </div>
-              <CountdownBanner scheduledAt={consultation.scheduledAt} />
-            </div>
-
-            {/* Info */}
-            <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '14px 16px', marginBottom: 20, textAlign: 'left' }}>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 20 }}>👨‍⚕️</span>
-                <div>
-                  <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 13 }}>dr. {doc?.name}</div>
-                  <div style={{ color: '#58a6ff', fontSize: 11 }}>{doc?.specialization}</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <StatusBadge status={consultation.status} />
-                <span style={{ background: '#21262d', color: '#8b949e', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 600 }}>{typeLabel}</span>
-              </div>
-            </div>
-
-            <button onClick={() => navigate('/consultations')}
-              style={{ padding: '10px 24px', background: '#21262d', color: '#e6edf3', border: '1px solid #30363d', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>
-              ← Kembali ke Konsultasi
-            </button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // ── User dengan status yang tidak relevan ───────────────────────
-  if (isUser && !canAccessRoom && !isCompleted) {
+  // User: jika status tidak relevan (bukan confirmed/live/completed) → blokir
+  if (isUser && !canAccessRoom && !isCompleted && !isConfirmed) {
     return (
       <>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -821,6 +1203,9 @@ const ConsultationChat = () => {
       </>
     );
   }
+
+  // Flag: apakah user belum boleh chat (confirmed + belum waktunya)
+  const isLockedForUser = isUser && isConfirmed && !timeHasArrived;
 
   // ── Incoming call notification (user) ──────────────────────────
   const IncomingCallBanner = () => incomingCall && !showVideoCall ? (
@@ -902,17 +1287,47 @@ const ConsultationChat = () => {
             )}
           </div>
 
+          {/* ── Lampiran Pasien — selalu tampil untuk dokter ────── */}
+          {isDoctor && consultation.attachmentUrls?.length > 0 && (
+            <AttachmentViewer attachmentUrls={consultation.attachmentUrls} />
+          )}
+
           {/* ── Dokter Actions ─────────────────────────────────── */}
           {isDoctor && (
             <div style={s.sideSection}>
               <span style={s.label}>Tindakan Dokter</span>
 
-              {/* Mulai sesi — tersedia saat confirmed, waktu tidak dibatasi untuk dokter */}
-              {isConfirmed && (
-                <button onClick={handleStart} disabled={starting} style={s.actionBtn('#1a7f37')}>
-                  ▶ {starting ? 'Memulai...' : 'Mulai Sesi'}
-                </button>
-              )}
+              {/* Mulai sesi — hanya tersedia 5 menit sebelum jadwal s/d scheduledEnd */}
+              {isConfirmed && (() => {
+                const EARLY_GRACE_MS = 5 * 60 * 1000;
+                const now = Date.now();
+                const earliest = consultation.scheduledAt
+                  ? new Date(consultation.scheduledAt).getTime() - EARLY_GRACE_MS
+                  : 0;
+                const expired = consultation.scheduledEnd && now > new Date(consultation.scheduledEnd).getTime();
+                const canStart = now >= earliest && !expired;
+                const minsLeft = earliest > now ? Math.ceil((earliest - now) / 60000) : 0;
+
+                return (
+                  <>
+                    {!canStart && !expired && (
+                      <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: '#8b949e' }}>
+                        ⏰ Start tersedia {minsLeft > 0 ? `dalam ${minsLeft} menit` : 'saat jadwal tiba'}
+                        <div style={{ marginTop: 4, color: '#58a6ff' }}>{fmtDT(consultation.scheduledAt)}</div>
+                      </div>
+                    )}
+                    {expired && (
+                      <div style={{ background: '#161b22', border: '1px solid #f8514940', borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: '#f85149' }}>
+                        ⚠️ Waktu konsultasi telah berakhir
+                      </div>
+                    )}
+                    <button onClick={handleStart} disabled={starting || !canStart || expired}
+                      style={{ ...s.actionBtn('#1a7f37'), opacity: (starting || !canStart || expired) ? 0.4 : 1, cursor: (canStart && !expired) ? 'pointer' : 'not-allowed' }}>
+                      ▶ {starting ? 'Memulai...' : 'Mulai Sesi'}
+                    </button>
+                  </>
+                );
+              })()}
 
               {/* Actions saat live */}
               {isLive && (
@@ -924,8 +1339,9 @@ const ConsultationChat = () => {
                     </button>
                   )}
                   <button onClick={() => setShowPrescription(true)} style={s.actionBtn('#1f6feb')}>💊 Tulis Resep</button>
+                  <button onClick={() => setShowMedicalRecord(true)} style={s.actionBtn('#0e7490')}>📋 Isi Rekam Medis</button>
                   {!sickLetter && (
-                    <button onClick={() => setShowSickLetter(true)} style={s.actionBtn('#854d0e')}>📋 Buat Surat Sakit</button>
+                    <button onClick={() => setShowSickLetter(true)} style={s.actionBtn('#854d0e')}>📄 Buat Surat Sakit</button>
                   )}
                   {sickLetter?.status === 'draft' && (
                     <button onClick={handleIssueSickLetter} style={s.actionBtn('#d97706')}>✓ Terbitkan Surat Sakit</button>
@@ -934,6 +1350,19 @@ const ConsultationChat = () => {
                     style={{ ...s.actionBtn('#c0392b'), background: 'transparent', border: '1px solid #f8514940', color: '#f85149' }}>
                     ■ {ending ? 'Mengakhiri...' : 'Akhiri Sesi'}
                   </button>
+                </>
+              )}
+              {/* Dokter bisa isi/lihat rekam medis & resep setelah selesai */}
+              {isCompleted && (
+                <>
+                  <button onClick={() => setShowMedicalRecord(true)} style={s.actionBtn('#0e7490')}>📋 {consultation.medicalRecord ? 'Edit Rekam Medis' : 'Isi Rekam Medis'}</button>
+                  <button onClick={() => setShowPrescription(true)} style={s.actionBtn('#1f6feb')}>💊 {consultation.prescription ? 'Lihat/Edit Resep' : 'Tulis Resep'}</button>
+                  {!sickLetter && (
+                    <button onClick={() => setShowSickLetter(true)} style={s.actionBtn('#854d0e')}>📄 Buat Surat Sakit</button>
+                  )}
+                  {sickLetter?.status === 'draft' && (
+                    <button onClick={handleIssueSickLetter} style={s.actionBtn('#d97706')}>✓ Terbitkan Surat Sakit</button>
+                  )}
                 </>
               )}
             </div>
@@ -951,18 +1380,44 @@ const ConsultationChat = () => {
                 </button>
               )}
 
-              {consultation.prescription && (
+              {/* Dokumen — tersedia setelah konsultasi selesai */}
+              {isCompleted && (
+                <>
+                  {consultation.prescription && (
+                    <>
+                      <button onClick={() => setShowPrescription(true)} style={s.actionBtn('#1a7f37')}>💊 Lihat Resep Dokter</button>
+                      <button onClick={downloadPrescriptionPDF} style={{ ...s.actionBtn('#166534'), marginTop: -4 }}>⬇ Unduh Resep PDF</button>
+                    </>
+                  )}
+                  {consultation.medicalRecord?.isCompleted && (
+                    <button onClick={downloadMedicalRecordPDF} style={s.actionBtn('#0e7490')}>⬇ Unduh Rekam Medis PDF</button>
+                  )}
+                  {sickLetter?.status === 'issued' && (
+                    <button onClick={downloadSickLetterPDF} style={s.actionBtn('#854d0e')}>⬇ Unduh Surat Sakit PDF</button>
+                  )}
+                  {!consultation.rating && (
+                    <button onClick={() => setShowRating(true)} style={s.actionBtn('#ca8a04')}>⭐ Beri Rating</button>
+                  )}
+                  {consultation.rating && (
+                    <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#8b949e' }}>
+                      Rating Anda: {'⭐'.repeat(consultation.rating)}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Saat live tapi belum ada dokumen */}
+              {isLive && consultation.prescription && (
                 <button onClick={() => setShowPrescription(true)} style={s.actionBtn('#1a7f37')}>💊 Lihat Resep Dokter</button>
               )}
-              {sickLetter?.status === 'issued' && (
-                <button onClick={downloadPDF} style={s.actionBtn('#854d0e')}>📄 Unduh Surat Sakit</button>
+              {isLive && sickLetter?.status === 'issued' && (
+                <button onClick={downloadSickLetterPDF} style={s.actionBtn('#854d0e')}>⬇ Unduh Surat Sakit</button>
               )}
-              {isCompleted && !consultation.rating && (
-                <button onClick={() => setShowRating(true)} style={s.actionBtn('#ca8a04')}>⭐ Beri Rating</button>
-              )}
-              {consultation.rating && (
-                <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#8b949e' }}>
-                  Rating Anda: {'⭐'.repeat(consultation.rating)}
+
+              {/* Info locked state */}
+              {isLockedForUser && (
+                <div style={{ background: '#161b22', border: '1px solid #1f6feb30', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#8b949e', textAlign: 'center' }}>
+                  🔒 Chat aktif saat jadwal tiba
                 </div>
               )}
             </div>
@@ -976,6 +1431,22 @@ const ConsultationChat = () => {
                   {sickLetter.status === 'issued' ? '✓ Sudah Terbit' : '○ Draft'}
                 </div>
                 <div style={{ color: '#c9d1d9', fontSize: 12 }}>Diagnosis: {sickLetter.diagnosis}</div>
+                {sickLetter.startDate && <div style={{ color: '#8b949e', fontSize: 11, marginTop: 2 }}>
+                  {new Date(sickLetter.startDate).toLocaleDateString('id-ID')} – {new Date(sickLetter.endDate).toLocaleDateString('id-ID')}
+                </div>}
+              </div>
+            </div>
+          )}
+
+          {/* Rekam medis status — untuk dokter */}
+          {isDoctor && consultation.medicalRecord && (
+            <div style={s.sideSection}>
+              <span style={s.label}>Rekam Medis</span>
+              <div style={{ background: consultation.medicalRecord.isCompleted ? '#0a3d1e' : '#1a1a2e', border: `1px solid ${consultation.medicalRecord.isCompleted ? '#2ea04330' : '#30363d'}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ color: consultation.medicalRecord.isCompleted ? '#3fb950' : '#a371f7', fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
+                  {consultation.medicalRecord.isCompleted ? '✓ Selesai (pasien bisa unduh)' : '○ Draft (belum final)'}
+                </div>
+                {consultation.medicalRecord.assessment && <div style={{ color: '#c9d1d9', fontSize: 12 }}>Diagnosis: {consultation.medicalRecord.assessment}</div>}
               </div>
             </div>
           )}
@@ -992,12 +1463,39 @@ const ConsultationChat = () => {
             <StatusBadge status={consultation.status} />
           </div>
 
-          <div style={s.msgArea}>
+          <div style={{ ...s.msgArea, position: 'relative' }}>
             {/* Countdown banner untuk dokter (info saja, tidak memblokir) */}
             {isDoctor && isConfirmed && consultation.scheduledAt && msUntil(consultation.scheduledAt) > 0 && (
               <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '12px 16px', marginBottom: 4 }}>
-                <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 6 }}>ℹ️ Sesi belum dimulai — Anda dapat membaca keluhan di sidebar dan klik Mulai Sesi kapan saja</div>
+                <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 6 }}>ℹ️ Anda bisa klik Mulai Sesi 5 menit sebelum jadwal</div>
                 <CountdownBanner scheduledAt={consultation.scheduledAt} />
+              </div>
+            )}
+
+            {/* Lock overlay untuk user sebelum waktu konsultasi */}
+            {isLockedForUser && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(13,17,23,0.88)', backdropFilter: 'blur(4px)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 0, flexDirection: 'column', gap: 12, padding: 24 }}>
+                <div style={{ fontSize: 48 }}>🔒</div>
+                <div style={{ color: '#e6edf3', fontWeight: 700, fontSize: 17, textAlign: 'center' }}>Ruang Chat Belum Terbuka</div>
+                <div style={{ color: '#8b949e', fontSize: 13, textAlign: 'center', lineHeight: 1.6, maxWidth: 300 }}>
+                  Konsultasi Anda terkonfirmasi. Chat akan aktif saat waktu yang dijadwalkan tiba.
+                </div>
+                <div style={{ background: '#161b22', border: '1px solid #1f6feb40', borderRadius: 12, padding: '14px 20px', textAlign: 'center', minWidth: 220 }}>
+                  <div style={{ color: '#8b949e', fontSize: 11, marginBottom: 4 }}>Jadwal Konsultasi</div>
+                  <div style={{ color: '#58a6ff', fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{fmtDT(consultation.scheduledAt)}</div>
+                  <CountdownBanner scheduledAt={consultation.scheduledAt} />
+                </div>
+              </div>
+            )}
+
+            {/* Session end countdown saat sedang berlangsung */}
+            {isLive && consultation.scheduledEnd && msUntil(consultation.scheduledEnd) > 0 && (
+              <div style={{ background: '#0a3d1e', border: '1px solid #2ea04330', borderRadius: 10, padding: '10px 14px', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 18 }}>⏱️</span>
+                <div>
+                  <div style={{ color: '#3fb950', fontSize: 12, fontWeight: 700 }}>Sesi berakhir dalam <SessionEndCountdown scheduledEnd={consultation.scheduledEnd} /></div>
+                  <div style={{ color: '#8b949e', fontSize: 11 }}>Sesi otomatis ditutup 15 mnt setelah waktu berakhir</div>
+                </div>
               </div>
             )}
 
@@ -1050,11 +1548,25 @@ const ConsultationChat = () => {
 
           {/* Completed bar */}
           {isCompleted && (
-            <div style={{ padding: '12px 16px', background: '#0a3d1e', borderTop: '1px solid #2ea04330', textAlign: 'center', color: '#3fb950', fontSize: 13, fontWeight: 600 }}>
-              ✅ Konsultasi selesai pada {fmtDate(consultation.endTime)}
+            <div style={{ padding: '16px 20px', background: '#0a3d1e', borderTop: '1px solid #2ea04330', flexShrink: 0 }}>
+              <div style={{ color: '#3fb950', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                ✅ Konsultasi selesai — {fmtDate(consultation.endTime)}
+              </div>
+              {isUser && (
+                <div style={{ fontSize: 12, color: '#8b949e' }}>
+                  {[
+                    consultation.prescription && '💊 Resep tersedia',
+                    consultation.medicalRecord?.isCompleted && '📋 Rekam medis tersedia',
+                    consultation.sickLetter?.status === 'issued' && '📄 Surat sakit tersedia',
+                  ].filter(Boolean).join(' · ') || 'Dokter belum mengisi rekam medis / resep.'}
+                  {(consultation.prescription || consultation.medicalRecord?.isCompleted || consultation.sickLetter?.status === 'issued') &&
+                    <span style={{ color: '#58a6ff', marginLeft: 6 }}>→ Unduh dari sidebar kiri</span>
+                  }
+                </div>
+              )}
               {isUser && !consultation.rating && (
                 <button onClick={() => setShowRating(true)}
-                  style={{ marginLeft: 12, padding: '4px 14px', background: '#ca8a04', color: '#fff', border: 'none', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  style={{ marginTop: 10, padding: '6px 18px', background: '#ca8a04', color: '#fff', border: 'none', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                   ⭐ Beri Rating
                 </button>
               )}
@@ -1062,7 +1574,7 @@ const ConsultationChat = () => {
           )}
 
           {/* Status info bar — saat tidak bisa chat */}
-          {!canChat && !isCompleted && (
+          {!canChat && !isCompleted && !isLockedForUser && (
             <div style={{ padding: '14px 20px', borderTop: '1px solid #21262d', background: '#161b22', textAlign: 'center', color: '#8b949e', fontSize: 13 }}>
               {isConfirmed && isDoctor && '✅ Pembayaran dikonfirmasi. Klik "Mulai Sesi" di sidebar saat siap.'}
               {isConfirmed && isUser && timeHasArrived && '⏳ Menunggu dokter memulai sesi...'}
@@ -1070,8 +1582,29 @@ const ConsultationChat = () => {
             </div>
           )}
 
-          {/* Chat input — hanya saat canChat */}
-          {canChat && (
+          {/* Chat input — aktif saat canChat, disabled (preview) saat isLockedForUser */}
+          {(canChat || isLockedForUser) && (
+            <div style={{ ...s.footer, opacity: isLockedForUser ? 0.45 : 1, pointerEvents: isLockedForUser ? 'none' : 'auto' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
+                <button type="button" disabled
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: 'none', color: '#8b949e', cursor: 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  📎
+                </button>
+                <input value={isLockedForUser ? '' : newMessage}
+                  onChange={e => { if (!isLockedForUser) { setNewMessage(e.target.value); handleTyping(); } }}
+                  onKeyDown={e => { if (!isLockedForUser && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }}
+                  placeholder={isLockedForUser ? '🔒 Chat terbuka saat jadwal tiba...' : 'Ketik pesan... (Enter untuk kirim)'}
+                  readOnly={isLockedForUser}
+                  style={{ flex: 1, background: '#21262d', border: 'none', borderRadius: 20, padding: '9px 16px', color: '#e6edf3', fontSize: 14, outline: 'none', cursor: isLockedForUser ? 'not-allowed' : 'text' }} />
+                <button type="button" disabled
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: 'none', color: '#fff', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  ➤
+                </button>
+              </div>
+            </div>
+          )}
+          {canChat && !isLockedForUser && (
             <div style={s.footer}>
               <form onSubmit={sendMessage} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
@@ -1094,9 +1627,10 @@ const ConsultationChat = () => {
         </div>
       </div>
 
-      {showPrescription && <PrescriptionModal value={consultation.prescription} isDoctor={isDoctor} onClose={() => setShowPrescription(false)} onSave={handleSendPrescription} />}
-      {showSickLetter   && <SickLetterModal onClose={() => setShowSickLetter(false)} onSave={handleCreateSickLetter} />}
-      {showRating       && <RatingModal consultationId={id} onClose={() => setShowRating(false)} onSuccess={fetchConsultation} />}
+      {showPrescription   && <PrescriptionModal consultation={consultation} isDoctor={isDoctor} onClose={() => setShowPrescription(false)} onSave={handleSendPrescription} />}
+      {showMedicalRecord  && <MedicalRecordModal existing={consultation.medicalRecord} consultation={consultation} onClose={() => setShowMedicalRecord(false)} onSave={handleSaveMedicalRecord} />}
+      {showSickLetter     && <SickLetterModal onClose={() => setShowSickLetter(false)} onSave={handleCreateSickLetter} />}
+      {showRating         && <RatingModal consultationId={id} onClose={() => setShowRating(false)} onSuccess={fetchConsultation} />}
 
       <style>{`
         @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }

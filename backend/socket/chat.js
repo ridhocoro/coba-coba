@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const Consultation = require('../models/Consultation');
 
 module.exports = (io) => {
-    // Middleware autentikasi socket: validasi JWT sebelum koneksi diterima
+    // Middleware autentikasi socket
     io.use((socket, next) => {
         const token = socket.handshake.auth?.token || socket.handshake.query?.token;
         if (!token) {
@@ -21,15 +21,14 @@ module.exports = (io) => {
     io.on('connection', (socket) => {
         console.log(`🔌 Client connected: ${socket.id} (userId: ${socket.userId})`);
 
-        // Join room user sendiri (untuk notifikasi personal)
+        // Join room user sendiri
         socket.on('join-user', (userId) => {
-            // FIX: user hanya boleh join room miliknya sendiri
             if (userId === socket.userId) {
                 socket.join(`user-${userId}`);
             }
         });
 
-        // Join room konsultasi — FIX: validasi akses ke room
+        // Join room konsultasi — dengan validasi akses
         socket.on('join-consultation', async (consultationId) => {
             try {
                 const consultation = await Consultation.findById(consultationId)
@@ -48,22 +47,55 @@ module.exports = (io) => {
                     return;
                 }
 
-                // Dokter boleh join kapan saja (untuk cek keluhan)
-                // User boleh join saat confirmed/in_progress/completed
-                const userAllowed = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing', 'completed'];
+                const userAllowed = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing', 'completed', 'no_show'];
                 if (!isAdmin && !isDoctor && !userAllowed.includes(consultation.status)) {
                     socket.emit('error', { message: 'Konsultasi belum aktif' });
                     return;
                 }
 
                 socket.join(`consultation-${consultationId}`);
+                // Simpan rooms yang di-join untuk reconnect handling
+                if (!socket.consultationRooms) socket.consultationRooms = new Set();
+                socket.consultationRooms.add(consultationId);
+
                 console.log(`User ${socket.userId} (${socket.userRole}) joined consultation: ${consultationId}`);
             } catch (err) {
                 console.error('[Socket] join-consultation error:', err.message);
             }
         });
 
-        // Kirim pesan teks (broadcast ke room)
+        // Reconnect: re-join semua rooms yang sebelumnya di-join
+        socket.on('reconnect-rooms', async ({ consultationIds, userId }) => {
+            // Re-join user room
+            if (userId === socket.userId) {
+                socket.join(`user-${userId}`);
+            }
+            // Re-join consultation rooms
+            if (Array.isArray(consultationIds)) {
+                for (const cId of consultationIds) {
+                    try {
+                        const consultation = await Consultation.findById(cId)
+                            .populate('doctorId', 'userId');
+                        if (!consultation) continue;
+
+                        const patientId    = consultation.userId?.toString();
+                        const doctorUserId = consultation.doctorId?.userId?.toString();
+                        const isAdmin   = socket.userRole === 'admin';
+                        const isPatient = patientId === socket.userId;
+                        const isDoctor  = doctorUserId === socket.userId;
+
+                        if (isAdmin || isPatient || isDoctor) {
+                            socket.join(`consultation-${cId}`);
+                            if (!socket.consultationRooms) socket.consultationRooms = new Set();
+                            socket.consultationRooms.add(cId);
+                        }
+                    } catch {}
+                }
+            }
+            socket.emit('rooms-rejoined', { success: true });
+        });
+
+        // Kirim pesan teks
         socket.on('send-message', (data) => {
             io.to(`consultation-${data.consultationId}`).emit('receive-message', {
                 message:    data.message,
@@ -90,37 +122,28 @@ module.exports = (io) => {
         });
 
         // ── WebRTC Video Call Signaling ─────────────────────────────────────
-        // Semua event diteruskan hanya ke pihak lain di room (socket.to = broadcast kecuali pengirim)
-
-        // Dokter → User: offer
         socket.on('vc-offer', ({ consultationId, offer }) => {
             socket.to(`consultation-${consultationId}`).emit('vc-offer', { offer });
         });
 
-        // User → Dokter: answer
         socket.on('vc-answer', ({ consultationId, answer }) => {
             socket.to(`consultation-${consultationId}`).emit('vc-answer', { answer });
         });
 
-        // Kedua pihak: ICE candidate exchange
         socket.on('vc-ice-candidate', ({ consultationId, candidate }) => {
             socket.to(`consultation-${consultationId}`).emit('vc-ice-candidate', { candidate });
         });
 
-        // Salah satu pihak akhiri call
         socket.on('vc-end', ({ consultationId }) => {
             socket.to(`consultation-${consultationId}`).emit('vc-end');
         });
-        // ───────────────────────────────────────────────────────────────────
 
-        socket.on('leave-consultation', (consultationId) => {
-            socket.leave(`consultation-${consultationId}`);
+        // WebRTC ICE restart request (reconnect)
+        socket.on('vc-ice-restart', ({ consultationId }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-ice-restart');
         });
 
-        // ── WebRTC Signaling ──────────────────────────────────────────────────
-        // Semua event diteruskan hanya ke user lain dalam room (bukan broadcast)
-
-        // Inisiator kirim offer ke pihak lain
+        // ── WebRTC Signaling (alias) ──────────────────────────────────────
         socket.on('webrtc-offer', ({ consultationId, offer }) => {
             socket.to(`consultation-${consultationId}`).emit('webrtc-offer', {
                 offer,
@@ -128,7 +151,6 @@ module.exports = (io) => {
             });
         });
 
-        // Penerima balas dengan answer
         socket.on('webrtc-answer', ({ consultationId, answer }) => {
             socket.to(`consultation-${consultationId}`).emit('webrtc-answer', {
                 answer,
@@ -136,7 +158,6 @@ module.exports = (io) => {
             });
         });
 
-        // ICE candidate exchange
         socket.on('webrtc-ice-candidate', ({ consultationId, candidate }) => {
             socket.to(`consultation-${consultationId}`).emit('webrtc-ice-candidate', {
                 candidate,
@@ -144,22 +165,25 @@ module.exports = (io) => {
             });
         });
 
-        // Notifikasi: user mulai video call (agar pihak lain tahu ada panggilan masuk)
         socket.on('webrtc-call-start', ({ consultationId }) => {
             socket.to(`consultation-${consultationId}`).emit('webrtc-incoming-call', {
                 fromId: socket.userId
             });
         });
 
-        // Notifikasi: user akhiri/tolak video call
         socket.on('webrtc-call-end', ({ consultationId }) => {
             socket.to(`consultation-${consultationId}`).emit('webrtc-call-ended', {
                 fromId: socket.userId
             });
         });
 
-        socket.on('disconnect', () => {
-            console.log(`🔌 Client disconnected: ${socket.id}`);
+        socket.on('leave-consultation', (consultationId) => {
+            socket.leave(`consultation-${consultationId}`);
+            socket.consultationRooms?.delete(consultationId);
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log(`🔌 Client disconnected: ${socket.id} (reason: ${reason})`);
         });
     });
 };
