@@ -87,7 +87,7 @@ router.get('/doctor/pending', auth, doctorAuth, async (req, res) => {
 
         const consultations = await Consultation.find({
             doctorId: doctor._id,
-            status: { $in: ['waiting_verification', 'confirmed', 'in_progress'] }
+            status: { $in: ['confirmed', 'in_progress'] }
         })
             .populate('userId', 'name email phone')
             .sort('scheduledAt');
@@ -343,101 +343,8 @@ router.post('/:id/upload-proof', auth, async (req, res) => {
     });
 });
 
-// ── Admin: verifikasi pembayaran → confirmed ──────────────────────────────────
-router.put('/:id/verify-payment', auth, async (req, res) => {
-    try {
-        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
-
-        const consultation = await Consultation.findById(req.params.id)
-            .populate('doctorId', 'userId name')
-            .populate('userId', 'name');
-
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (consultation.status !== 'waiting_verification') {
-            return res.status(400).json({ message: `Status harus waiting_verification, saat ini: ${consultation.status}` });
-        }
-
-        // ── BUGFIX: jangan konfirmasi jika jadwal sudah berakhir ──────────────
-        // (mencegah konfirmasi terlambat yang langsung ditangkap cron sebagai doctor_no_show)
-        if (consultation.scheduledEnd && consultation.scheduledEnd < new Date()) {
-            return res.status(400).json({
-                message: `Tidak bisa mengkonfirmasi — jadwal konsultasi sudah berakhir (${new Date(consultation.scheduledEnd).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB). Batalkan dan minta pasien booking ulang.`
-            });
-        }
-
-        consultation.status = 'confirmed';
-        consultation.paymentVerified = true;
-        consultation.verifiedAt = new Date();
-        consultation.verifiedBy = req.userId;
-        await consultation.save();
-
-        // Notif user
-        await createNotification({
-            userId: consultation.userId._id,
-            type: 'consultation_confirmed',
-            title: 'Pembayaran Dikonfirmasi',
-            message: `Pembayaran Anda telah diverifikasi. Konsultasi terjadwal pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
-            data: { consultationId: consultation._id },
-            io: req.app.get('io')
-        });
-
-        // Notif dokter
-        if (consultation.doctorId?.userId) {
-            await createNotification({
-                userId: consultation.doctorId.userId,
-                type: 'consultation_request',
-                title: 'Konsultasi Baru Terkonfirmasi',
-                message: `Pasien ${consultation.userId.name} akan konsultasi pada ${new Date(consultation.scheduledAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
-                data: { consultationId: consultation._id },
-                io: req.app.get('io')
-            });
-        }
-
-        res.json({ success: true, message: 'Pembayaran berhasil diverifikasi', consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
-});
-
-// ── Admin: tolak pembayaran → kembali ke pending_payment atau expired ─────────
-router.put('/:id/reject-payment', auth, async (req, res) => {
-    try {
-        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
-
-        const consultation = await Consultation.findById(req.params.id);
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (consultation.status !== 'waiting_verification') {
-            return res.status(400).json({ message: 'Status harus waiting_verification' });
-        }
-
-        // Jika masih dalam window lock (slot belum expired), kembalikan ke pending_payment
-        const now = new Date();
-        const slotStillValid = consultation.scheduledAt > now;
-        if (slotStillValid) {
-            consultation.status = 'pending_payment';
-            consultation.paymentProofUrl = null;
-            consultation.paymentDeadline = new Date(now.getTime() + 15 * 60 * 1000); // extend 15 mnt lagi
-        } else {
-            consultation.status = 'expired';
-        }
-        consultation.rejectedAt = now;
-        consultation.rejectionReason = req.body.reason || 'Bukti pembayaran tidak valid';
-        await consultation.save();
-
-        await createNotification({
-            userId: consultation.userId,
-            type: 'payment_rejected',
-            title: 'Bukti Pembayaran Ditolak',
-            message: req.body.reason || 'Bukti pembayaran tidak valid. Silakan upload ulang.',
-            data: { consultationId: consultation._id },
-            io: req.app.get('io')
-        });
-
-        res.json({ success: true, message: 'Pembayaran ditolak', consultation });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
-});
+// ── verify-payment & reject-payment dihapus: pembayaran ditangani otomatis oleh Xendit webhook ──
+// Lihat: /api/xendit/webhook → handleConsultationPaid() di xendit.js
 
 // ── Admin: cancelled_by_doctor ────────────────────────────────────────────────
 router.put('/:id/cancel-by-doctor', auth, async (req, res) => {
@@ -723,9 +630,9 @@ router.put('/:id/process-refund', auth, async (req, res) => {
     }
 });
 
-// ── Legacy: mark-paid (tetap ada untuk backward compat, redirect ke verify) ───
+// ── Legacy: mark-paid (tidak digunakan lagi) ──────────────────────────────────
 router.put('/:id/mark-paid', auth, async (req, res) => {
-    return res.status(410).json({ message: 'Endpoint ini sudah diganti dengan /verify-payment (admin) dan /upload-proof (user)' });
+    return res.status(410).json({ message: 'Endpoint ini tidak digunakan lagi. Pembayaran ditangani otomatis oleh Xendit.' });
 });
 
 router.put('/:id/no-show', auth, async (req, res) => {
@@ -774,9 +681,10 @@ router.post('/:id/messages', auth, async (req, res) => {
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        // Hanya bisa chat jika paid/ongoing (access control)
-        if (!['confirmed', 'in_progress', 'completed', 'paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
-            return res.status(403).json({ message: 'Konsultasi belum aktif' });
+        // Hanya bisa chat jika konsultasi sedang aktif (in_progress)
+        // completed, no_show, dll → tidak boleh kirim pesan baru
+        if (!['confirmed', 'in_progress', 'paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
+            return res.status(403).json({ message: 'Konsultasi tidak aktif. Pesan hanya bisa dikirim saat konsultasi sedang berlangsung.' });
         }
 
         const isUser = consultation.userId._id.toString() === req.userId;
@@ -800,7 +708,7 @@ router.post('/:id/messages', auth, async (req, res) => {
             type: 'new_message',
             title: 'Pesan Baru',
             message: `${senderName}: ${req.body.message?.substring(0, 60)}`,
-            data: { consultationId: consultation._id, url: `/consultations/${consultation._id}` },
+            data: { consultationId: consultation._id },
             io: req.app.get('io')
         });
 
@@ -820,8 +728,8 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
             .populate('doctorId', 'name userId');
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        if (!['confirmed', 'in_progress', 'completed', 'paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
-            return res.status(403).json({ message: 'Konsultasi belum aktif' });
+        if (!['confirmed', 'in_progress', 'paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
+            return res.status(403).json({ message: 'Konsultasi tidak aktif. Pesan hanya bisa dikirim saat konsultasi sedang berlangsung.' });
         }
         if (!req.file) return res.status(400).json({ message: 'File tidak ditemukan' });
 

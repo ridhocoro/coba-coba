@@ -1,166 +1,233 @@
 /**
- * Cron: setiap menit jalankan 3 pengecekan:
+ * Expiredconsultationcron.js
+ *
+ * Satu-satunya cron untuk konsultasi. Dijalankan setiap menit.
+ * DoctorNoShowCron.js sudah dihapus — semua logikanya ada di sini.
  *
  * 1. EXPIRED PAYMENT
- *    Consultation status pending_payment & paymentDeadline sudah lewat
- *    → status: expired, slot dibebaskan
+ *    pending_payment + paymentDeadline lewat → expired
  *
- * 2. AUTO START (in_progress)
- *    Consultation status confirmed & scheduledAt sudah tiba (waktu sekarang >= scheduledAt)
- *    → status: in_progress, startTime dicatat
- *    (dokter tetap bisa "start" manual, ini safety net)
+ * 2. AUTO IN_PROGRESS
+ *    confirmed + scheduledAt tiba + scheduledEnd belum lewat → in_progress
+ *    (atomic: findOneAndUpdate agar tidak double-process)
  *
  * 3. DOCTOR NO SHOW
- *    Consultation status confirmed/in_progress & scheduledEnd sudah lewat + 15 menit grace
- *    DAN dokter belum klik start (status masih confirmed)
- *    → status: doctor_no_show → trigger refund placeholder
+ *    confirmed + scheduledEnd + 15 menit grace lewat (dokter tidak pernah start)
+ *    → doctor_no_show → refund_requested
+ *    (atomic: dua findOneAndUpdate berurutan)
  *
- * Semua waktu dibandingkan UTC (Date.now()) — WIB hanya untuk logging.
+ * 4. AUTO CLOSE (user no_show / completed)
+ *    in_progress + scheduledEnd + 15 menit grace lewat (dokter tidak klik End)
+ *    → no_show (user tidak pernah kirim pesan) atau completed
+ *    (atomic: findOneAndUpdate)
+ *
+ * Semua timestamp dibandingkan UTC — WIB hanya untuk logging.
  */
 
-const Consultation         = require('../models/Consultation');
-const Doctor               = require('../models/Doctor');
-const User                 = require('../models/User');
+const Consultation       = require('../models/Consultation');
+const Doctor             = require('../models/Doctor');
+const User               = require('../models/User');
 const { createNotification } = require('./notificationHelper');
 
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
-const fmtWIB = (d) => new Date(d.getTime() + WIB_OFFSET).toISOString().replace('T',' ').slice(0,16) + ' WIB';
+const fmtWIB = (d) =>
+    new Date(d.getTime() + WIB_OFFSET).toISOString().replace('T', ' ').slice(0, 16) + ' WIB';
 
-let _io = null;
+let _io    = null;
+let _timer = null;
 
-// ── 1. Expired payment ───────────────────────────────────────────────────────
+// ── 1. Expired payment ────────────────────────────────────────────────────────
 const checkExpiredPayments = async () => {
     const now = new Date();
-    const expired = await Consultation.find({
+
+    const candidates = await Consultation.find({
         status         : 'pending_payment',
         paymentDeadline: { $lt: now },
-    });
+    }).select('_id userId');
 
-    for (const c of expired) {
-        c.status      = 'expired';
-        c.cancelledBy = 'system';
-        c.cancelReason = 'Pembayaran tidak dilakukan dalam 15 menit';
-        await c.save();
+    for (const c of candidates) {
+        const updated = await Consultation.findOneAndUpdate(
+            { _id: c._id, status: 'pending_payment' },
+            { $set: {
+                status       : 'expired',
+                cancelledBy  : 'system',
+                cancelReason : 'Pembayaran tidak dilakukan dalam 15 menit',
+            }},
+            { new: true }
+        );
+        if (!updated) continue;
 
         await createNotification({
-            userId  : c.userId,
+            userId  : updated.userId,
             type    : 'consultation_expired',
             title   : 'Konsultasi Kadaluarsa ⏰',
             message : 'Anda tidak melakukan pembayaran dalam 15 menit. Silakan booking ulang.',
-            data    : { consultationId: c._id },
+            data    : { consultationId: updated._id },
             io      : _io,
         });
 
-        // Emit socket agar frontend update real-time
         if (_io) {
-            _io.to(`user-${c.userId}`).emit('consultation-status-update', {
-                consultationId: c._id.toString(),
+            _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                consultationId: updated._id.toString(),
                 status        : 'expired',
             });
         }
 
-        console.log(`[CRON] Consultation ${c._id} → expired (${fmtWIB(now)})`);
+        console.log(`[CRON] ${updated._id} → expired (${fmtWIB(now)})`);
     }
 };
 
-// ── 2. Auto in_progress saat jam mulai tiba ──────────────────────────────────
+// ── 2. Auto in_progress saat jam mulai tiba ───────────────────────────────────
 const checkAutoInProgress = async () => {
     const now = new Date();
 
-    // confirmed + scheduledAt sudah tiba + scheduledEnd belum lewat
-    const toStart = await Consultation.find({
-        status     : 'confirmed',
-        scheduledAt: { $lte: now },
+    const candidates = await Consultation.find({
+        status      : 'confirmed',
+        scheduledAt : { $lte: now },
         scheduledEnd: { $gt: now },
-    });
+    }).select('_id userId doctorId scheduledAt');
 
-    for (const c of toStart) {
-        c.status    = 'in_progress';
-        c.startTime = c.scheduledAt; // gunakan scheduledAt sebagai startTime resmi
-        await c.save();
+    for (const c of candidates) {
+        const updated = await Consultation.findOneAndUpdate(
+            { _id: c._id, status: 'confirmed' },
+            { $set: { status: 'in_progress', startTime: c.scheduledAt } },
+            { new: true }
+        );
+        if (!updated) continue;
 
         // Notif user
         await createNotification({
-            userId  : c.userId,
+            userId  : updated.userId,
             type    : 'consultation_started',
             title   : 'Konsultasi Dimulai 🩺',
             message : 'Waktu konsultasi Anda telah tiba. Silakan mulai chat/video call dengan dokter.',
-            data    : { consultationId: c._id },
+            data    : { consultationId: updated._id },
             io      : _io,
         });
 
-        // Notif dokter
-        const doctor = await Doctor.findById(c.doctorId);
-        if (doctor) {
-            const docUser = await User.findById(doctor.userId);
-            if (docUser) {
+        // Notif dokter — null-safe
+        try {
+            const doctor = await Doctor.findById(updated.doctorId).select('userId');
+            if (doctor?.userId) {
                 await createNotification({
-                    userId  : docUser._id,
+                    userId  : doctor.userId,
                     type    : 'consultation_started',
                     title   : 'Sesi Konsultasi Dimulai 🩺',
-                    message : `Waktu konsultasi dengan pasien telah tiba. Silakan mulai sesi.`,
-                    data    : { consultationId: c._id },
+                    message : 'Waktu konsultasi dengan pasien telah tiba. Silakan mulai sesi.',
+                    data    : { consultationId: updated._id },
                     io      : _io,
                 });
             }
+        } catch (e) {
+            console.error(`[CRON] Gagal notif dokter konsultasi ${updated._id}:`, e.message);
         }
 
         if (_io) {
-            _io.to(`user-${c.userId}`).emit('consultation-status-update', {
-                consultationId: c._id.toString(),
+            _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                consultationId: updated._id.toString(),
                 status        : 'in_progress',
             });
         }
 
-        console.log(`[CRON] Consultation ${c._id} → in_progress (${fmtWIB(now)})`);
+        console.log(`[CRON] ${updated._id} → in_progress (${fmtWIB(now)})`);
     }
 };
 
 // ── 3. Doctor no show ─────────────────────────────────────────────────────────
-// Grace period: 15 menit setelah scheduledEnd
 const checkDoctorNoShow = async () => {
-    const now = new Date();
-    const gracePeriodMs = 15 * 60 * 1000; // 15 mnt
+    const now   = new Date();
+    const grace = new Date(now.getTime() - 15 * 60 * 1000);
 
-    // Konsultasi yang masih confirmed (dokter belum start) SETELAH scheduledEnd + grace
-    const noShows = await Consultation.find({
+    const candidates = await Consultation.find({
         status      : 'confirmed',
-        scheduledEnd: { $lt: new Date(now.getTime() - gracePeriodMs) },
-    });
+        scheduledEnd: { $lt: grace },
+    }).select('_id userId');
 
-    for (const c of noShows) {
-        c.status      = 'doctor_no_show';
-        c.cancelledAt = now;
-        c.cancelledBy = 'system';
-        c.cancelReason = 'Dokter tidak memulai sesi dalam waktu yang ditentukan';
-        await c.save();
+    for (const c of candidates) {
+        // Step 1: atomic → doctor_no_show
+        const step1 = await Consultation.findOneAndUpdate(
+            { _id: c._id, status: 'confirmed' },
+            { $set: {
+                status       : 'doctor_no_show',
+                cancelledAt  : now,
+                cancelledBy  : 'system',
+                cancelReason : 'Dokter tidak memulai sesi dalam waktu yang ditentukan',
+            }},
+            { new: true }
+        );
+        if (!step1) continue;
 
-        // Trigger placeholder refund
-        await triggerRefund(c, _io);
+        // Step 2: atomic → refund_requested
+        const step2 = await Consultation.findOneAndUpdate(
+            { _id: step1._id, status: 'doctor_no_show' },
+            { $set: {
+                status : 'refund_requested',
+                refund : {
+                    bankName      : 'Proses Admin',
+                    accountNumber : '-',
+                    accountName   : '-',
+                    requestedAt   : now,
+                    notes         : 'Auto-refund: dokter tidak hadir pada jadwal konsultasi',
+                },
+            }},
+            { new: true }
+        );
+        if (!step2) continue;
 
-        console.log(`[CRON] Consultation ${c._id} → doctor_no_show (${fmtWIB(now)})`);
+        // Notif user
+        await createNotification({
+            userId  : step2.userId,
+            type    : 'doctor_no_show',
+            title   : 'Dokter Tidak Hadir — Refund Otomatis 💰',
+            message : 'Dokter tidak hadir pada jadwal konsultasi Anda. Refund akan diproses admin dalam 3-5 hari kerja.',
+            data    : { consultationId: step2._id },
+            io      : _io,
+        });
+
+        // Notif semua admin
+        try {
+            const admins = await User.find({ role: 'admin' }).select('_id');
+            for (const admin of admins) {
+                await createNotification({
+                    userId  : admin._id,
+                    type    : 'refund_requested',
+                    title   : 'Refund Otomatis: Dokter Tidak Hadir',
+                    message : 'Ada konsultasi yang perlu diproses refundnya (dokter tidak hadir).',
+                    data    : { consultationId: step2._id },
+                    io      : _io,
+                });
+            }
+        } catch (e) {
+            console.error(`[CRON] Gagal notif admin refund ${step2._id}:`, e.message);
+        }
+
+        if (_io) {
+            _io.to(`user-${step2.userId}`).emit('consultation-status-update', {
+                consultationId: step2._id.toString(),
+                status        : 'refund_requested',
+            });
+        }
+
+        console.log(`[CRON] ${step2._id} → doctor_no_show → refund_requested (${fmtWIB(now)})`);
     }
 };
 
-// ── 4. User no show / auto end (setelah in_progress berakhir tanpa klik End) ──
+// ── 4. Auto close: user no_show / completed ────────────────────────────────────
 const checkUserNoShow = async () => {
-    const now = new Date();
-    const gracePeriodMs = 15 * 60 * 1000;
+    const now   = new Date();
+    const grace = new Date(now.getTime() - 15 * 60 * 1000);
 
-    // in_progress yang sudah melewati scheduledEnd + grace
-    const stale = await Consultation.find({
+    const candidates = await Consultation.find({
         status      : 'in_progress',
-        scheduledEnd: { $lt: new Date(now.getTime() - gracePeriodMs) },
+        scheduledEnd: { $lt: grace },
     });
 
-    for (const c of stale) {
-        // Cek apakah user pernah mengirim pesan
+    for (const c of candidates) {
         const userMessages = (c.messages || []).filter(
             m => m.senderId?.toString() === c.userId?.toString()
         );
         const finalStatus = userMessages.length === 0 ? 'no_show' : 'completed';
 
-        // Atomic: hanya update jika masih in_progress
         const updated = await Consultation.findOneAndUpdate(
             { _id: c._id, status: 'in_progress' },
             { $set: { status: finalStatus, endTime: c.scheduledEnd } },
@@ -184,7 +251,6 @@ const checkUserNoShow = async () => {
                 consultationId: updated._id.toString(),
                 status        : finalStatus,
             });
-            // Trigger rating modal untuk user
             if (finalStatus === 'completed') {
                 _io.to(`user-${updated.userId}`).emit('show-rating-modal', {
                     consultationId: updated._id.toString(),
@@ -192,75 +258,28 @@ const checkUserNoShow = async () => {
             }
         }
 
-        console.log(`[CRON] Consultation ${updated._id} → ${finalStatus} (auto-close, ${fmtWIB(now)})`);
-    }
-};
-
-// ── Trigger refund placeholder ───────────────────────────────────────────────
-const triggerRefund = async (consultation, io) => {
-    try {
-        const User = require('../models/User');
-
-        // Set refund_requested (bukan refunded) karena belum ada Xendit Refund API
-        // Admin akan memproses secara manual
-        consultation.status = 'refund_requested';
-        consultation.refund = {
-            bankName: 'Proses Admin',
-            accountNumber: '-',
-            accountName: '-',
-            requestedAt: new Date(),
-            notes: 'Auto-refund: dokter tidak hadir pada jadwal konsultasi'
-        };
-        await consultation.save();
-
-        await createNotification({
-            userId  : consultation.userId,
-            type    : 'doctor_no_show',
-            title   : 'Refund Otomatis Dijadwalkan 💰',
-            message : 'Dokter tidak hadir pada jadwal konsultasi Anda. Refund akan diproses oleh admin dalam 3-5 hari kerja.',
-            data    : { consultationId: consultation._id },
-            io,
-        });
-
-        // Notif admin
-        const admins = await User.find({ role: 'admin' });
-        for (const admin of admins) {
-            await createNotification({
-                userId: admin._id,
-                type: 'refund_requested',
-                title: 'Refund Otomatis: Dokter Tidak Hadir',
-                message: `Konsultasi perlu diproses refundnya (dokter tidak hadir).`,
-                data: { consultationId: consultation._id },
-                io
-            });
-        }
-
-        if (io) {
-            io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
-                consultationId: consultation._id.toString(),
-                status        : 'refund_requested',
-            });
-        }
-    } catch (err) {
-        console.error('[CRON] triggerRefund error:', err.message);
+        console.log(`[CRON] ${updated._id} → ${finalStatus} (auto-close, ${fmtWIB(now)})`);
     }
 };
 
 // ── Master runner ─────────────────────────────────────────────────────────────
 const runAllChecks = async () => {
-    await checkExpiredPayments();
-    await checkAutoInProgress();
-    await checkDoctorNoShow();
-    await checkUserNoShow();
+    try { await checkExpiredPayments(); } catch (e) { console.error('[CRON] checkExpiredPayments:', e.message); }
+    try { await checkAutoInProgress();  } catch (e) { console.error('[CRON] checkAutoInProgress:', e.message); }
+    try { await checkDoctorNoShow();    } catch (e) { console.error('[CRON] checkDoctorNoShow:', e.message); }
+    try { await checkUserNoShow();      } catch (e) { console.error('[CRON] checkUserNoShow:', e.message); }
 };
 
 const startCron = (socketIo) => {
     _io = socketIo;
-    // Jalankan setiap 60 detik
-    setInterval(runAllChecks, 60 * 1000);
-    // Jalankan sekali langsung saat startup
+    if (_timer) return; // jangan double-start
+    _timer = setInterval(runAllChecks, 60 * 1000);
     runAllChecks().catch(e => console.error('[CRON] startup check error:', e.message));
-    console.log('✅ Consultation cron started (expired / auto-start / no-show checks)');
+    console.log('✅ Consultation cron started (expired / auto-start / doctor-no-show / auto-close)');
 };
 
-module.exports = { startCron };
+const stopCron = () => {
+    if (_timer) { clearInterval(_timer); _timer = null; }
+};
+
+module.exports = { startCron, stopCron };

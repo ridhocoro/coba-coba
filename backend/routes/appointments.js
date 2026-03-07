@@ -122,7 +122,7 @@ router.get('/doctor/availability', auth, doctorAuth, async (req, res) => {
     }
 });
 
-/** PUT simpan/update availability offline */
+/** PUT simpan/update availability janji temu offline */
 router.put('/doctor/availability', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ userId: req.userId });
@@ -135,55 +135,86 @@ router.put('/doctor/availability', auth, doctorAuth, async (req, res) => {
             isActive,
         } = req.body;
 
-        // Validasi: hanya hari Senin–Jumat
-        const validDays = [1, 2, 3, 4, 5];
-        const days = (practiceDays || [1,2,3,4,5]).filter(d => validDays.includes(d));
-
-        // Validasi jam hanya menit :00 atau :30
-        const validateTime = (t) => {
-            if (!t) return false;
+        // ── Helper lokal ──────────────────────────────────────────────────
+        const toM = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+        const validMin = (t) => {
+            if (!t || !/^\d{2}:\d{2}$/.test(t)) return false;
             const [, m] = t.split(':').map(Number);
             return m === 0 || m === 30;
         };
 
-        const times = [morningStart, morningEnd, afternoonStart, afternoonEnd];
-        if (times.some(t => t && !validateTime(t))) {
+        // ── Validasi hari: hanya Senin–Jumat ──────────────────────────────
+        const days = (practiceDays || [1,2,3,4,5]).map(Number).filter(d => [1,2,3,4,5].includes(d));
+        if (days.length === 0)
+            return res.status(400).json({ message: 'Hari praktik hanya boleh Senin–Jumat' });
+
+        // ── Validasi format & menit :00/:30 ───────────────────────────────
+        const allTimes = [morningStart, morningEnd, afternoonStart, afternoonEnd];
+        if (allTimes.some(t => t && !validMin(t)))
             return res.status(400).json({ message: 'Jam hanya boleh di menit :00 atau :30' });
-        }
 
-        // ── Cek overlap dengan jadwal konsultasi online ─────────────────────
-        const onlineAvail = await DoctorAvailability.findOne({ doctorId: doctor._id });
-        if (onlineAvail && onlineAvail.isActive) {
-            const onlineSlots = onlineAvail.generateSlotsForDay();
-            const offlineSlots = new AppointmentAvailability({
-                doctorId       : doctor._id,
-                practiceDays   : days,
-                morningStart   : morningStart   || '08:30',
-                morningEnd     : morningEnd     || '11:30',
-                afternoonStart : afternoonStart || '13:30',
-                afternoonEnd   : afternoonEnd   || '16:30',
-            }).generateSlots();
+        // ── Sesi pagi: dalam 08:00 – 12:00 ───────────────────────────────
+        const ms = morningStart   || '08:00';
+        const me = morningEnd     || '12:00';
+        if (toM(ms) < toM('08:00'))
+            return res.status(400).json({ message: 'Sesi pagi tidak boleh mulai sebelum 08:00' });
+        if (toM(me) > toM('12:00'))
+            return res.status(400).json({ message: 'Sesi pagi tidak boleh melewati 12:00 (batas break siang)' });
+        if (toM(ms) >= toM(me))
+            return res.status(400).json({ message: 'Jam mulai sesi pagi harus sebelum jam selesainya' });
+        if ((toM(me) - toM(ms)) < 30)
+            return res.status(400).json({ message: 'Sesi pagi minimal 30 menit' });
 
+        // ── Sesi sore: dalam 13:00 – 16:00 ───────────────────────────────
+        const as = afternoonStart || '13:00';
+        const ae = afternoonEnd   || '16:00';
+        if (toM(as) < toM('13:00'))
+            return res.status(400).json({ message: 'Sesi sore tidak boleh mulai sebelum 13:00 (setelah break siang)' });
+        if (toM(ae) > toM('16:00'))
+            return res.status(400).json({ message: 'Sesi sore tidak boleh melewati 16:00' });
+        if (toM(as) >= toM(ae))
+            return res.status(400).json({ message: 'Jam mulai sesi sore harus sebelum jam selesainya' });
+        if ((toM(ae) - toM(as)) < 30)
+            return res.status(400).json({ message: 'Sesi sore minimal 30 menit' });
+
+        // ── Pastikan menghasilkan minimal 1 slot ──────────────────────────
+        const tmpAvail = new AppointmentAvailability({
+            doctorId       : doctor._id,
+            practiceDays   : days,
+            morningStart   : ms,
+            morningEnd     : me,
+            afternoonStart : as,
+            afternoonEnd   : ae,
+        });
+        if (tmpAvail.generateSlots().length === 0)
+            return res.status(400).json({ message: 'Pengaturan ini tidak menghasilkan slot apapun. Perlebar rentang jam.' });
+
+        // ── Cek overlap dengan jadwal konsultasi online ───────────────────
+        // Janji temu offline dan konsultasi online tidak boleh di slot yang sama
+        const onlineAvail = await DoctorAvailability.findOne({ doctorId: doctor._id, isActive: true });
+        if (onlineAvail) {
+            const onlineSlots  = onlineAvail.generateSlotsForDay();
+            const offlineSlots = tmpAvail.generateSlots();
             const onlineTimes  = new Set(onlineSlots.map(s => s.startTime));
             const overlapping  = offlineSlots.filter(s => onlineTimes.has(s.startTime));
-
             if (overlapping.length > 0) {
                 return res.status(400).json({
-                    message     : `Jadwal offline bertabrakan dengan jadwal konsultasi online pada slot: ${overlapping.map(s => s.startTime).join(', ')}. Silakan sesuaikan jam atau hubungi admin untuk override.`,
+                    message     : `Jadwal janji temu offline bentrok dengan konsultasi online di slot: ${overlapping.map(s => s.startTime).join(', ')}. Sesuaikan jam agar tidak overlap.`,
                     overlapping : overlapping.map(s => s.startTime),
                 });
             }
         }
 
+        // ── Simpan ────────────────────────────────────────────────────────
         const avail = await AppointmentAvailability.findOneAndUpdate(
             { doctorId: doctor._id },
             {
                 $set: {
                     practiceDays   : days,
-                    morningStart   : morningStart   || '08:30',
-                    morningEnd     : morningEnd     || '11:30',
-                    afternoonStart : afternoonStart || '13:30',
-                    afternoonEnd   : afternoonEnd   || '16:30',
+                    morningStart   : ms,
+                    morningEnd     : me,
+                    afternoonStart : as,
+                    afternoonEnd   : ae,
                     isActive       : isActive !== undefined ? isActive : true,
                     updatedAt      : new Date(),
                 }
