@@ -8,10 +8,9 @@ import api from '../../utils/api';
 import {
     FaUserMd, FaClipboardList, FaPills, FaCalendarAlt,
     FaHeartbeat, FaSignInAlt, FaUserPlus, FaSignOutAlt,
-    FaUser, FaCog, FaShieldAlt, FaStethoscope, FaFileMedical,
+    FaUser, FaShieldAlt, FaStethoscope,
     FaHome, FaChartLine, FaCreditCard,
     FaBox, FaUsers, FaMoneyBillWave, FaPrescription,
-    FaComment, FaClock
 } from 'react-icons/fa';
 
 const Navigation = () => {
@@ -20,7 +19,6 @@ const Navigation = () => {
     const navigate = useNavigate();
     const [pendingPayments, setPendingPayments] = useState(0);
 
-    // Fetch jumlah pembayaran pending untuk badge admin (dinamis dari API)
     useEffect(() => {
         if (user?.role === 'admin') {
             api.get('/api/admin/payments/pending')
@@ -28,6 +26,11 @@ const Navigation = () => {
                 .catch(() => setPendingPayments(0));
         }
     }, [user]);
+
+    // Dokter tidak pakai Navbar — DoctorDashboard punya sidebar sendiri.
+    // Pengecekan ini sebagai safety net; App.js sudah menyembunyikan Navbar
+    // untuk role dokter, tapi kalau komponen ini dipanggil langsung, tetap aman.
+    if (user?.role === 'doctor') return null;
 
     const handleLogout = () => {
         logout();
@@ -66,30 +69,6 @@ const Navigation = () => {
                         </Nav>
                     )}
 
-                    {/* ========== NAV UTAMA: DOKTER ========== */}
-                    {user?.role === 'doctor' && (
-                        <Nav className="me-auto">
-                            <Nav.Link as={Link} to="/doctor">
-                                <FaHome className="me-1" /> Dashboard
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/doctor/appointments">
-                                <FaCalendarAlt className="me-1" /> Janji Temu
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/doctor/consultations">
-                                <FaComment className="me-1" /> Konsultasi
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/doctor/sick-letters">
-                                <FaFileMedical className="me-1" /> Surat Sakit
-                                {unreadCount > 0 && (
-                                    <Badge bg="danger" className="ms-1">{unreadCount}</Badge>
-                                )}
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/doctor/settings">
-                                <FaCog className="me-1" /> Pengaturan
-                            </Nav.Link>
-                        </Nav>
-                    )}
-
                     {/* ========== NAV UTAMA: ADMIN ========== */}
                     {user?.role === 'admin' && (
                         <Nav className="me-auto">
@@ -122,7 +101,6 @@ const Navigation = () => {
 
                     {/* ========== NAV KANAN ========== */}
                     <Nav className="align-items-center">
-                        {/* Notification Bell (hanya untuk yang sudah login) */}
                         {user && <NotificationDropdown />}
 
                         {user ? (
@@ -130,18 +108,11 @@ const Navigation = () => {
                                 {/* ----- Dropdown: USER ----- */}
                                 {user.role === 'user' && (
                                     <NavDropdown
-                                        title={
-                                            <span>
-                                                <FaUser className="me-1" />
-                                                {user.name?.split(' ')[0]}
-                                            </span>
-                                        }
+                                        title={<span><FaUser className="me-1" />{user.name?.split(' ')[0]}</span>}
                                         id="user-dropdown"
                                         align="end"
                                     >
-                                        <NavDropdown.Header className="text-muted small">
-                                            Menu User
-                                        </NavDropdown.Header>
+                                        <NavDropdown.Header className="text-muted small">Menu User</NavDropdown.Header>
                                         <NavDropdown.Item as={Link} to="/dashboard">
                                             <FaHome className="me-2" /> Dashboard
                                         </NavDropdown.Item>
@@ -167,64 +138,14 @@ const Navigation = () => {
                                     </NavDropdown>
                                 )}
 
-                                {/* ----- Dropdown: DOKTER ----- */}
-                                {user.role === 'doctor' && (
-                                    <NavDropdown
-                                        title={
-                                            <span className="text-success">
-                                                <FaStethoscope className="me-1" />
-                                                Dr. {user.name?.split(' ')[0]}
-                                            </span>
-                                        }
-                                        id="doctor-dropdown"
-                                        align="end"
-                                    >
-                                        <NavDropdown.Header className="text-muted small">
-                                            Panel Dokter
-                                        </NavDropdown.Header>
-                                        <NavDropdown.Item as={Link} to="/doctor">
-                                            <FaChartLine className="me-2" /> Dashboard Dokter
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/doctor/appointments">
-                                            <FaCalendarAlt className="me-2" /> Jadwal Praktek
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/consultations">
-                                            <FaComment className="me-2" /> Konsultasi
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/doctor/sick-letters">
-                                            <FaFileMedical className="me-2" /> Surat Sakit
-                                            {unreadCount > 0 && (
-                                                <Badge bg="warning" className="ms-2">{unreadCount}</Badge>
-                                            )}
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/doctor/patients">
-                                            <FaUsers className="me-2" /> Pasien Saya
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Divider />
-                                        <NavDropdown.Item as={Link} to="/profile">
-                                            <FaUser className="me-2" /> Profil Saya
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Divider />
-                                        <NavDropdown.Item onClick={handleLogout} className="text-danger">
-                                            <FaSignOutAlt className="me-2" /> Logout
-                                        </NavDropdown.Item>
-                                    </NavDropdown>
-                                )}
-
                                 {/* ----- Dropdown: ADMIN ----- */}
                                 {user.role === 'admin' && (
                                     <NavDropdown
-                                        title={
-                                            <span className="text-warning">
-                                                Admin
-                                            </span>
-                                        }
+                                        title={<span className="text-warning"><FaShieldAlt className="me-1" />Admin</span>}
                                         id="admin-dropdown"
                                         align="end"
                                     >
-                                        <NavDropdown.Header className="text-muted small">
-                                            Panel Administrasi
-                                        </NavDropdown.Header>
+                                        <NavDropdown.Header className="text-muted small">Panel Administrasi</NavDropdown.Header>
                                         <NavDropdown.Item as={Link} to="/admin">
                                             <FaChartLine className="me-2" /> Dashboard
                                         </NavDropdown.Item>

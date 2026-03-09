@@ -1,18 +1,12 @@
 /**
  * /api/availability — Jadwal Konsultasi Online Dokter
  *
- * GET  /my        → dokter lihat pengaturan jadwalnya sendiri
- * PUT  /my        → dokter simpan pengaturan jadwal
- * GET  /slots/:id → user lihat slot tersedia dokter (7 hari ke depan)
+ * GET  /my          → dokter lihat jadwal per-hari miliknya
+ * PUT  /my          → dokter simpan jadwal per-hari
+ * GET  /slots/:id   → user lihat slot tersedia dokter (7 hari ke depan)
  *
- * Aturan sistem (tidak bisa diubah siapapun):
- *  - Jam operasional : 08:00 – 16:00 WIB
- *  - Break siang     : 12:00 – 13:00 WIB (fixed)
- *  - Slot hanya di menit :00 atau :30
- *  - Durasi sesi     : 30 menit, buffer 30 menit (interval = 60 menit)
- *  - Hari            : Senin–Jumat saja
- *
- * Dokter hanya bisa memilih startTime, endTime, dan practiceDays.
+ * Slot konsultasi online yang diizinkan (FIXED):
+ *   08:30  09:30  10:30  11:30  13:30  14:30  15:30
  */
 
 const express            = require('express');
@@ -23,193 +17,153 @@ const Doctor             = require('../models/Doctor');
 const DoctorAvailability = require('../models/DoctorAvailability');
 const Consultation       = require('../models/Consultation');
 
-const WIB_OFFSET = 7 * 60 * 60 * 1000;
-
-// Batas sistem (fixed)
-const SYS_START   = '08:00';
-const SYS_END     = '16:00';
-const LUNCH_START = '12:00';
-const LUNCH_END   = '13:00';
+const ALLOWED_SLOTS = DoctorAvailability.ALLOWED_SLOTS;
+const WIB_OFFSET    = 7 * 60 * 60 * 1000;
+const DAYS_LABEL    = { 1:'Senin', 2:'Selasa', 3:'Rabu', 4:'Kamis', 5:'Jumat' };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const nowAsWIB   = () => new Date(Date.now() + WIB_OFFSET);
-const wibDateStr = (wibDate) => wibDate.toISOString().slice(0, 10);
-const wibDay     = (wibDate) => wibDate.getUTCDay();
+const wibDateStr = (d) => d.toISOString().slice(0, 10);
+const wibDay     = (d) => d.getUTCDay();  // 0=Min, 1=Sen, …, 6=Sab
 
 const wibToUtcDate = (dateStr, timeStr) => {
-    const [y, mo, d] = dateStr.split('-').map(Number);
-    const [h, m]     = timeStr.split(':').map(Number);
-    return new Date(Date.UTC(y, mo - 1, d, h, m, 0) - WIB_OFFSET);
+    const [y, mo, dd] = dateStr.split('-').map(Number);
+    const [h,  m]     = timeStr.split(':').map(Number);
+    return new Date(Date.UTC(y, mo - 1, dd, h, m, 0) - WIB_OFFSET);
 };
 
 const utcToWibHHMM = (utcDate) => {
     const w = new Date(utcDate.getTime() + WIB_OFFSET);
-    return String(w.getUTCHours()).padStart(2,'0') + ':' + String(w.getUTCMinutes()).padStart(2,'0');
+    return `${String(w.getUTCHours()).padStart(2,'0')}:${String(w.getUTCMinutes()).padStart(2,'0')}`;
 };
 
-const toMin = (hhmm) => {
-    const [h, m] = hhmm.split(':').map(Number);
-    return h * 60 + m;
+/**
+ * Normalise schedule dari body request.
+ * Menerima object { "1": ["08:30","09:30"], "2": [...], ... }
+ * Hanya menyimpan slot yang ada di ALLOWED_SLOTS.
+ * Key yang tidak ada di 1–5 dibuang.
+ */
+const normaliseSchedule = (raw) => {
+    const result = { '1':[],'2':[],'3':[],'4':[],'5':[] };
+    if (!raw || typeof raw !== 'object') return result;
+    for (let d = 1; d <= 5; d++) {
+        const key    = String(d);
+        const incoming = Array.isArray(raw[key]) ? raw[key] : [];
+        result[key]  = incoming.filter(s => ALLOWED_SLOTS.includes(s));
+    }
+    return result;
 };
 
-/** Validasi: hanya menit :00 atau :30 */
-const isValidMinute = (hhmm) => {
-    if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return false;
-    const [, m] = hhmm.split(':').map(Number);
-    return m === 0 || m === 30;
-};
-
-/** Validasi: dalam batas jam operasional sistem */
-const isWithinSystemHours = (hhmm) => {
-    const t = toMin(hhmm);
-    return t >= toMin(SYS_START) && t <= toMin(SYS_END);
-};
-
-// ── GET /my ──────────────────────────────────────────────────────────────────
+// ── GET /my ───────────────────────────────────────────────────────────────────
 router.get('/my', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ userId: req.userId });
         if (!doctor) return res.status(404).json({ message: 'Data dokter tidak ditemukan' });
 
         const avail = await DoctorAvailability.findOne({ doctorId: doctor._id });
+
+        const defaultSchedule = { '1':[],'2':[],'3':[],'4':[],'5':[] };
+
         if (!avail) {
-            // Kembalikan default
             return res.json({
-                success      : true,
-                availability : {
-                    practiceDays    : [1, 2, 3, 4, 5],
-                    startTime       : SYS_START,
-                    endTime         : SYS_END,
-                    lunchBreakStart : LUNCH_START,
-                    lunchBreakEnd   : LUNCH_END,
-                    sessionDuration : 30,
-                    bufferDuration  : 30,
-                    isActive        : false,
-                    _isDefault      : true,
-                    // Info batas sistem untuk frontend
-                    systemStart     : SYS_START,
-                    systemEnd       : SYS_END,
+                success:      true,
+                availability: {
+                    schedule:     defaultSchedule,
+                    isActive:     false,
+                    allowedSlots: ALLOWED_SLOTS,
+                    _isDefault:   true,
                 },
             });
         }
 
-        // Selalu kembalikan lunchBreak yang fixed agar frontend konsisten
-        const result = avail.toObject();
-        result.lunchBreakStart = LUNCH_START;
-        result.lunchBreakEnd   = LUNCH_END;
-        result.systemStart     = SYS_START;
-        result.systemEnd       = SYS_END;
+        // Konversi Map → plain object untuk JSON response
+        const scheduleObj = {};
+        for (let d = 1; d <= 5; d++) {
+            const key = String(d);
+            scheduleObj[key] = avail.getSlotsForDay(d);
+        }
 
-        res.json({ success: true, availability: result });
+        res.json({
+            success:      true,
+            availability: {
+                _id:          avail._id,
+                schedule:     scheduleObj,
+                isActive:     avail.isActive,
+                allowedSlots: ALLOWED_SLOTS,
+                updatedAt:    avail.updatedAt,
+            },
+        });
     } catch (err) {
         console.error('[GET /availability/my]', err.message);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ── PUT /my ──────────────────────────────────────────────────────────────────
+// ── PUT /my ───────────────────────────────────────────────────────────────────
 router.put('/my', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ userId: req.userId });
         if (!doctor) return res.status(404).json({ message: 'Data dokter tidak ditemukan' });
 
-        const { practiceDays, startTime, endTime, isActive } = req.body;
+        const { schedule, isActive } = req.body;
 
-        // ── Validasi practiceDays ─────────────────────────────────────────────
-        if (!practiceDays || !Array.isArray(practiceDays) || practiceDays.length === 0)
-            return res.status(400).json({ message: 'Pilih minimal satu hari praktik' });
-
-        const validDays  = [1, 2, 3, 4, 5];
-        const cleanDays  = practiceDays.map(Number).filter(d => validDays.includes(d));
-        if (cleanDays.length === 0)
-            return res.status(400).json({ message: 'Hari praktik hanya boleh Senin–Jumat' });
-
-        // ── Validasi startTime & endTime ──────────────────────────────────────
-        if (!startTime || !endTime)
-            return res.status(400).json({ message: 'Jam mulai dan jam selesai wajib diisi' });
-
-        if (!isValidMinute(startTime))
-            return res.status(400).json({ message: 'Jam mulai hanya boleh di menit :00 atau :30' });
-
-        if (!isValidMinute(endTime))
-            return res.status(400).json({ message: 'Jam selesai hanya boleh di menit :00 atau :30' });
-
-        if (!isWithinSystemHours(startTime))
-            return res.status(400).json({ message: `Jam mulai tidak boleh sebelum ${SYS_START} atau setelah ${SYS_END}` });
-
-        if (!isWithinSystemHours(endTime))
-            return res.status(400).json({ message: `Jam selesai tidak boleh melebihi ${SYS_END}` });
-
-        if (toMin(startTime) >= toMin(endTime))
-            return res.status(400).json({ message: 'Jam mulai harus sebelum jam selesai' });
-
-        // Jangan izinkan startTime di break siang
-        const startMin = toMin(startTime);
-        const endMin   = toMin(endTime);
-        const lbS      = toMin(LUNCH_START);
-        const lbE      = toMin(LUNCH_END);
-
-        if (startMin >= lbS && startMin < lbE)
-            return res.status(400).json({ message: `Jam mulai tidak boleh di tengah break siang (${LUNCH_START}–${LUNCH_END})` });
-
-        // ── Cek apakah ada minimal 1 slot yang terbentuk ─────────────────────
-        const SESSION  = 30, BUFFER = 30, INTERVAL = 60;
-        let slotCount = 0;
-        let cur = startMin;
-        while (cur + SESSION <= endMin) {
-            const mins = cur % 60;
-            if (mins !== 0 && mins !== 30) { cur += 30 - (mins % 30); continue; }
-            if (cur >= lbS && cur < lbE)   { cur = lbE; continue; }
-            if (cur < lbS && cur + SESSION > lbS) { cur = lbE; continue; }
-            if (cur + SESSION > endMin) break;
-            slotCount++;
-            cur += INTERVAL;
+        // Validasi: schedule harus ada dan berupa object
+        if (!schedule || typeof schedule !== 'object' || Array.isArray(schedule)) {
+            return res.status(400).json({ message: 'Format schedule tidak valid. Gunakan { "1": ["08:30",...], ... }' });
         }
-        if (slotCount === 0)
-            return res.status(400).json({ message: 'Pengaturan jam ini tidak menghasilkan slot konsultasi apapun. Pastikan ada ruang minimal 60 menit di luar break siang.' });
 
-        // ── Cek overlap dengan janji temu offline ─────────────────────────────
+        // Normalise — buang slot tidak dikenal
+        const cleanSchedule = normaliseSchedule(schedule);
+
+        // Pastikan minimal ada 1 slot aktif di antara semua hari
+        const totalSlots = Object.values(cleanSchedule).reduce((sum, arr) => sum + arr.length, 0);
+        if (totalSlots === 0) {
+            return res.status(400).json({ message: 'Pilih minimal satu slot pada salah satu hari' });
+        }
+
+        // Cek overlap dengan janji temu offline (slot yang sama di hari yang sama)
         const AppointmentAvailability = require('../models/AppointmentAvailability');
         const offlineAvail = await AppointmentAvailability.findOne({ doctorId: doctor._id, isActive: true });
         if (offlineAvail) {
-            // Buat instance sementara untuk generate slot online baru
-            const tmpOnline = new DoctorAvailability({ doctorId: doctor._id, startTime, endTime });
-            const onlineSlots  = tmpOnline.generateSlotsForDay();
-            const offlineSlots = offlineAvail.generateSlots();
-            const offlineTimes = new Set(offlineSlots.map(s => s.startTime));
-            const overlapping  = onlineSlots.filter(s => offlineTimes.has(s.startTime));
-            if (overlapping.length > 0) {
+            const conflicts = [];
+            for (let d = 1; d <= 5; d++) {
+                const onlineSlots  = cleanSchedule[String(d)] || [];
+                const offlineSlots = offlineAvail.getSlotsForDay(d);
+                const overlap      = onlineSlots.filter(s => offlineSlots.includes(s));
+                if (overlap.length > 0) {
+                    conflicts.push(`${DAYS_LABEL[d]}: ${overlap.join(', ')}`);
+                }
+            }
+            if (conflicts.length > 0) {
                 return res.status(400).json({
-                    message     : `Jadwal konsultasi online bentrok dengan janji temu offline pada slot: ${overlapping.map(s => s.startTime).join(', ')}. Sesuaikan jam agar tidak overlap.`,
-                    overlapping : overlapping.map(s => s.startTime),
+                    message:   `Jadwal konsultasi online bentrok dengan janji temu di: ${conflicts.join(' | ')}`,
+                    conflicts,
                 });
             }
         }
 
-        // ── Simpan ────────────────────────────────────────────────────────────
+        // Simpan
         const avail = await DoctorAvailability.findOneAndUpdate(
             { doctorId: doctor._id },
             {
-                doctorId        : doctor._id,
-                practiceDays    : cleanDays,
-                startTime,
-                endTime,
-                // Break siang selalu di-reset ke nilai fixed
-                lunchBreakStart : LUNCH_START,
-                lunchBreakEnd   : LUNCH_END,
-                sessionDuration : SESSION,
-                bufferDuration  : BUFFER,
-                isActive        : isActive !== false,
-                updatedAt       : new Date(),
+                $set: {
+                    schedule:  cleanSchedule,
+                    isActive:  isActive !== false,
+                    updatedAt: new Date(),
+                },
             },
             { upsert: true, new: true }
         );
 
-        const result       = avail.toObject();
-        result.systemStart = SYS_START;
-        result.systemEnd   = SYS_END;
+        // Konversi Map → plain object
+        const scheduleObj = {};
+        for (let d = 1; d <= 5; d++) scheduleObj[String(d)] = avail.getSlotsForDay(d);
 
-        res.json({ success: true, availability: result });
+        res.json({
+            success:      true,
+            message:      'Jadwal konsultasi online berhasil disimpan',
+            availability: { schedule: scheduleObj, isActive: avail.isActive, allowedSlots: ALLOWED_SLOTS },
+        });
     } catch (err) {
         console.error('[PUT /availability/my]', err.message);
         res.status(500).json({ message: 'Server error' });
@@ -227,49 +181,54 @@ router.get('/slots/:doctorId', async (req, res) => {
             return res.status(404).json({ message: 'Dokter tidak ditemukan' });
 
         const avail = await DoctorAvailability.findOne({ doctorId });
-        if (!avail)
-            return res.json({ success: true, slots: [], message: 'Dokter belum mengatur jadwal praktik' });
-        if (!avail.isActive)
-            return res.json({ success: true, slots: [], message: 'Dokter sedang tidak menerima konsultasi' });
+        if (!avail || !avail.isActive)
+            return res.json({ success: true, slots: [], message: 'Dokter belum mengatur jadwal atau sedang tidak aktif' });
 
         const nowWIB = nowAsWIB();
         const nowUTC = new Date();
         const result = [];
 
+        // Generate slot 7 hari ke depan
         for (let offset = 1; offset <= 7; offset++) {
             const targetWIB = new Date(nowWIB.getTime() + offset * 24 * 60 * 60 * 1000);
-            const dayOfWeek = wibDay(targetWIB);
-            const dateStr   = wibDateStr(targetWIB);
+            const dayOfWeek = wibDay(targetWIB);  // 0=Min, 1=Sen, …
 
-            if (!avail.practiceDays.includes(dayOfWeek)) continue;
+            // Hanya Senin–Jumat
+            if (dayOfWeek < 1 || dayOfWeek > 5) continue;
 
-            const daySlots = avail.generateSlotsForDay();
-            if (daySlots.length === 0) continue;
+            const activeSlots = avail.getSlotsForDay(dayOfWeek);
+            if (activeSlots.length === 0) continue;
 
+            const dateStr = wibDateStr(targetWIB);
+
+            // Ambil sesi yang sudah dibooking hari ini
             const dayStartUTC = wibToUtcDate(dateStr, '00:00');
             const dayEndUTC   = wibToUtcDate(dateStr, '23:59');
 
             const bookedList = await Consultation.find({
                 doctorId,
-                scheduledAt : { $gte: dayStartUTC, $lte: dayEndUTC },
-                status      : { $in: ['pending_payment', 'waiting_verification', 'confirmed', 'in_progress'] },
+                scheduledAt: { $gte: dayStartUTC, $lte: dayEndUTC },
+                status:      { $in: ['pending_payment','waiting_verification','confirmed','in_progress'] },
             }).select('scheduledAt');
 
             const bookedSet = new Set(bookedList.map(c => utcToWibHHMM(c.scheduledAt)));
 
-            for (const slot of daySlots) {
-                const startUTC = wibToUtcDate(dateStr, slot.startTime);
-                const endUTC   = wibToUtcDate(dateStr, slot.endTime);
+            for (const slot of activeSlots) {
+                const slotUTC = wibToUtcDate(dateStr, slot);
 
-                if (startUTC.getTime() <= nowUTC.getTime()) continue;
+                // Jangan tampilkan slot yang sudah lewat
+                if (slotUTC.getTime() <= nowUTC.getTime()) continue;
+
+                // End time = +60 menit (sesi 30 mnt + buffer 30 mnt)
+                const endUTC = new Date(slotUTC.getTime() + 60 * 60 * 1000);
 
                 result.push({
-                    date      : dateStr,
-                    startTime : slot.startTime,
-                    endTime   : slot.endTime,
-                    startUtc  : startUTC.toISOString(),
-                    endUtc    : endUTC.toISOString(),
-                    available : !bookedSet.has(slot.startTime),
+                    date:      dateStr,
+                    startTime: slot,
+                    endTime:   utcToWibHHMM(endUTC),
+                    startUtc:  slotUTC.toISOString(),
+                    endUtc:    endUTC.toISOString(),
+                    available: !bookedSet.has(slot),
                 });
             }
         }

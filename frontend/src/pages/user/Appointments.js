@@ -40,14 +40,25 @@ const StatusBadge = ({ status }) => {
     );
 };
 
-// ── Generate 7 hari ke depan (Senin–Jumat saja) ──────────────────────────────
+// ── Derive hari praktik dari schedule Map (key '1'–'5') ──────────────────────
+function getPracticeDays(availability) {
+    if (!availability) return [1,2,3,4,5];
+    // availability.practiceDays (lama) atau dari schedule Map baru
+    if (availability.practiceDays) return availability.practiceDays;
+    if (availability.schedule) {
+        return Object.entries(availability.schedule)
+            .filter(([, slots]) => Array.isArray(slots) && slots.length > 0)
+            .map(([day]) => Number(day));
+    }
+    return [1,2,3,4,5];
+}
+
+// ── Generate hari praktik dalam 7 hari ke depan saja (tidak melompat minggu) ──
 function generateAvailableDates(practiceDays = [1,2,3,4,5]) {
     const dates = [];
     const now   = new Date();
-    for (let i = 0; i < 14 && dates.length < 7; i++) {
-        const d   = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
-        const dow = d.getUTCDay() || d.getDay();
-        // Pakai getDay (local) karena kita menampilkan ke user lokal
+    for (let i = 0; i <= 6; i++) {
+        const d        = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
         const localDow = d.getDay();
         if (practiceDays.includes(localDow)) {
             const y  = d.getFullYear();
@@ -240,7 +251,7 @@ const Appointments = () => {
 
     // ── Available dates for reschedule ─────────────────────────────────────
     const reschedDates = reschedTarget
-        ? generateAvailableDates(reschedTarget.doctorId?.availability?.practiceDays || [1,2,3,4,5])
+        ? generateAvailableDates(getPracticeDays(reschedTarget.doctorId?.availability))
         : [];
 
     const activeAppts  = myAppointments.filter(a => ['scheduled','checked_in'].includes(a.status));
@@ -301,7 +312,7 @@ const Appointments = () => {
                                                 </div>
                                             </div>
                                             <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
-                                                {['Min','Sen','Sel','Rab','Kam','Jum','Sab'].filter((_, i) => availability.practiceDays.includes(i)).join(', ')}
+                                                {['Min','Sen','Sel','Rab','Kam','Jum','Sab'].filter((_, i) => getPracticeDays(availability).includes(i)).join(', ')}
                                             </div>
                                         </div>
                                     ))}
@@ -314,7 +325,7 @@ const Appointments = () => {
                             <div style={s.card}>
                                 <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#111827' }}>2️⃣ Pilih Tanggal</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                    {generateAvailableDates(selectedDoctor.availability.practiceDays).map(dateStr => {
+                                    {generateAvailableDates(getPracticeDays(selectedDoctor.availability)).map(dateStr => {
                                         const [y, mo, d] = dateStr.split('-').map(Number);
                                         const dateObj = new Date(Date.UTC(y, mo - 1, d));
                                         const label   = dateObj.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });

@@ -35,7 +35,14 @@ const createNotification = async ({
                 url = data.orderId ? `/pharmacy/orders/${data.orderId}` : '/pharmacy';
                 break;
             case 'appointment_reminder':
+            case 'appointment_confirmed':
+            case 'appointment_completed':
+            case 'appointment_cancelled':
+            case 'appointment_rescheduled':
                 url = data.appointmentId ? `/appointments/${data.appointmentId}` : '/appointments';
+                break;
+            case 'consultation_rescheduled':
+                url = data.consultationId ? `/consultations/${data.consultationId}` : '/consultations';
                 break;
             default:
                 url = '/';

@@ -132,6 +132,14 @@ const consultationSchema = new mongoose.Schema({
     cancelledBy:  { type: String, enum: ['user', 'doctor', 'admin', 'system'] },
     cancelReason: String,
 
+    // ── Reschedule history ────────────────────────────────────────
+    rescheduleHistory : [{
+        from : { scheduledAt: Date, scheduledEnd: Date },
+        to   : { scheduledAt: Date, scheduledEnd: Date },
+        rescheduledAt : { type: Date, default: Date.now },
+        reason        : { type: String, default: '' },
+    }],
+
     createdAt: { type: Date, default: Date.now }
 });
 

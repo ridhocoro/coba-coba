@@ -1,74 +1,436 @@
-const express = require('express');
-const router = express.Router();
-const Doctor = require('../models/Doctor');
-const User = require('../models/User');
-const auth = require('../middleware/auth');
-const doctorAuth = require('../middleware/doctorAuth');
+/**
+ * routes/doctors.js
+ *
+ * Endpoint dokter:
+ *   GET  /my/profile        → profil dokter yang login
+ *   PUT  /my/profile        → update profil sendiri
+ *   POST /my/photo          → upload foto profil
+ *   GET  /my/stats          → statistik dashboard
+ *   GET  /my/schedule-today → jadwal gabungan hari ini
+ *   PUT  /my/settings       → update pengaturan konsultasi (dokter)
+ *   POST /admin/link-user   → hubungkan dokter ke akun user (admin)
+ *   GET  /                  → semua dokter aktif (public)
+ *   GET  /:id/schedule      → jadwal dokter (public)
+ *   GET  /:id               → detail dokter (public)
+ *   POST /                  → tambah dokter (admin)
+ *   PUT  /:id               → update dokter (admin)
+ *   PUT  /:id/schedule      → update jadwal (admin)
+ *   PUT  /:id/settings      → update pengaturan konsultasi (admin)
+ *   PUT  /:id/online-status → toggle online/offline (admin)
+ *   DELETE /:id             → nonaktifkan dokter (admin)
+ *
+ * Dependency: npm install multer
+ */
+
+const express    = require('express');
+const router     = express.Router();
+const multer     = require('multer');
+const path       = require('path');
+const fs         = require('fs');
+const Doctor     = require('../models/Doctor');
+const User       = require('../models/User');
+const Appointment   = require('../models/Appointment');
+const Consultation  = require('../models/Consultation');
+const auth          = require('../middleware/auth');
+const doctorAuth    = require('../middleware/doctorAuth');
+
+// ══════════════════════════════════════════════════════════════════
+// KONFIGURASI MULTER
+// ══════════════════════════════════════════════════════════════════
+
+const uploadDir = path.join(__dirname, '../uploads/doctors');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const photoStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename:    (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `doctor-${req.userId}-${Date.now()}${ext}`);
+    },
+});
+
+const photoUpload = multer({
+    storage: photoStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (allowed.includes(file.mimetype)) cb(null, true);
+        else cb(new Error('Hanya file gambar (JPG, PNG, WEBP) yang diizinkan'), false);
+    },
+});
 
 // ══════════════════════════════════════════════════════════════════
 // ROUTE STATIS — HARUS di atas /:id agar tidak tertimpa
 // ══════════════════════════════════════════════════════════════════
 
-// ✅ FIX UTAMA: GET profil dokter yang sedang login
-// Frontend (DoctorHome & DoctorDashboard) memanggil endpoint ini.
-// Sebelumnya endpoint ini TIDAK ADA → selalu 404 → noProfile = true
+/**
+ * GET /my/profile
+ * Ambil profil dokter yang sedang login.
+ */
 router.get('/my/profile', auth, doctorAuth, async (req, res) => {
     try {
-        const doctor = await Doctor.findOne({ userId: req.userId });
+        const doctor = await Doctor.findOne({ userId: req.userId })
+            .populate('userId', 'name email phone');
+
         if (!doctor) {
-            // Kembalikan flag needsProfile = true agar frontend bisa menampilkan
-            // pesan yang tepat, tanpa throw error 404
             return res.status(404).json({
+                success: false,
                 needsProfile: true,
-                message: 'Profil dokter belum terdaftar. Hubungi admin.'
+                message: 'Profil dokter belum terdaftar. Silakan hubungi admin.',
             });
         }
-        res.json({ success: true, doctor });
+
+        res.json({
+            success: true,
+            doctor: {
+                _id:              doctor._id,
+                name:             doctor.name,
+                specialization:   doctor.specialization,
+                qualification:    doctor.qualification,
+                gender:           doctor.gender,
+                bio:              doctor.bio,
+                experience:       doctor.experience,
+                photo:            doctor.photo,
+                consultationFee:  doctor.consultationFee,
+                isActive:         doctor.isActive,
+                isOnline:         doctor.isOnline,
+                rating:           doctor.rating,
+                totalReviews:     doctor.totalReviews,
+                consultationSettings: doctor.consultationSettings || {
+                    allowChat: true,
+                    allowVideoCall: true,
+                },
+                userId: doctor.userId,
+            },
+        });
     } catch (error) {
-        console.error('Error fetching doctor profile:', error);
+        console.error('GET /my/profile error:', error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
+    }
+});
+
+/**
+ * PUT /my/profile
+ * Update profil dokter sendiri.
+ */
+router.put('/my/profile', auth, doctorAuth, async (req, res) => {
+    try {
+        const { name, specialization, qualification, gender, bio, experience, consultationFee } = req.body;
+
+        if (!name?.trim())           return res.status(400).json({ success: false, message: 'Nama wajib diisi' });
+        if (!specialization?.trim()) return res.status(400).json({ success: false, message: 'Spesialisasi wajib diisi' });
+
+        const doctor = await Doctor.findOneAndUpdate(
+            { userId: req.userId },
+            {
+                $set: {
+                    name:            name.trim(),
+                    specialization:  specialization.trim(),
+                    qualification:   qualification?.trim()   || '',
+                    gender:          gender                  || '',
+                    bio:             bio?.trim()             || '',
+                    experience:      experience     ? Number(experience)     : 0,
+                    consultationFee: consultationFee ? Number(consultationFee) : 0,
+                },
+            },
+            { new: true }
+        );
+
+        if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
+
+        res.json({ success: true, message: 'Profil berhasil diperbarui', doctor });
+    } catch (error) {
+        console.error('PUT /my/profile error:', error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
+    }
+});
+
+/**
+ * POST /my/photo
+ * Upload foto profil dokter (multipart/form-data, field: "photo").
+ * Foto disimpan sebagai path relatif (/uploads/doctors/...) agar
+ * tidak bergantung pada domain/port.
+ */
+router.post('/my/photo', auth, doctorAuth, photoUpload.single('photo'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: 'File foto tidak ditemukan' });
+
+        const photoUrl = `/uploads/doctors/${req.file.filename}`;
+
+        // Hapus foto lama jika file lokal
+        const existing = await Doctor.findOne({ userId: req.userId }).select('photo');
+        if (existing?.photo?.includes('/uploads/doctors/')) {
+            const oldFilename = existing.photo.split('/uploads/doctors/').pop();
+            const oldPath = path.join(uploadDir, oldFilename);
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        }
+
+        const doctor = await Doctor.findOneAndUpdate(
+            { userId: req.userId },
+            { $set: { photo: photoUrl } },
+            { new: true }
+        );
+
+        if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
+
+        res.json({ success: true, message: 'Foto berhasil diupload', photoUrl, doctor });
+    } catch (error) {
+        console.error('POST /my/photo error:', error);
+        if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ success: false, message: 'Ukuran file maksimal 5MB' });
+        }
+        res.status(500).json({ success: false, message: error.message || 'Terjadi kesalahan server' });
+    }
+});
+
+/**
+ * GET /my/stats
+ * Statistik untuk dashboard beranda.
+ *
+ * Response menyertakan DUA format sekaligus:
+ *   - nested  (appointments.today, consultations.today, dst.)
+ *   - flat    (apptToday, consToday, dst.) — dipakai DoctorDashboard.jsx
+ */
+router.get('/my/stats', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
+
+        const now      = new Date();
+        const todayWIB = new Date(now.getTime() + 7 * 3600000);
+        const y = todayWIB.getUTCFullYear();
+        const m = todayWIB.getUTCMonth();
+        const d = todayWIB.getUTCDate();
+        const todayStart = new Date(Date.UTC(y, m, d)     - 7 * 3600000);
+        const todayEnd   = new Date(Date.UTC(y, m, d + 1) - 7 * 3600000 - 1);
+
+        const [
+            apptToday, apptUpcoming, apptCompleted, apptCancelled,
+            consToday, consOngoing, consCompleted, consUpcoming, consCancelled,
+        ] = await Promise.all([
+            Appointment.countDocuments({
+                doctorId:        doctor._id,
+                appointmentDate: { $gte: todayStart, $lte: todayEnd },
+                status:          { $in: ['scheduled', 'checked_in', 'completed'] },
+            }),
+            Appointment.countDocuments({
+                doctorId:        doctor._id,
+                appointmentDate: { $gt: todayEnd },
+                status:          'scheduled',
+            }),
+            Appointment.countDocuments({ doctorId: doctor._id, status: 'completed' }),
+            Appointment.countDocuments({
+                doctorId: doctor._id,
+                status:   { $in: ['cancelled_by_user', 'cancelled_by_doctor', 'cancelled_by_admin'] },
+            }),
+            Consultation.countDocuments({
+                doctorId:    doctor._id,
+                scheduledAt: { $gte: todayStart, $lte: todayEnd },
+                status:      { $in: ['confirmed', 'in_progress', 'ongoing', 'completed'] },
+            }),
+            Consultation.countDocuments({
+                doctorId: doctor._id,
+                status:   { $in: ['in_progress', 'ongoing'] },
+            }),
+            Consultation.countDocuments({ doctorId: doctor._id, status: 'completed' }),
+            Consultation.countDocuments({
+                doctorId:    doctor._id,
+                scheduledAt: { $gt: todayEnd },
+                status:      { $in: ['confirmed', 'paid', 'scheduled'] },
+            }),
+            Consultation.countDocuments({
+                doctorId: doctor._id,
+                status:   { $in: ['cancelled_by_doctor', 'cancelled_by_user', 'expired'] },
+            }),
+        ]);
+
+        const uniquePatients = await Consultation.distinct('userId', {
+            doctorId: doctor._id,
+            userId:   { $exists: true, $ne: null },
+        });
+
+        res.json({
+            success: true,
+            stats: {
+                // ── Format nested ─────────────────────────────────────
+                appointments: {
+                    today:     apptToday,
+                    upcoming:  apptUpcoming,
+                    completed: apptCompleted,
+                    cancelled: apptCancelled,
+                },
+                consultations: {
+                    today:     consToday,
+                    ongoing:   consOngoing,
+                    completed: consCompleted,
+                    upcoming:  consUpcoming,
+                    cancelled: consCancelled,
+                },
+                patients: {
+                    unique: uniquePatients.length,
+                },
+
+                // ── Format flat — dipakai DoctorDashboard.jsx ─────────
+                apptToday,
+                apptUpcoming,
+                apptCancelled,
+                consToday,
+                consCompleted,
+                consUpcoming,
+                consCancelled,
+                rating:       doctor.rating       || 0,
+                totalReviews: doctor.totalReviews  || 0,
+            },
+        });
+    } catch (error) {
+        console.error('GET /my/stats error:', error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
+    }
+});
+
+/**
+ * GET /my/schedule-today
+ * Jadwal gabungan hari ini (konsultasi online + janji temu), diurutkan by jam.
+ */
+router.get('/my/schedule-today', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
+
+        const now      = new Date();
+        const todayWIB = new Date(now.getTime() + 7 * 3600000);
+        const y = todayWIB.getUTCFullYear();
+        const m = todayWIB.getUTCMonth();
+        const d = todayWIB.getUTCDate();
+        const todayStart = new Date(Date.UTC(y, m, d)     - 7 * 3600000);
+        const todayEnd   = new Date(Date.UTC(y, m, d + 1) - 7 * 3600000 - 1);
+
+        const [appointments, consultations] = await Promise.all([
+            Appointment.find({
+                doctorId:        doctor._id,
+                appointmentDate: { $gte: todayStart, $lte: todayEnd },
+                status:          { $in: ['scheduled', 'checked_in'] },
+            }).populate('userId', 'name phone').sort({ appointmentTime: 1 }).lean(),
+
+            Consultation.find({
+                doctorId:    doctor._id,
+                scheduledAt: { $gte: todayStart, $lte: todayEnd },
+                status:      { $in: ['confirmed', 'in_progress', 'ongoing', 'paid', 'scheduled'] },
+            }).populate('userId', 'name phone').sort({ scheduledAt: 1 }).lean(),
+        ]);
+
+        const formattedAppointments = appointments.map(a => ({
+            _id:          a._id,
+            type:         'appointment',
+            time:         a.appointmentTime,
+            patientName:  a.userId?.name  || 'Pasien',
+            patientPhone: a.userId?.phone || '-',
+            status:       a.status,
+            scheduledAt:  a.scheduledAt,
+            isOnline:     false,
+        }));
+
+        const formattedConsultations = consultations.map(c => ({
+            _id:             c._id,
+            type:            'consultation',
+            time:            c.scheduledAt
+                ? new Date(c.scheduledAt).toLocaleTimeString('id-ID', {
+                    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta',
+                })
+                : '--:--',
+            patientName:      c.userId?.name  || 'Pasien',
+            patientPhone:     c.userId?.phone || '-',
+            status:           c.status,
+            scheduledAt:      c.scheduledAt,
+            consultationType: c.consultationType || 'chat',
+            isOnline:         true,
+        }));
+
+        const schedule = [...formattedAppointments, ...formattedConsultations]
+            .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
+
+        res.json({
+            success: true,
+            schedule,
+            summary: {
+                total:         schedule.length,
+                appointments:  appointments.length,
+                consultations: consultations.length,
+            },
+        });
+    } catch (error) {
+        console.error('GET /my/schedule-today error:', error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
+    }
+});
+
+/**
+ * PUT /my/settings
+ * Update pengaturan konsultasi dokter sendiri (allowChat, allowVideoCall).
+ */
+router.put('/my/settings', auth, doctorAuth, async (req, res) => {
+    try {
+        const { allowChat, allowVideoCall } = req.body;
+
+        if (!allowChat && !allowVideoCall) {
+            return res.status(400).json({ message: 'Minimal satu fitur konsultasi harus diaktifkan' });
+        }
+
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
+
+        doctor.consultationSettings = {
+            allowChat:      allowChat      !== undefined ? allowChat      : true,
+            allowVideoCall: allowVideoCall !== undefined ? allowVideoCall : true,
+        };
+        await doctor.save();
+
+        res.json({ success: true, consultationSettings: doctor.consultationSettings });
+    } catch (err) {
+        console.error('PUT /my/settings error:', err);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ✅ FIX: POST hubungkan profil dokter ke akun user yang sudah ada
-// Frontend ManageDoctors memanggil endpoint ini via tombol "Hubungkan Akun".
-// Sebelumnya endpoint ini TIDAK ADA → tombol tidak berfungsi
+// ══════════════════════════════════════════════════════════════════
+// ADMIN — STATIC ROUTES (sebelum /:id)
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * POST /admin/link-user
+ * Hubungkan profil dokter ke akun user (admin).
+ */
 router.post('/admin/link-user', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Akses ditolak' });
+            return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya untuk admin.' });
         }
 
         const { doctorId, userId } = req.body;
         if (!doctorId || !userId) {
-            return res.status(400).json({ message: 'doctorId dan userId wajib diisi' });
+            return res.status(400).json({ success: false, message: 'doctorId dan userId wajib diisi' });
         }
 
-        // Pastikan user ada dan role-nya doctor
         const user = await User.findById(userId);
-        if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
+        if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
         if (user.role !== 'doctor') {
-            return res.status(400).json({ message: 'User harus memiliki role doctor' });
+            return res.status(400).json({ success: false, message: 'User harus memiliki role doctor' });
         }
 
-        // Pastikan user belum terhubung ke dokter lain
-        const alreadyLinked = await Doctor.findOne({ userId });
-        if (alreadyLinked && alreadyLinked._id.toString() !== doctorId) {
-            return res.status(400).json({ message: 'Akun user ini sudah terhubung ke dokter lain' });
+        const existing = await Doctor.findOne({ userId });
+        if (existing && existing._id.toString() !== doctorId) {
+            return res.status(400).json({ success: false, message: 'Akun user ini sudah terhubung ke dokter lain' });
         }
 
-        const doctor = await Doctor.findByIdAndUpdate(
-            doctorId,
-            { $set: { userId } },
-            { new: true }
-        ).populate('userId', 'name email phone');
+        const doctor = await Doctor.findByIdAndUpdate(doctorId, { $set: { userId } }, { new: true })
+            .populate('userId', 'name email phone');
 
-        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        if (!doctor) return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
 
         res.json({ success: true, message: 'Dokter berhasil dihubungkan ke akun user', doctor });
     } catch (error) {
-        console.error('Error linking doctor to user:', error);
-        res.status(500).json({ message: 'Server error' });
+        console.error('POST /admin/link-user error:', error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
     }
 });
 
@@ -76,145 +438,145 @@ router.post('/admin/link-user', auth, async (req, res) => {
 // ROUTE PUBLIK
 // ══════════════════════════════════════════════════════════════════
 
-// GET semua dokter (public)
+/**
+ * GET /
+ * Semua dokter aktif (public).
+ */
 router.get('/', async (req, res) => {
     try {
         const doctors = await Doctor.find({ isActive: true })
-            .select('name specialization consultationFee rating availableDays photo bio isOnline consultationSettings');
+            .select('name specialization consultationFee rating photo bio consultationSettings isOnline experience availableDays')
+            .populate('userId', 'name');
         res.json(doctors);
     } catch (error) {
+        console.error('GET /doctors error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// GET jadwal dokter (public) — harus sebelum /:id
+/**
+ * GET /:id/schedule
+ * Jadwal dokter (public) — harus sebelum /:id.
+ */
 router.get('/:id/schedule', async (req, res) => {
     try {
         const doctor = await Doctor.findById(req.params.id)
-            .select('availableDays name');
+            .select('availableDays name consultationSettings isOnline');
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json(doctor);
     } catch (error) {
+        console.error('GET /doctors/:id/schedule error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// GET dokter by ID (public)
+/**
+ * GET /:id
+ * Detail dokter (public).
+ */
 router.get('/:id', async (req, res) => {
     try {
-        const doctor = await Doctor.findById(req.params.id).select('-__v');
-        if (!doctor) {
-            return res.status(404).json({ message: 'Dokter tidak ditemukan' });
-        }
-        res.json(doctor);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// ══════════════════════════════════════════════════════════════════
-// ADMIN ROUTES
-// ══════════════════════════════════════════════════════════════════
-
-// ADMIN: Tambah dokter (lewat admin panel; prefer pakai /api/admin/doctors)
-router.post('/', auth, async (req, res) => {
-    try {
-        if (req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Akses ditolak' });
-        }
-        const doctor = new Doctor(req.body);
-        await doctor.save();
-        res.status(201).json(doctor);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// ADMIN: Update dokter
-router.put('/:id', auth, async (req, res) => {
-    try {
-        if (req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Akses ditolak' });
-        }
-        const doctor = await Doctor.findByIdAndUpdate(
-            req.params.id,
-            { $set: req.body },
-            { new: true }
-        );
+        const doctor = await Doctor.findById(req.params.id)
+            .select('-__v')
+            .populate('userId', 'name email');
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json(doctor);
     } catch (error) {
+        console.error('GET /doctors/:id error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ADMIN: Update jadwal dokter
+// ══════════════════════════════════════════════════════════════════
+// ADMIN ROUTES — DYNAMIC
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * POST /
+ * Tambah dokter baru (admin).
+ */
+router.post('/', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+        const doctor = new Doctor(req.body);
+        await doctor.save();
+        res.status(201).json({ success: true, message: 'Dokter berhasil ditambahkan', doctor });
+    } catch (error) {
+        console.error('POST /doctors error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+/**
+ * PUT /:id
+ * Update dokter (admin).
+ */
+router.put('/:id', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+        const doctor = await Doctor.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        res.json({ success: true, message: 'Dokter berhasil diperbarui', doctor });
+    } catch (error) {
+        console.error('PUT /doctors/:id error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+/**
+ * PUT /:id/schedule
+ * Update jadwal dokter (admin).
+ */
 router.put('/:id/schedule', auth, async (req, res) => {
     try {
-        if (req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Akses ditolak' });
-        }
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
         const doctor = await Doctor.findByIdAndUpdate(
             req.params.id,
             { $set: { availableDays: req.body.schedule } },
             { new: true }
         );
-        res.json(doctor);
+        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        res.json({ success: true, message: 'Jadwal berhasil diperbarui', schedule: doctor.availableDays });
     } catch (error) {
+        console.error('PUT /doctors/:id/schedule error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ADMIN: Toggle status online/offline dokter
-// PUT update consultation settings (dokter sendiri)
-router.put('/my/settings', auth, doctorAuth, async (req, res) => {
-    try {
-        const { allowChat, allowVideoCall } = req.body;
-        const doctor = await Doctor.findOne({ userId: req.userId });
-        if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
-
-        // Minimal satu fitur harus aktif
-        if (!allowChat && !allowVideoCall) {
-            return res.status(400).json({ message: 'Minimal satu fitur konsultasi harus diaktifkan' });
-        }
-
-        doctor.consultationSettings = { allowChat, allowVideoCall };
-        await doctor.save();
-
-        res.json({ success: true, consultationSettings: doctor.consultationSettings });
-    } catch (err) {
-        console.error('Update settings error:', err);
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// PUT update consultation settings oleh admin (target dokter tertentu via :id)
+/**
+ * PUT /:id/settings
+ * Update pengaturan konsultasi dokter tertentu (admin).
+ */
 router.put('/:id/settings', auth, async (req, res) => {
     try {
-        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Unauthorized' });
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
         const { allowChat, allowVideoCall } = req.body;
 
-        if (!allowChat && !allowVideoCall) {
-            return res.status(400).json({ message: 'Minimal satu fitur konsultasi harus diaktifkan' });
+        if (allowChat === false && allowVideoCall === false) {
+            return res.status(400).json({ success: false, message: 'Minimal satu fitur konsultasi harus diaktifkan' });
         }
 
         const doctor = await Doctor.findByIdAndUpdate(
             req.params.id,
-            { $set: { consultationSettings: { allowChat, allowVideoCall } } },
+            { $set: { consultationSettings: { allowChat: allowChat ?? true, allowVideoCall: allowVideoCall ?? true } } },
             { new: true }
         );
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
-
-        res.json({ success: true, consultationSettings: doctor.consultationSettings });
-    } catch (err) {
+        res.json({ success: true, message: 'Pengaturan berhasil diperbarui', consultationSettings: doctor.consultationSettings });
+    } catch (error) {
+        console.error('PUT /doctors/:id/settings error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-router.put('/:id/online-status', auth, async (req, res) => {    try {
-        if (req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Akses ditolak' });
-        }
+/**
+ * PUT /:id/online-status
+ * Toggle status online/offline dokter (admin).
+ */
+router.put('/:id/online-status', auth, async (req, res) => {
+    try {
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+
         const doctor = await Doctor.findById(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
 
@@ -222,21 +584,25 @@ router.put('/:id/online-status', auth, async (req, res) => {    try {
         doctor.isOnline = isOnline;
         await doctor.save();
 
-        res.json({ success: true, isOnline: doctor.isOnline, doctor });
+        res.json({ success: true, message: isOnline ? 'Dokter online' : 'Dokter offline', isOnline: doctor.isOnline, doctor });
     } catch (error) {
+        console.error('PUT /doctors/:id/online-status error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ADMIN: Hapus/nonaktifkan dokter
+/**
+ * DELETE /:id
+ * Nonaktifkan dokter (admin).
+ */
 router.delete('/:id', auth, async (req, res) => {
     try {
-        if (req.userRole !== 'admin') {
-            return res.status(403).json({ message: 'Akses ditolak' });
-        }
-        await Doctor.findByIdAndUpdate(req.params.id, { isActive: false });
-        res.json({ message: 'Dokter dinonaktifkan' });
+        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+        const doctor = await Doctor.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        res.json({ success: true, message: 'Dokter berhasil dinonaktifkan', doctor });
     } catch (error) {
+        console.error('DELETE /doctors/:id error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });

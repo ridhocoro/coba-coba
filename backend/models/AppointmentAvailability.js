@@ -1,99 +1,73 @@
 /**
- * AppointmentAvailability — availability janji temu offline
+ * AppointmentAvailability — jadwal janji temu offline per hari
  *
- * Aturan yang berlaku:
- *  - Jam operasional: 08:00 – 16:00 WIB (fixed, tidak bisa diubah dokter)
- *  - Break siang   : 12:00 – 13:00 WIB (fixed, tidak bisa diubah dokter)
- *  - Slot hanya boleh di menit :00 atau :30
- *  - Durasi sesi   : 30 menit (fixed)
- *  - Tidak ada buffer — slot langsung berurutan setiap 30 menit
- *  - Hari praktik  : Senin–Jumat saja (1–5)
+ * Slot fixed yang tersedia:
+ *   08:00  09:00  10:00  11:00  13:00  14:00  15:00
  *
- * Dokter hanya bisa memilih:
- *  - morningStart / morningEnd    : sesi pagi dalam 08:00–12:00
- *  - afternoonStart / afternoonEnd: sesi sore dalam 13:00–16:00
- *  - practiceDays : subset dari [1,2,3,4,5]
- *
- * Tidak boleh overlap dengan jadwal konsultasi online dokter yang sama.
- * Validasi overlap dilakukan di route, bukan di model.
+ * Dokter memilih per hari slot mana yang aktif.
+ * schedule: { "1": ["08:00","09:00"], "3": ["13:00","14:00"], ... }
  */
 const mongoose = require('mongoose');
 
-const SYSTEM_START   = '08:00';
-const SYSTEM_END     = '16:00';
-const LUNCH_START    = '12:00';
-const LUNCH_END      = '13:00';
-const SLOT_DURATION  = 30;
+// Slot yang diizinkan untuk janji temu offline (FIXED)
+const ALLOWED_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00'];
 
 const appointmentAvailabilitySchema = new mongoose.Schema({
-    doctorId : {
-        type     : mongoose.Schema.Types.ObjectId,
-        ref      : 'Doctor',
-        required : true,
-        unique   : true,
+    doctorId: {
+        type:     mongoose.Schema.Types.ObjectId,
+        ref:      'Doctor',
+        required: true,
+        unique:   true,
     },
 
-    // Hari praktik: 1=Senin ... 5=Jumat
-    practiceDays : { type: [Number], default: [1, 2, 3, 4, 5] },
+    /**
+     * Jadwal per hari.
+     * Key = string '1'–'5' (Senin–Jumat)
+     * Value = array slot aktif, subset dari ALLOWED_SLOTS
+     */
+    schedule: {
+        type:    Map,
+        of:      [String],
+        default: { '1':[],'2':[],'3':[],'4':[],'5':[] },
+    },
 
-    // Sesi pagi: dalam batas 08:00–12:00, hanya menit :00/:30
-    morningStart : { type: String, default: '08:00' },
-    morningEnd   : { type: String, default: '12:00' },
-
-    // Sesi sore: dalam batas 13:00–16:00, hanya menit :00/:30
-    afternoonStart : { type: String, default: '13:00' },
-    afternoonEnd   : { type: String, default: '16:00' },
-
-    // Durasi slot: FIXED 30 menit
-    slotDuration : { type: Number, default: SLOT_DURATION },
-
-    isActive  : { type: Boolean, default: true },
-    updatedAt : { type: Date,    default: Date.now },
+    isActive:  { type: Boolean, default: true },
+    updatedAt: { type: Date,    default: Date.now },
 });
 
-// ── Helper internal ──────────────────────────────────────────────────────────
-const toMin  = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
-const toHHMM = (min)  => `${String(Math.floor(min / 60)).padStart(2,'0')}:${String(min % 60).padStart(2,'0')}`;
+// ── Statics ──────────────────────────────────────────────────────────────────
+
+appointmentAvailabilitySchema.statics.ALLOWED_SLOTS = ALLOWED_SLOTS;
+
+// ── Methods ──────────────────────────────────────────────────────────────────
 
 /**
- * Generate semua slot janji temu untuk satu hari.
- * Returns array of { startTime: "HH:MM", endTime: "HH:MM" }
- * Slot berurutan tiap 30 menit (tidak ada buffer).
- * Sesi pagi dan sore dipisah oleh break siang 12:00–13:00 (fixed).
+ * Kembalikan slot aktif untuk hari tertentu (1–5).
  */
-appointmentAvailabilitySchema.methods.generateSlots = function () {
-    const slots = [];
-
-    const sessions = [
-        { start: this.morningStart,   end: this.morningEnd   },
-        { start: this.afternoonStart, end: this.afternoonEnd },
-    ];
-
-    for (const session of sessions) {
-        let cur       = toMin(session.start);
-        const end     = toMin(session.end);
-
-        while (cur + SLOT_DURATION <= end) {
-            // Pastikan menit :00 atau :30 (seharusnya sudah, tapi jaga-jaga)
-            const mins = cur % 60;
-            if (mins !== 0 && mins !== 30) { cur += 30 - (mins % 30); continue; }
-
-            slots.push({
-                startTime : toHHMM(cur),
-                endTime   : toHHMM(cur + SLOT_DURATION),
-            });
-            cur += SLOT_DURATION;
-        }
-    }
-
-    return slots;
+appointmentAvailabilitySchema.methods.getSlotsForDay = function (dayOfWeek) {
+    const key   = String(dayOfWeek);
+    const slots = this.schedule?.get ? this.schedule.get(key) : (this.schedule?.[key] || []);
+    return (slots || []).filter(s => ALLOWED_SLOTS.includes(s));
 };
 
 /**
- * Cek apakah slot HH:MM valid menurut aturan availability ini.
+ * Kembalikan semua slot aktif dari seluruh hari (flatten).
+ * Berguna untuk cek overlap dengan konsultasi online.
  */
-appointmentAvailabilitySchema.methods.isValidSlot = function (slotHHMM) {
-    return this.generateSlots().some(s => s.startTime === slotHHMM);
+appointmentAvailabilitySchema.methods.getAllActiveSlots = function () {
+    const all = [];
+    for (let d = 1; d <= 5; d++) {
+        this.getSlotsForDay(d).forEach(s => all.push({ day: d, slot: s }));
+    }
+    return all;
+};
+
+/**
+ * Cek apakah slot tertentu aktif pada hari tertentu.
+ */
+appointmentAvailabilitySchema.methods.isSlotActive = function (dayOfWeek, slotHHMM) {
+    return this.getSlotsForDay(dayOfWeek).includes(slotHHMM);
 };
 
 module.exports = mongoose.model('AppointmentAvailability', appointmentAvailabilitySchema);
+module.exports.ALLOWED_SLOTS = ALLOWED_SLOTS;

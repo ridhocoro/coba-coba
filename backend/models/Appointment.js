@@ -54,7 +54,24 @@ const appointmentSchema = new mongoose.Schema({
         appointmentTime : String,
         scheduledAt     : Date,
     },
-    rescheduledAt : { type: Date },  // waktu user melakukan reschedule
+    rescheduledAt    : { type: Date },   // waktu reschedule terakhir
+    rescheduleCount  : { type: Number, default: 0 }, // berapa kali sudah reschedule
+
+    // History tiap reschedule: [ { from: {...}, to: {...}, rescheduledAt, reason } ]
+    rescheduleHistory : [{
+        from : {
+            appointmentDate : Date,
+            appointmentTime : String,
+            scheduledAt     : Date,
+        },
+        to : {
+            appointmentDate : Date,
+            appointmentTime : String,
+            scheduledAt     : Date,
+        },
+        rescheduledAt : { type: Date, default: Date.now },
+        reason        : { type: String, default: '' },
+    }],
 
     // ── Timestamps aksi ──────────────────────────────────────────
     checkedInAt  : { type: Date },

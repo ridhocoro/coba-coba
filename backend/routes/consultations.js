@@ -200,27 +200,30 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
         const slotWIB = new Date(slotStart.getTime() + WIB_OFFSET_MS);
 
-        // Cek hari praktik
-        const dayOfWeek = slotWIB.getUTCDay();
-        if (!avail.practiceDays.includes(dayOfWeek)) {
+        // Cek hari praktik — gunakan schedule Map (key '1'–'5', Senin=1 ... Jumat=5)
+        // slotWIB.getUTCDay() → 0=Minggu,1=Sen,...,6=Sab
+        const dayOfWeek = slotWIB.getUTCDay(); // 1–5 untuk hari kerja
+        const slotsForDay = avail.getSlotsForDay(dayOfWeek);
+        if (!slotsForDay || slotsForDay.length === 0) {
             return res.status(400).json({ message: 'Dokter tidak praktik pada hari tersebut' });
         }
 
         // Jam WIB dari slot
         const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2,'0')}:${String(slotWIB.getUTCMinutes()).padStart(2,'0')}`;
 
-        // Validasi strict: slot harus ada di grid availability (cegah bypass frontend)
-        if (!avail.isValidSlot(slotHHMM)) {
+        // Validasi strict: slot harus aktif pada hari tersebut
+        if (!avail.isSlotActive(dayOfWeek, slotHHMM)) {
             return res.status(400).json({
                 message: 'Slot waktu tidak valid. Pilih slot yang tersedia dari sistem.',
             });
         }
 
-        // Validasi scheduledEnd: harus tepat = scheduledAt + sessionDuration
+        // Validasi scheduledEnd: harus scheduledAt + 60 menit (1 sesi)
         const slotEndWIB  = new Date(slotEnd.getTime() + WIB_OFFSET_MS);
         const slotEndHHMM = `${String(slotEndWIB.getUTCHours()).padStart(2,'0')}:${String(slotEndWIB.getUTCMinutes()).padStart(2,'0')}`;
         const toMin = (hhmm) => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
-        const expectedEndMin = toMin(slotHHMM) + avail.sessionDuration;
+        const SESSION_DURATION = 60; // menit
+        const expectedEndMin = toMin(slotHHMM) + SESSION_DURATION;
         if (toMin(slotEndHHMM) !== expectedEndMin) {
             return res.status(400).json({ message: 'Waktu selesai slot tidak sesuai' });
         }

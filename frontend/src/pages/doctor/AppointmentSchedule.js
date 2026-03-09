@@ -2,7 +2,7 @@
  * frontend/src/pages/doctor/AppointmentSchedule.js
  *
  * Halaman dokter untuk:
- *  1. Setting availability janji temu offline
+ *  1. Setting availability janji temu offline (HANYA :00)
  *  2. Melihat daftar janji hari ini & upcoming
  *  3. Check-in, Complete, Cancel pasien
  */
@@ -47,13 +47,12 @@ const DAYS = [
     { val: 5, label: 'Jumat' },
 ];
 
-// Generate HH:MM options (menit :00 dan :30 saja, 07:00–17:30)
-const TIME_OPTIONS = [];
+// Generate HH:00 options (HANYA menit :00, dari 07:00 sampai 17:00)
+// Untuk janji temu offline, hanya menit :00 yang diperbolehkan
+const TIME_OPTIONS_HOUR_ONLY = [];
 for (let h = 7; h <= 17; h++) {
-    TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:00`);
-    TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:30`);
+    TIME_OPTIONS_HOUR_ONLY.push(`${String(h).padStart(2, '0')}:00`);
 }
-TIME_OPTIONS.push('18:00');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -68,14 +67,15 @@ const AppointmentSchedule = () => {
     const [avail, setAvail] = useState(null);
     const [form, setForm]   = useState({
         practiceDays   : [1, 2, 3, 4, 5],
-        morningStart   : '08:30',
-        morningEnd     : '11:30',
-        afternoonStart : '13:30',
-        afternoonEnd   : '16:30',
+        morningStart   : '08:00',
+        morningEnd     : '11:00',
+        afternoonStart : '13:00',
+        afternoonEnd   : '16:00',
         isActive       : true,
     });
     const [saving, setSaving] = useState(false);
     const [loadingAvail, setLoadingAvail] = useState(true);
+    const [systemConstraints, setSystemConstraints] = useState(null);
 
     // Appointments list
     const [appointments, setAppointments] = useState([]);
@@ -94,6 +94,10 @@ const AppointmentSchedule = () => {
     const [cancelReason, setCancelReason] = useState('');
     const [cancelling,   setCancelling]   = useState(false);
 
+    // Preview slots
+    const [previewSlots, setPreviewSlots] = useState([]);
+    const [showPreview, setShowPreview] = useState(false);
+
     useEffect(() => {
         if (!user || user.role !== 'doctor') { toast.error('Akses ditolak'); navigate('/'); return; }
         fetchAvailability();
@@ -104,6 +108,12 @@ const AppointmentSchedule = () => {
         setLoadingAvail(true);
         try {
             const r = await api.get('/api/appointments/doctor/availability');
+            
+            // Simpan system constraints jika ada
+            if (r.data.systemConstraints) {
+                setSystemConstraints(r.data.systemConstraints);
+            }
+            
             if (r.data.availability) {
                 const a = r.data.availability;
                 setAvail(a);
@@ -115,6 +125,17 @@ const AppointmentSchedule = () => {
                     afternoonEnd   : a.afternoonEnd,
                     isActive       : a.isActive,
                 });
+                // Generate preview
+                generatePreview({
+                    practiceDays: a.practiceDays,
+                    morningStart: a.morningStart,
+                    morningEnd: a.morningEnd,
+                    afternoonStart: a.afternoonStart,
+                    afternoonEnd: a.afternoonEnd
+                });
+            } else {
+                // Set default preview
+                generatePreview(form);
             }
         } catch { toast.error('Gagal memuat availability'); }
         finally { setLoadingAvail(false); }
@@ -134,9 +155,70 @@ const AppointmentSchedule = () => {
 
     useEffect(() => { fetchAppointments(); }, [filterDate, filterStatus]);
 
+    // Generate preview slots
+    const generatePreview = (data) => {
+        const toMin = (hhmm) => {
+            const [h, m] = hhmm.split(':').map(Number);
+            return h * 60 + m;
+        };
+        const toHHMM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+        const LUNCH_START = toMin('12:00');
+        const LUNCH_END = toMin('13:00');
+        const SLOT_DURATION = 30;
+
+        const slots = [];
+        const sessions = [
+            { start: data.morningStart, end: data.morningEnd },
+            { start: data.afternoonStart, end: data.afternoonEnd },
+        ];
+
+        for (const ses of sessions) {
+            let cur = toMin(ses.start);
+            const end = toMin(ses.end);
+
+            while (cur + SLOT_DURATION <= end) {
+                // HANYA menit :00
+                const mins = cur % 60;
+                if (mins !== 0) {
+                    cur += 60 - mins;
+                    continue;
+                }
+
+                // Lewati break siang
+                if (cur >= LUNCH_START && cur < LUNCH_END) {
+                    cur = LUNCH_END;
+                    continue;
+                }
+                if (cur < LUNCH_START && cur + SLOT_DURATION > LUNCH_START) {
+                    cur = LUNCH_END;
+                    continue;
+                }
+
+                slots.push({ start: toHHMM(cur), end: toHHMM(cur + SLOT_DURATION) });
+                cur += 60; // Maju 60 menit ke jam berikutnya
+            }
+        }
+
+        setPreviewSlots(slots);
+    };
+
     // ── Save availability ──────────────────────────────────────────────────
     const handleSaveAvail = async () => {
         if (form.practiceDays.length === 0) { toast.error('Pilih minimal 1 hari praktik'); return; }
+        
+        // Validasi tambahan untuk memastikan hanya :00
+        const validateTime = (time) => {
+            const [, mm] = time.split(':').map(Number);
+            return mm === 0;
+        };
+
+        if (!validateTime(form.morningStart) || !validateTime(form.morningEnd) || 
+            !validateTime(form.afternoonStart) || !validateTime(form.afternoonEnd)) {
+            toast.error('Waktu hanya boleh di menit :00 (contoh: 08:00, 09:00)');
+            return;
+        }
+
         setSaving(true);
         try {
             await api.put('/api/appointments/doctor/availability', form);
@@ -152,13 +234,27 @@ const AppointmentSchedule = () => {
         } finally { setSaving(false); }
     };
 
+    // Preview tanpa menyimpan
+    const handlePreview = async () => {
+        setShowPreview(true);
+        try {
+            const r = await api.post('/api/appointments/doctor/availability/preview', form);
+            if (r.data.preview) {
+                setPreviewSlots(r.data.preview.morningSlots.concat(r.data.preview.afternoonSlots).map(s => ({ start: s.start })));
+                toast.success(`Preview: ${r.data.preview.totalSlots} slot tersedia`);
+            }
+        } catch (err) {
+            // Fallback ke local preview
+            generatePreview(form);
+        }
+    };
+
     const toggleDay = (day) => {
-        setForm(f => ({
-            ...f,
-            practiceDays: f.practiceDays.includes(day)
-                ? f.practiceDays.filter(d => d !== day)
-                : [...f.practiceDays, day].sort(),
-        }));
+        const newDays = form.practiceDays.includes(day)
+            ? form.practiceDays.filter(d => d !== day)
+            : [...form.practiceDays, day].sort();
+        
+        setForm(f => ({ ...f, practiceDays: newDays }));
     };
 
     // ── Check-in ───────────────────────────────────────────────────────────
@@ -359,13 +455,23 @@ const AppointmentSchedule = () => {
                     </>
                 )}
 
-                {/* ═══ TAB: ATUR JADWAL ══════════════════════════════════ */}
+                {/* ═══ TAB: ATUR JADWAL (HANYA :00) ═════════════════════════ */}
                 {tab === 'settings' && (
                     <div style={s.card}>
                         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: '#111827' }}>⚙️ Jadwal Janji Temu Offline</div>
-                        <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 20 }}>
-                            Konfigurasi ini berbeda dengan jadwal konsultasi online. Slot hanya bisa di menit :00 atau :30.
+                        <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 8 }}>
+                            Konfigurasi ini berbeda dengan jadwal konsultasi online. 
+                            <strong style={{ color: '#b45309', display: 'block', marginTop: 4 }}>
+                                ⚠️ HANYA slot di menit :00 yang tersedia (contoh: 08:00, 09:00, 10:00)
+                            </strong>
                         </p>
+
+                        {systemConstraints && (
+                            <div style={{ background: '#f3f4f6', borderRadius: 8, padding: '8px 12px', marginBottom: 16, fontSize: 12, color: '#4b5563' }}>
+                                <span style={{ fontWeight: 600 }}>Batasan Sistem:</span> {systemConstraints.systemStart}–{systemConstraints.systemEnd}, 
+                                Break {systemConstraints.lunchStart}–{systemConstraints.lunchEnd}, Durasi {systemConstraints.slotDuration} menit
+                            </div>
+                        )}
 
                         {loadingAvail ? (
                             <div style={{ color: '#6b7280' }}>Memuat...</div>
@@ -396,20 +502,20 @@ const AppointmentSchedule = () => {
                                     </div>
                                 </div>
 
-                                {/* Sesi Pagi */}
+                                {/* Sesi Pagi - HANYA :00 */}
                                 <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 14, color: '#92400e', marginBottom: 12 }}>☀️ Sesi Pagi</div>
+                                    <div style={{ fontWeight: 600, fontSize: 14, color: '#92400e', marginBottom: 12 }}>☀️ Sesi Pagi (08:00–12:00)</div>
                                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                                         <div>
                                             <label style={s.label}>Mulai</label>
                                             <select value={form.morningStart} onChange={e => setForm(f => ({ ...f, morningStart: e.target.value }))} style={s.sel}>
-                                                {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                {TIME_OPTIONS_HOUR_ONLY.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
                                         </div>
                                         <div>
                                             <label style={s.label}>Selesai</label>
                                             <select value={form.morningEnd} onChange={e => setForm(f => ({ ...f, morningEnd: e.target.value }))} style={s.sel}>
-                                                {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                {TIME_OPTIONS_HOUR_ONLY.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -420,32 +526,51 @@ const AppointmentSchedule = () => {
                                     🍽️ Break siang: <strong>12:00 – 13:00</strong> (tidak dapat diubah)
                                 </div>
 
-                                {/* Sesi Sore */}
+                                {/* Sesi Sore - HANYA :00 */}
                                 <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '14px 16px', marginBottom: 20 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 14, color: '#1e40af', marginBottom: 12 }}>🌤️ Sesi Siang/Sore</div>
+                                    <div style={{ fontWeight: 600, fontSize: 14, color: '#1e40af', marginBottom: 12 }}>🌤️ Sesi Siang/Sore (13:00–16:00)</div>
                                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                                         <div>
                                             <label style={s.label}>Mulai</label>
                                             <select value={form.afternoonStart} onChange={e => setForm(f => ({ ...f, afternoonStart: e.target.value }))} style={s.sel}>
-                                                {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                {TIME_OPTIONS_HOUR_ONLY.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
                                         </div>
                                         <div>
                                             <label style={s.label}>Selesai</label>
                                             <select value={form.afternoonEnd} onChange={e => setForm(f => ({ ...f, afternoonEnd: e.target.value }))} style={s.sel}>
-                                                {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                {TIME_OPTIONS_HOUR_ONLY.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Preview slot */}
-                                <SlotPreview form={form} />
+                                {/* Preview slot - HANYA :00 */}
+                                {previewSlots.length > 0 && (
+                                    <div style={{ background: '#f8fafc', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 8, textTransform: 'uppercase' }}>
+                                            Preview Slot ({previewSlots.length} slot/hari) - Hanya menit :00
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                            {previewSlots.map(sl => (
+                                                <span key={sl.start} style={{ padding: '4px 10px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, color: '#374151', fontWeight: 500 }}>
+                                                    {sl.start}–{sl.end}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
-                                <button onClick={handleSaveAvail} disabled={saving}
-                                    style={{ padding: '12px 28px', background: saving ? '#9ca3af' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer', marginTop: 8 }}>
-                                    {saving ? 'Menyimpan...' : '💾 Simpan Jadwal'}
-                                </button>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <button onClick={handlePreview} disabled={saving}
+                                        style={{ padding: '12px 20px', background: '#4b5563', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                                        👁️ Preview
+                                    </button>
+                                    <button onClick={handleSaveAvail} disabled={saving}
+                                        style={{ padding: '12px 28px', background: saving ? '#9ca3af' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer' }}>
+                                        {saving ? 'Menyimpan...' : '💾 Simpan Jadwal'}
+                                    </button>
+                                </div>
                             </>
                         )}
                     </div>
@@ -493,45 +618,6 @@ const AppointmentSchedule = () => {
                     </div>
                 </ModalBox>
             )}
-        </div>
-    );
-};
-
-// ── SlotPreview: preview slot yang akan di-generate ───────────────────────────
-const SlotPreview = ({ form }) => {
-    const toMin  = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
-    const toHHMM = (m)    => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-
-    const slots = [];
-    const sessions = [
-        { start: form.morningStart, end: form.morningEnd },
-        { start: form.afternoonStart, end: form.afternoonEnd },
-    ];
-    for (const ses of sessions) {
-        let cur = toMin(ses.start);
-        const end = toMin(ses.end);
-        while (cur + 30 <= end) {
-            const mins = cur % 60;
-            if (mins !== 0 && mins !== 30) { cur += 30; continue; }
-            slots.push({ start: toHHMM(cur), end: toHHMM(cur + 30) });
-            cur += 30;
-        }
-    }
-
-    if (slots.length === 0) return null;
-
-    return (
-        <div style={{ background: '#f8fafc', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 8, textTransform: 'uppercase' }}>
-                Preview Slot ({slots.length} slot/hari)
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {slots.map(sl => (
-                    <span key={sl.start} style={{ padding: '4px 10px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, color: '#374151', fontWeight: 500 }}>
-                        {sl.start}
-                    </span>
-                ))}
-            </div>
         </div>
     );
 };
