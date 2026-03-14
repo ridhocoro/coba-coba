@@ -58,7 +58,7 @@ require('./socket/chat')(io);
 require('./utils/Expiredconsultationcron').startCron(io);
 
 // Cron: expired order checker (setiap 1 menit)
-require('./utils/ExpiredOrderCron').startCron();
+require('./utils/ExpiredOrderCron').startCron(io);
 
 // ── Cron: appointment — auto no-show & reminder H-24 ─────────────────────────
 require('./utils/AppointmentCron').startCron(io);

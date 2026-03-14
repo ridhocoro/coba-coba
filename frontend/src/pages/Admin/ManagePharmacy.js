@@ -1,54 +1,73 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api, { API_URL } from '../../utils/api';
-import {
-    Container, Row, Col, Card, Table, Badge, Button,
-    Form, InputGroup, Spinner, Modal
-} from 'react-bootstrap';
+import { Container, Row, Col, Spinner, Modal, Form } from 'react-bootstrap';
 import { toast } from 'react-hot-toast';
 import {
-    FaPills, FaSearch, FaPlus, FaEdit, FaTrash,
-    FaArrowLeft, FaBoxOpen, FaShoppingCart, FaUpload, FaImage,
-    FaClock, FaExclamationTriangle, FaCheckCircle, FaTimesCircle,
-    FaTruck, FaSave, FaTimes, FaFilter
+    FaPills, FaSearch, FaPlus, FaEdit, FaTrash, FaBoxOpen, FaShoppingCart,
+    FaUpload, FaImage, FaClock, FaExclamationTriangle, FaCheckCircle,
+    FaTimesCircle, FaTruck, FaSave, FaTimes, FaFileImage, FaEye,
+    FaToggleOn, FaToggleOff, FaMotorcycle, FaStore, FaBan,
+    FaStar, FaChevronDown, FaChevronUp, FaGraduationCap, FaMapMarkerAlt, FaInfoCircle,
 } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 
-const orderStatusConfig = {
-    awaiting_payment: { bg: '#fef3c7', color: '#b45309', label: 'Menunggu Bayar' },
-    paid:             { bg: '#dbeafe', color: '#1e40af', label: 'Sudah Bayar' },
-    processing:       { bg: '#cffafe', color: '#0e7490', label: 'Diproses' },
-    shipped:          { bg: '#ede9fe', color: '#6d28d9', label: 'Dikirim' },
-    delivered:        { bg: '#dcfce7', color: '#166534', label: 'Diterima' },
-    expired:          { bg: '#f1f5f9', color: '#64748b', label: 'Kadaluarsa' },
-    cancelled:        { bg: '#fee2e2', color: '#b91c1c', label: 'Dibatalkan' },
+const CATEGORIES = [
+    { value: 'obat_bebas',           label: 'Obat Bebas'           },
+    { value: 'obat_bebas_terbatas',  label: 'Obat Bebas Terbatas'  },
+    { value: 'obat_keras',           label: 'Obat Keras (Resep)'   },
+    { value: 'antibiotik',           label: 'Antibiotik'           },
+    { value: 'vitamin',              label: 'Vitamin & Suplemen'   },
+    { value: 'alat_kesehatan',       label: 'Alat Kesehatan'       },
+];
+
+const STATUS_CFG = {
+    waiting_prescription : { bg:'#fef9c3', color:'#854d0e', label:'Menunggu Verifikasi Resep', icon:FaFileImage },
+    prescription_rejected: { bg:'#fee2e2', color:'#991b1b', label:'Resep Ditolak',             icon:FaTimesCircle },
+    pending              : { bg:'#fef3c7', color:'#b45309', label:'Menunggu Pembayaran',        icon:FaClock },
+    paid                 : { bg:'#dbeafe', color:'#1e40af', label:'Sudah Bayar',                icon:FaCheckCircle },
+    diproses             : { bg:'#cffafe', color:'#0e7490', label:'Sedang Diproses',            icon:FaBoxOpen },
+    dikirim              : { bg:'#ede9fe', color:'#6d28d9', label:'Sedang Dikirim',             icon:FaTruck },
+    terkirim             : { bg:'#d1fae5', color:'#065f46', label:'Sudah Tiba',                 icon:FaMotorcycle },
+    siap_diambil         : { bg:'#ecfdf5', color:'#065f46', label:'Siap Diambil',               icon:FaStore },
+    selesai              : { bg:'#dcfce7', color:'#166534', label:'Selesai',                    icon:FaCheckCircle },
+    // 'expired' disembunyikan dari admin — ditangani otomatis oleh cron
+    cancelled            : { bg:'#f1f5f9', color:'#475569', label:'Dibatalkan',                 icon:FaBan },
 };
 
+const fmt = (n) => `Rp ${(n||0).toLocaleString('id-ID')}`;
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
+
 const ManagePharmacy = () => {
-    const [medicines, setMedicines] = useState([]);
-    const [orders, setOrders] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
+    const [medicines,   setMedicines]   = useState([]);
+    const [orders,      setOrders]      = useState([]);
+    const [loading,     setLoading]     = useState(true);
+    const [search,      setSearch]      = useState('');
     const [orderSearch, setOrderSearch] = useState('');
-    const [filterOrderStatus, setFilterOrderStatus] = useState('all');
-    const [activeTab, setActiveTab] = useState('medicines');
+    const [orderStatus, setOrderStatus] = useState('all');
+    const [activeTab,   setActiveTab]   = useState('orders');
 
-    // Modal obat
-    const [showMedModal, setShowMedModal] = useState(false);
-    const [editingMed, setEditingMed] = useState(null);
-    const [medForm, setMedForm] = useState({ name:'', category:'', price:'', stock:'', description:'', unit:'tablet' });
-    const [savingMed, setSavingMed] = useState(false);
+    // Med modal
+    const [showMedModal,  setShowMedModal]  = useState(false);
+    const [editingMed,    setEditingMed]    = useState(null);
+    const [medForm,       setMedForm]       = useState({ name:'', genericName:'', category:'obat_bebas', price:'', stock:'', unit:'tablet', description:'', requiresPrescription:false, availableForStudentQuota:false, isActive:true });
+    const [savingMed,     setSavingMed]     = useState(false);
+    const [imageFile,     setImageFile]     = useState(null);
+    const [imagePreview,  setImagePreview]  = useState(null);
+    const [uploadingImg,  setUploadingImg]  = useState(false);
+    const imageRef = useRef();
 
-    // Upload gambar obat
-    const [imageFile, setImageFile] = useState(null);
-    const [imagePreview, setImagePreview] = useState(null);
-    const [uploadingImage, setUploadingImage] = useState(false);
-    const imageInputRef = useRef();
-
-    // Modal update status order
+    // Order detail modal
+    const [selectedOrder,  setSelectedOrder]  = useState(null);
     const [showOrderModal, setShowOrderModal] = useState(false);
-    const [selectedOrder, setSelectedOrder] = useState(null);
-    const [newStatus, setNewStatus] = useState('');
-    const [updatingOrder, setUpdatingOrder] = useState(false);
+    const [orderAction,    setOrderAction]    = useState('status'); // 'status' | 'verify-rx' | 'adjust-items'
+    const [newStatus,      setNewStatus]      = useState('');
+    const [rejectReason,   setRejectReason]   = useState('');
+    const [adjustedItems,  setAdjustedItems]  = useState([]);
+    const [updatingOrder,  setUpdatingOrder]  = useState(false);
+    const [rxPreview,      setRxPreview]      = useState(false);
+
+    // Expand/collapse order rows
+    const [expandedOrders, setExpandedOrders] = useState(new Set());
 
     useEffect(() => { fetchData(); }, []);
 
@@ -56,966 +75,686 @@ const ManagePharmacy = () => {
         setLoading(true);
         try {
             const [medsRes, ordersRes] = await Promise.all([
-                api.get('/api/pharmacy/admin/medicines'),
-                api.get('/api/pharmacy/admin/orders'),
+                api.get('/api/pharmacy/admin/medicines?limit=200'),
+                api.get('/api/pharmacy/admin/orders?limit=100'),
             ]);
-            setMedicines(medsRes.data.medicines || medsRes.data || []);
-            setOrders(ordersRes.data.orders || ordersRes.data || []);
-        } catch {
-            toast.error('Gagal memuat data farmasi');
-        } finally {
-            setLoading(false);
-        }
+            setMedicines(medsRes.data.medicines || []);
+            setOrders(ordersRes.data.orders || []);
+        } catch { toast.error('Gagal memuat data'); }
+        finally  { setLoading(false); }
     };
 
-    const openMedModal = (med = null) => {
+    // ── Med modal ─────────────────────────────────────────────────────────────
+    const openMedModal = (med=null) => {
         if (med) {
             setEditingMed(med);
-            setMedForm({ 
-                name: med.name, 
-                category: med.category||'', 
-                price: med.price, 
-                stock: med.stock, 
-                description: med.description||'', 
-                unit: med.unit||'tablet' 
-            });
-            setImagePreview(med.image ? `${API_URL}${med.image}` : null);
+            setMedForm({ name:med.name||'', genericName:med.genericName||'', category:med.category||'obat_bebas', price:med.price||'', stock:med.stock||'', unit:med.unit||'tablet', description:med.description||'', requiresPrescription:!!med.requiresPrescription, availableForStudentQuota:!!med.availableForStudentQuota, isActive:med.isActive!==false });
+            setImagePreview(med.image?`${API_URL}${med.image}`:null);
         } else {
             setEditingMed(null);
-            setMedForm({ name:'', category:'', price:'', stock:'', description:'', unit:'tablet' });
+            setMedForm({ name:'', genericName:'', category:'obat_bebas', price:'', stock:'', unit:'tablet', description:'', requiresPrescription:false, availableForStudentQuota:false });
             setImagePreview(null);
         }
         setImageFile(null);
         setShowMedModal(true);
     };
 
-    const handleImageChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (file.size > 3 * 1024 * 1024) { toast.error('Ukuran gambar maksimal 3MB'); return; }
-        setImageFile(file);
-        setImagePreview(URL.createObjectURL(file));
-    };
-
     const handleSaveMed = async (e) => {
         e.preventDefault();
-        if (!medForm.name || !medForm.price || !medForm.stock) { 
-            toast.error('Nama, harga, dan stok wajib diisi'); 
-            return; 
-        }
+        if (!medForm.name||!medForm.price||medForm.stock==='') { toast.error('Nama, harga, dan stok wajib diisi'); return; }
         setSavingMed(true);
         try {
             let savedId = editingMed?._id;
             if (editingMed) {
                 await api.put(`/api/pharmacy/admin/medicines/${editingMed._id}`, medForm);
-                toast.success('Obat berhasil diperbarui');
+                toast.success('Obat diperbarui');
             } else {
-                const res = await api.post('/api/pharmacy/admin/medicines', medForm);
-                savedId = res.data.medicine?._id;
-                toast.success('Obat berhasil ditambahkan');
+                const r = await api.post('/api/pharmacy/admin/medicines', medForm);
+                savedId = r.data.medicine?._id;
+                toast.success('Obat ditambahkan');
             }
-
-            // Upload gambar jika ada
             if (imageFile && savedId) {
-                setUploadingImage(true);
+                setUploadingImg(true);
                 try {
-                    const formData = new FormData();
-                    formData.append('image', imageFile);
-                    await api.post(`/api/pharmacy/admin/medicines/${savedId}/image`, formData, {
-                        headers: { 'Content-Type': 'multipart/form-data' }
-                    });
-                    toast.success('Gambar obat berhasil diupload');
-                } catch {
-                    toast.error('Data tersimpan, tapi gagal upload gambar. Coba edit obat untuk upload ulang.');
-                } finally {
-                    setUploadingImage(false);
-                }
+                    const fd = new FormData(); fd.append('image', imageFile);
+                    await api.post(`/api/pharmacy/admin/medicines/${savedId}/image`, fd, { headers:{'Content-Type':'multipart/form-data'} });
+                } catch { toast.error('Data tersimpan, tapi gambar gagal diupload'); }
+                finally { setUploadingImg(false); }
             }
-
             setShowMedModal(false);
-            setImageFile(null);
-            setImagePreview(null);
             fetchData();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Gagal menyimpan obat');
-        } finally {
-            setSavingMed(false);
-        }
+        } catch (err) { toast.error(err.response?.data?.message || 'Gagal menyimpan'); }
+        finally { setSavingMed(false); }
     };
 
-    const handleDeleteMed = async (id, name) => {
-        if (!window.confirm(`Hapus obat "${name}"?`)) return;
+    const handleToggleActive = async (med) => {
+        const willActivate = med.isActive === false;
+        const msg = willActivate ? `Aktifkan kembali obat "${med.name}"?` : `Nonaktifkan obat "${med.name}"? Obat akan tetap tampil tapi tidak bisa dibeli.`;
+        if (!window.confirm(msg)) return;
         try {
-            await api.delete(`/api/pharmacy/admin/medicines/${id}`);
-            toast.success('Obat berhasil dihapus');
+            await api.put(`/api/pharmacy/admin/medicines/${med._id}`, { isActive: willActivate });
+            toast.success(willActivate ? 'Obat diaktifkan kembali' : 'Obat dinonaktifkan');
             fetchData();
-        } catch {
-            toast.error('Gagal menghapus obat');
-        }
+        } catch { toast.error('Gagal mengubah status'); }
     };
 
-    const handleUpdateOrderStatus = async () => {
-        if (!newStatus) return;
+    // ── Order modal ───────────────────────────────────────────────────────────
+    const openOrderModal = (order, action='status') => {
+        setSelectedOrder(order);
+        setOrderAction(action);
+        setNewStatus('');
+        setRejectReason('');
+        setRxPreview(false);
+        if (action==='adjust-items') {
+            setAdjustedItems(order.items.map(i=>({ medicineId:i.medicineId?._id||i.medicineId, name:i.name, quantity:i.quantity, price:i.price })));
+        }
+        setShowOrderModal(true);
+    };
+
+    // Transisi valid per status
+    const getValidNextStatuses = (order) => {
+        const isPickup = order.deliveryMethod==='pickup';
+        const map = {
+            paid         : ['diproses','cancelled'],
+            diproses     : isPickup ? ['cancelled'] : ['dikirim','cancelled'],
+            dikirim      : ['terkirim'],
+            terkirim     : ['selesai'],
+            siap_diambil : ['selesai','cancelled'],
+        };
+        return map[order.status] || [];
+    };
+
+    const handleOrderAction = async () => {
+        if (!selectedOrder) return;
         setUpdatingOrder(true);
         try {
-            await api.put(`/api/pharmacy/admin/orders/${selectedOrder._id}/status`, { status: newStatus });
-            toast.success('Status pesanan diperbarui');
+            if (orderAction==='verify-rx') {
+                if (!newStatus) { toast.error('Pilih approve atau reject'); setUpdatingOrder(false); return; }
+                const payload = { action: newStatus };
+                if (newStatus==='reject') payload.reason = rejectReason;
+                await api.put(`/api/pharmacy/admin/orders/${selectedOrder._id}/verify-prescription`, payload);
+                toast.success(newStatus==='approve'?'Resep disetujui':'Resep ditolak');
+
+            } else if (orderAction==='adjust-items') {
+                const payload = { items: adjustedItems.map(i=>({ medicineId:i.medicineId, quantity:i.quantity })) };
+                await api.put(`/api/pharmacy/admin/orders/${selectedOrder._id}/adjust-items`, payload);
+                toast.success('Jumlah item diperbarui');
+
+            } else {
+                if (!newStatus) { toast.error('Pilih status baru'); setUpdatingOrder(false); return; }
+                await api.put(`/api/pharmacy/admin/orders/${selectedOrder._id}/status`, { status: newStatus });
+                toast.success('Status diperbarui');
+            }
             setShowOrderModal(false);
             fetchData();
-        } catch {
-            toast.error('Gagal memperbarui status');
-        } finally {
-            setUpdatingOrder(false);
-        }
+        } catch (err) { toast.error(err.response?.data?.message || 'Gagal'); }
+        finally { setUpdatingOrder(false); }
     };
 
+    const toggleExpand = (id) => {
+        setExpandedOrders(prev => { const s=new Set(prev); s.has(id)?s.delete(id):s.add(id); return s; });
+    };
+
+    // ── Filtered data ─────────────────────────────────────────────────────────
     const filteredMeds = medicines.filter(m =>
         !search || m.name?.toLowerCase().includes(search.toLowerCase()) || m.category?.toLowerCase().includes(search.toLowerCase())
     );
 
-    const filteredOrders = orders.filter(o => {
+    // Admin tidak perlu lihat expired — cron sudah handle otomatis
+    const filteredOrders = orders.filter(o => o.status !== 'expired').filter(o => {
         const q = orderSearch.toLowerCase();
-        const matchSearch = !orderSearch || o.userId?.name?.toLowerCase().includes(q) || o._id?.toLowerCase().includes(q);
-        const matchStatus = filterOrderStatus === 'all' || o.status === filterOrderStatus;
-        return matchSearch && matchStatus;
+        const matchQ = !orderSearch || o.userId?.name?.toLowerCase().includes(q) || o.userId?.email?.toLowerCase().includes(q) || o.orderNumber?.toLowerCase().includes(q);
+        const matchS = orderStatus==='all' || o.status===orderStatus;
+        return matchQ && matchS;
     });
 
-    const lowStock = medicines.filter(m => m.stock <= 10).length;
+    const pendingRxCount = orders.filter(o=>o.status==='waiting_prescription').length;
+    const lowStockCount  = medicines.filter(m=>m.stock<=10).length;
 
-    const formatCurrency = (amount) => `Rp ${Number(amount || 0).toLocaleString('id-ID')}`;
-
-    const getStockBadge = (stock) => {
-        if (stock <= 5) return { bg: '#fee2e2', color: '#b91c1c', label: 'Kritis' };
-        if (stock <= 10) return { bg: '#fef3c7', color: '#b45309', label: 'Menipis' };
-        if (stock <= 30) return { bg: '#dbeafe', color: '#1e40af', label: 'Normal' };
-        return { bg: '#dcfce7', color: '#166534', label: 'Aman' };
-    };
-
-    const getOrderStatusBadge = (status) => {
-        const cfg = orderStatusConfig[status] || { bg: '#f1f5f9', color: '#64748b', label: status };
-        return (
-            <span style={{
-                background: cfg.bg,
-                color: cfg.color,
-                padding: '4px 12px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: 500,
-                display: 'inline-block'
-            }}>
-                {cfg.label}
-            </span>
-        );
+    const getStatusBadge = (status) => {
+        const v = STATUS_CFG[status] || { bg:'#f1f5f9', color:'#475569', label:status, icon:FaBoxOpen };
+        return <span style={{background:v.bg,color:v.color,padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><v.icon size={10}/>{v.label}</span>;
     };
 
     if (loading) return (
-        <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ textAlign: 'center' }}>
-                <Spinner animation="border" variant="primary" />
-                <p style={{ marginTop: 16, color: '#64748b' }}>Memuat data farmasi...</p>
-            </div>
+        <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#f8fafc'}}>
+            <Spinner animation="border" variant="primary"/>
         </div>
     );
 
     return (
-        <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", padding: '24px' }}>
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-            
+        <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",padding:24}}>
             <style>{`
-                .page-header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    margin-bottom: 24px;
-                    flex-wrap: wrap;
-                    gap: 16px;
-                }
-                .header-left {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                }
-                .header-icon {
-                    width: 44px;
-                    height: 44px;
-                    background: #dcfce7;
-                    border-radius: 12px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: #16a34a;
-                }
-                .header-title h1 {
-                    font-size: 24px;
-                    font-weight: 600;
-                    color: #0f172a;
-                    margin-bottom: 4px;
-                }
-                .header-title p {
-                    font-size: 14px;
-                    color: #64748b;
-                    margin-bottom: 0;
-                }
-                .stats-card {
-                    background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 12px;
-                    padding: 20px;
-                    transition: all 0.2s ease;
-                }
-                .stats-card:hover {
-                    box-shadow: 0 8px 16px -4px rgba(0,0,0,0.05);
-                    transform: translateY(-2px);
-                }
-                .stats-value {
-                    font-size: 32px;
-                    font-weight: 600;
-                    color: #0f172a;
-                }
-                .stats-label {
-                    font-size: 14px;
-                    color: #64748b;
-                }
-                .tab-container {
-                    display: flex;
-                    gap: 8px;
-                    margin-bottom: 24px;
-                    border-bottom: 1px solid #e2e8f0;
-                    padding-bottom: 8px;
-                }
-                .tab-button {
-                    padding: 8px 20px;
-                    border-radius: 30px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    border: none;
-                    background: transparent;
-                    color: #64748b;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                }
-                .tab-button:hover {
-                    background: #f1f5f9;
-                    color: #0f172a;
-                }
-                .tab-button.active {
-                    background: #dcfce7;
-                    color: #166534;
-                }
-                .search-container {
-                    position: relative;
-                    width: 100%;
-                    max-width: 350px;
-                }
-                .search-icon {
-                    position: absolute;
-                    left: 12px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    color: #94a3b8;
-                    font-size: 14px;
-                }
-                .search-input {
-                    width: 100%;
-                    padding: 10px 16px 10px 40px;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    font-size: 14px;
-                    background: #ffffff;
-                }
-                .search-input:focus {
-                    outline: none;
-                    border-color: #16a34a;
-                    box-shadow: 0 0 0 3px rgba(22,163,74,0.1);
-                }
-                .filter-select {
-                    padding: 10px 16px;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    font-size: 14px;
-                    background: #ffffff;
-                    width: 100%;
-                }
-                .filter-select:focus {
-                    outline: none;
-                    border-color: #16a34a;
-                    box-shadow: 0 0 0 3px rgba(22,163,74,0.1);
-                }
-                .table-container {
-                    background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 16px;
-                    overflow: hidden;
-                    margin-top: 20px;
-                }
-                .table-container table {
-                    width: 100%;
-                    border-collapse: collapse;
-                }
-                .table-container th {
-                    background: #f8fafc;
-                    padding: 16px;
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: #475569;
-                    text-align: left;
-                    border-bottom: 1px solid #e2e8f0;
-                }
-                .table-container td {
-                    padding: 16px;
-                    font-size: 14px;
-                    color: #0f172a;
-                    border-bottom: 1px solid #e2e8f0;
-                    vertical-align: middle;
-                }
-                .table-container tr:last-child td {
-                    border-bottom: none;
-                }
-                .table-container tbody tr {
-                    transition: background 0.2s ease;
-                }
-                .table-container tbody tr:hover {
-                    background: #f8fafc;
-                }
-                .action-group {
-                    display: flex;
-                    gap: 6px;
-                }
-                .action-btn {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 8px;
-                    border: none;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    font-size: 16px;
-                }
-                .action-btn.edit {
-                    background: #dbeafe;
-                    color: #2563eb;
-                }
-                .action-btn.edit:hover {
-                    background: #bfdbfe;
-                }
-                .action-btn.delete {
-                    background: #fee2e2;
-                    color: #b91c1c;
-                }
-                .action-btn.delete:hover {
-                    background: #fecaca;
-                }
-                .action-btn.update {
-                    background: #dcfce7;
-                    color: #166534;
-                    width: auto;
-                    padding: 0 16px;
-                    font-size: 13px;
-                }
-                .action-btn.update:hover {
-                    background: #bbf7d0;
-                }
-                .btn-custom {
-                    padding: 10px 20px;
-                    border-radius: 10px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    border: none;
-                    background: #16a34a;
-                    color: white;
-                    transition: all 0.2s ease;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 8px;
-                    cursor: pointer;
-                }
-                .btn-custom:hover {
-                    background: #15803d;
-                }
-                .btn-custom-outline {
-                    background: transparent;
-                    border: 1px solid #e2e8f0;
-                    color: #475569;
-                }
-                .btn-custom-outline:hover {
-                    background: #f1f5f9;
-                }
-                .stock-badge {
-                    padding: 4px 10px;
-                    border-radius: 20px;
-                    font-size: 12px;
-                    font-weight: 500;
-                    display: inline-block;
-                }
-                .modal-custom .modal-content {
-                    border-radius: 20px;
-                    border: none;
-                    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.15);
-                }
-                .modal-header-custom {
-                    padding: 20px 24px;
-                    border-bottom: 1px solid #e2e8f0;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }
-                .modal-body-custom {
-                    padding: 24px;
-                }
-                .modal-footer-custom {
-                    padding: 16px 24px;
-                    border-top: 1px solid #e2e8f0;
-                    display: flex;
-                    justify-content: flex-end;
-                    gap: 8px;
-                }
-                .form-label-custom {
-                    font-size: 13px;
-                    font-weight: 500;
-                    color: #475569;
-                    margin-bottom: 6px;
-                }
-                .form-control-custom {
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    padding: 10px 14px;
-                    font-size: 14px;
-                    width: 100%;
-                }
-                .form-control-custom:focus {
-                    outline: none;
-                    border-color: #16a34a;
-                    box-shadow: 0 0 0 3px rgba(22,163,74,0.1);
-                }
-                .image-upload-box {
-                    width: 80px;
-                    height: 80px;
-                    border-radius: 12px;
-                    border: 2px dashed #e2e8f0;
-                    background: #f8fafc;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    flex-shrink: 0;
-                    overflow: hidden;
-                }
-                .image-upload-box img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                }
-                .product-image {
-                    width: 48px;
-                    height: 48px;
-                    border-radius: 10px;
-                    object-fit: cover;
-                    border: 1px solid #e2e8f0;
-                }
-                .product-image-placeholder {
-                    width: 48px;
-                    height: 48px;
-                    border-radius: 10px;
-                    background: #f1f5f9;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: #94a3b8;
-                    border: 1px solid #e2e8f0;
-                }
+                .adm-tab{padding:10px 20px;border-radius:30px;font-size:13px;font-weight:500;border:none;background:transparent;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s}
+                .adm-tab.active{background:#dcfce7;color:#166534}
+                .tbl th{background:#f8fafc;padding:13px 16px;font-size:12px;font-weight:600;color:#475569;text-align:left;border-bottom:1px solid #e2e8f0}
+                .tbl td{padding:14px 16px;font-size:13px;color:#0f172a;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+                .tbl tr:hover td{background:#fafafa}
+                .btn-g{background:#16a34a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:inherit}
+                .btn-g:hover{background:#15803d}
+                .btn-b{background:#2563eb;color:#fff;border:none;border-radius:10px;padding:7px 14px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+                .btn-b:hover{background:#1d4ed8}
+                .btn-y{background:#f59e0b;color:#fff;border:none;border-radius:10px;padding:7px 14px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+                .btn-y:hover{background:#d97706}
+                .btn-r{background:#b91c1c;color:#fff;border:none;border-radius:10px;padding:7px 14px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+                .btn-r:hover{background:#991b1b}
+                .btn-o-sm{background:transparent;border:1px solid #e2e8f0;color:#475569;border-radius:10px;padding:7px 14px;font-size:12px;cursor:pointer;font-family:inherit}
+                .inp{width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;font-family:inherit;outline:none}
+                .inp:focus{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
+                .toggle-wrap{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;cursor:pointer;transition:all .2s}
+                .toggle-wrap.on{border-color:#16a34a;background:#f0fdf4}
+                .stat-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px}
             `}</style>
 
-            <Container fluid style={{ maxWidth: 1400, margin: '0 auto' }}>
+            <Container fluid style={{maxWidth:1400,margin:'0 auto'}}>
                 {/* Header */}
-                <div className="page-header">
-                    <div className="header-left">
-                        <div className="header-icon">
-                            <FaPills size={24} />
-                        </div>
-                        <div className="header-title">
-                            <h1>Manajemen Farmasi</h1>
-                            <p>Kelola stok obat dan pesanan farmasi</p>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24,flexWrap:'wrap',gap:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:12}}>
+                        <Link to="/admin" style={{color:'#64748b',fontSize:13,textDecoration:'none',display:'flex',alignItems:'center',gap:4}}>← Admin</Link>
+                        <div style={{width:44,height:44,background:'#dcfce7',borderRadius:12,display:'flex',alignItems:'center',justifyContent:'center',color:'#16a34a'}}><FaPills size={22}/></div>
+                        <div>
+                            <h1 style={{fontSize:22,fontWeight:700,color:'#0f172a',marginBottom:2}}>Manajemen Farmasi</h1>
+                            <p style={{fontSize:13,color:'#64748b',marginBottom:0}}>Kelola obat · verifikasi resep · update status pesanan</p>
                         </div>
                     </div>
+                    {pendingRxCount>0&&(
+                        <div style={{background:'#fef9c3',border:'1px solid #fcd34d',borderRadius:12,padding:'10px 16px',display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#92400e',cursor:'pointer'}} onClick={()=>{setActiveTab('orders');setOrderStatus('waiting_prescription');}}>
+                            <FaFileImage/><strong>{pendingRxCount} resep</strong> menunggu verifikasi
+                        </div>
+                    )}
                 </div>
 
-                {/* Stats Cards */}
+                {/* Stats */}
                 <Row className="g-3 mb-4">
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: '#2563eb', fontSize: 14 }}>Total Obat</div>
-                                <FaPills style={{ color: '#2563eb', opacity: 0.5 }} size={20} />
+                    {[
+                        { label:'Total Obat',     value:medicines.length,                                                        color:'#2563eb',  icon:FaPills },
+                        { label:'Stok Menipis',   value:lowStockCount,                                                           color:'#b91c1c',  icon:FaExclamationTriangle },
+                        { label:'Total Pesanan',  value:orders.length,                                                           color:'#0e7490',  icon:FaShoppingCart },
+                        { label:'Perlu Diproses', value:orders.filter(o=>['paid','waiting_prescription'].includes(o.status)).length, color:'#b45309', icon:FaClock },
+                    ].map(s=>(
+                        <Col md={3} xs={6} key={s.label}>
+                            <div className="stat-card">
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                                    <span style={{fontSize:13,color:s.color,fontWeight:500}}>{s.label}</span>
+                                    <s.icon style={{color:s.color,opacity:.5}} size={18}/>
+                                </div>
+                                <div style={{fontSize:28,fontWeight:700,color:'#0f172a'}}>{s.value}</div>
                             </div>
-                            <div className="stats-value">{medicines.length}</div>
-                            <div className="stats-label">Varian obat tersedia</div>
-                        </div>
-                    </Col>
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: lowStock > 0 ? '#b91c1c' : '#166534', fontSize: 14 }}>Stok Menipis</div>
-                                <FaExclamationTriangle style={{ color: lowStock > 0 ? '#b91c1c' : '#166534', opacity: 0.5 }} size={20} />
-                            </div>
-                            <div className="stats-value">{lowStock}</div>
-                            <div className="stats-label">Obat dengan stok ≤10</div>
-                        </div>
-                    </Col>
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: '#0e7490', fontSize: 14 }}>Total Pesanan</div>
-                                <FaShoppingCart style={{ color: '#0e7490', opacity: 0.5 }} size={20} />
-                            </div>
-                            <div className="stats-value">{orders.length}</div>
-                            <div className="stats-label">Semua transaksi</div>
-                        </div>
-                    </Col>
-                    <Col md={3} xs={6}>
-                        <div className="stats-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                <div style={{ color: '#b45309', fontSize: 14 }}>Menunggu</div>
-                                <FaClock style={{ color: '#b45309', opacity: 0.5 }} size={20} />
-                            </div>
-                            <div className="stats-value">{orders.filter(o => o.status === 'awaiting_payment').length}</div>
-                            <div className="stats-label">Pesanan perlu diproses</div>
-                        </div>
-                    </Col>
+                        </Col>
+                    ))}
                 </Row>
 
-                {/* Custom Tabs */}
-                <div className="tab-container">
-                    <button 
-                        className={`tab-button ${activeTab === 'medicines' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('medicines')}
-                    >
-                        <FaBoxOpen /> Daftar Obat ({medicines.length})
+                {/* Tabs */}
+                <div style={{display:'flex',gap:6,marginBottom:24,borderBottom:'1px solid #e2e8f0',paddingBottom:8}}>
+                    <button className={`adm-tab ${activeTab==='orders'?'active':''}`} onClick={()=>setActiveTab('orders')}>
+                        <FaShoppingCart/> Pesanan {pendingRxCount>0&&<span style={{background:'#b91c1c',color:'#fff',borderRadius:20,padding:'1px 6px',fontSize:10}}>{pendingRxCount}</span>}
                     </button>
-                    <button 
-                        className={`tab-button ${activeTab === 'orders' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('orders')}
-                    >
-                        <FaShoppingCart /> Pesanan ({orders.length})
+                    <button className={`adm-tab ${activeTab==='medicines'?'active':''}`} onClick={()=>setActiveTab('medicines')}>
+                        <FaBoxOpen/> Daftar Obat
                     </button>
                 </div>
 
-                {/* Tab: Daftar Obat */}
-                {activeTab === 'medicines' && (
+                {/* ─── TAB: PESANAN ────────────────────────────────────── */}
+                {activeTab==='orders'&&(
                     <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <div className="search-container">
-                                <FaSearch className="search-icon" />
-                                <input
-                                    type="text"
-                                    className="search-input"
-                                    placeholder="Cari nama atau kategori obat..."
-                                    value={search}
-                                    onChange={e => setSearch(e.target.value)}
-                                />
+                        <Row className="g-3 mb-3">
+                            <Col md={5}>
+                                <div style={{position:'relative'}}>
+                                    <FaSearch style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'#94a3b8',fontSize:12}}/>
+                                    <input className="inp" style={{paddingLeft:38}} placeholder="Cari nama, email, atau nomor pesanan..." value={orderSearch} onChange={e=>setOrderSearch(e.target.value)}/>
+                                </div>
+                            </Col>
+                            <Col md={4}>
+                                <select className="inp" value={orderStatus} onChange={e=>setOrderStatus(e.target.value)}>
+                                    <option value="all">Semua Status</option>
+                                    {Object.entries(STATUS_CFG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                                </select>
+                            </Col>
+                            <Col md={3} style={{display:'flex',alignItems:'center',justifyContent:'flex-end'}}>
+                                <span style={{fontSize:13,color:'#64748b'}}>{filteredOrders.length} pesanan</span>
+                            </Col>
+                        </Row>
+
+                        <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,overflow:'hidden'}}>
+                            {filteredOrders.length===0?(
+                                <div style={{textAlign:'center',padding:60,color:'#64748b'}}>
+                                    <FaShoppingCart size={32} style={{marginBottom:12,color:'#94a3b8'}}/><p>Tidak ada pesanan ditemukan</p>
+                                </div>
+                            ):filteredOrders.map(o=>(
+                                <div key={o._id} style={{borderBottom:'1px solid #f1f5f9'}}>
+                                    {/* Row utama */}
+                                    <div style={{display:'flex',alignItems:'center',padding:'14px 16px',gap:12,flexWrap:'wrap',cursor:'pointer'}} onClick={()=>toggleExpand(o._id)}>
+                                        <div style={{flex:'0 0 auto'}}>
+                                            {expandedOrders.has(o._id)?<FaChevronUp size={12} style={{color:'#94a3b8'}}/>:<FaChevronDown size={12} style={{color:'#94a3b8'}}/>}
+                                        </div>
+                                        <div style={{flex:'1 1 160px'}}>
+                                            <div style={{fontWeight:600,fontSize:12,color:'#0f172a'}}>{o.orderNumber}</div>
+                                            <div style={{fontSize:11,color:'#64748b'}}>{fmtDate(o.createdAt)}</div>
+                                        </div>
+                                        <div style={{flex:'1 1 150px'}}>
+                                            <div style={{fontWeight:500,fontSize:13}}>{o.userId?.name||'-'}</div>
+                                            <div style={{fontSize:11,color:'#64748b'}}>{o.userId?.email}</div>
+                                        </div>
+                                        <div style={{flex:'0 0 auto'}}>{o.deliveryMethod==='pickup'?<span style={{background:'#dcfce7',color:'#166534',padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}><FaStore size={9} style={{marginRight:3}}/>Pickup</span>:<span style={{background:'#dbeafe',color:'#1e40af',padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}><FaTruck size={9} style={{marginRight:3}}/>Diantar</span>}</div>
+                                        <div style={{flex:'0 0 auto'}}>{getStatusBadge(o.status)}</div>
+                                        <div style={{flex:'0 0 100px',textAlign:'right',fontWeight:700,color:'#2563eb',fontSize:14}}>{fmt(o.totalAmount)}</div>
+                                        {/* Aksi cepat */}
+                                        <div style={{flex:'0 0 auto',display:'flex',gap:6}} onClick={e=>e.stopPropagation()}>
+                                            {o.status==='waiting_prescription'&&(
+                                                <button className="btn-y" onClick={()=>openOrderModal(o,'verify-rx')}>
+                                                    <FaFileImage size={11}/> Verifikasi Resep
+                                                </button>
+                                            )}
+                                            {o.status==='paid'&&(
+                                                <button className="btn-g" onClick={()=>openOrderModal(o,'status')}>
+                                                    <FaBoxOpen size={11}/> Proses
+                                                </button>
+                                            )}
+                                            {['diproses','dikirim','terkirim','siap_diambil'].includes(o.status)&&(
+                                                <button className="btn-b" onClick={()=>openOrderModal(o,'status')}>
+                                                    <FaEdit size={11}/> Update Status
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Expanded detail */}
+                                    {expandedOrders.has(o._id)&&(
+                                        <div style={{padding:'0 16px 16px 40px',background:'#fafafa',borderTop:'1px dashed #e2e8f0'}}>
+                                            <Row>
+                                                <Col md={8}>
+                                                    {/* Item obat */}
+                                                    <div style={{marginBottom:12}}>
+                                                        <p style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:6,textTransform:'uppercase',letterSpacing:.5}}>Item Pesanan</p>
+                                                        {o.items?.map((item,i)=>(
+                                                            <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:4,padding:'6px 10px',background:'#fff',borderRadius:8,border:'1px solid #e2e8f0'}}>
+                                                                <span>{item.name} <span style={{color:'#64748b'}}>×{item.quantity}</span>
+                                                                    {item.requiresPrescription&&<span style={{background:'#fef3c7',color:'#92400e',borderRadius:6,padding:'1px 6px',fontSize:10,fontWeight:600,marginLeft:6}}>Resep</span>}
+                                                                    {item.isFreeForStudent&&<span style={{background:'#ede9fe',color:'#7c3aed',borderRadius:6,padding:'1px 6px',fontSize:10,fontWeight:600,marginLeft:4}}>Gratis Mhs</span>}
+                                                                </span>
+                                                                <span style={{fontWeight:500}}>{fmt(item.subtotal)}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    {/* Alamat */}
+                                                    {o.shippingAddress?.address&&(
+                                                        <p style={{fontSize:12,color:'#64748b',margin:'0 0 8px'}}><FaMapMarkerAlt style={{marginRight:4}}/>{o.shippingAddress.address}{o.shippingAddress.detail&&` · ${o.shippingAddress.detail}`}</p>
+                                                    )}
+
+                                                    {/* Resep info */}
+                                                    {o.requiresPrescription&&(
+                                                        <div style={{background:o.prescription?.status==='approved'?'#dcfce7':o.prescription?.status==='rejected'?'#fee2e2':'#fef9c3',borderRadius:10,padding:'10px 14px',fontSize:12,marginBottom:8}}>
+                                                            <strong>Resep: </strong>
+                                                            {!o.prescription&&'Belum diupload'}
+                                                            {o.prescription?.status==='pending'&&'⏳ Menunggu verifikasi'}
+                                                            {o.prescription?.status==='approved'&&<span style={{color:'#166534'}}>✅ Disetujui</span>}
+                                                            {o.prescription?.status==='rejected'&&<span style={{color:'#b91c1c'}}>❌ Ditolak: {o.prescription.rejectedReason}</span>}
+                                                            {o.prescription?.imageUrl&&(
+                                                                <button style={{background:'none',border:'none',color:'#2563eb',fontSize:11,cursor:'pointer',marginLeft:8}} onClick={()=>{ setSelectedOrder(o); setRxPreview(true); setShowOrderModal(true); setOrderAction('rx-preview'); }}>
+                                                                    <FaEye size={10} style={{marginRight:3}}/>Lihat Foto
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Ringkasan harga */}
+                                                    <div style={{display:'flex',gap:16,fontSize:12,color:'#64748b'}}>
+                                                        <span>Subtotal: <strong style={{color:'#0f172a'}}>{fmt(o.subtotalObat)}</strong></span>
+                                                        <span>Ongkir: <strong style={{color:'#0f172a'}}>{fmt(o.shippingCost)}</strong></span>
+                                                        <span>Total: <strong style={{color:'#2563eb'}}>{fmt(o.totalAmount)}</strong></span>
+                                                    </div>
+                                                </Col>
+
+                                                <Col md={4}>
+                                                    <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                                                        {/* Verifikasi resep */}
+                                                        {o.status==='waiting_prescription'&&(
+                                                            <>
+                                                                {o.prescription&&<button className="btn-b" style={{justifyContent:'center'}} onClick={()=>openOrderModal(o,'adjust-items')}>
+                                                                    <FaEdit size={11}/> Sesuaikan Dosis
+                                                                </button>}
+                                                                <button className="btn-y" style={{justifyContent:'center'}} onClick={()=>openOrderModal(o,'verify-rx')}>
+                                                                    <FaFileImage size={11}/> Verifikasi Resep
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        {/* Update status */}
+                                                        {getValidNextStatuses(o).length>0&&o.status!=='waiting_prescription'&&(
+                                                            <button className="btn-g" style={{justifyContent:'center'}} onClick={()=>openOrderModal(o,'status')}>
+                                                                <FaEdit size={11}/> Update Status
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </Col>
+                                            </Row>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── TAB: OBAT ───────────────────────────────────────── */}
+                {activeTab==='medicines'&&(
+                    <div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                            <div style={{position:'relative',maxWidth:300,width:'100%'}}>
+                                <FaSearch style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'#94a3b8',fontSize:12}}/>
+                                <input className="inp" style={{paddingLeft:38}} placeholder="Cari nama atau kategori..." value={search} onChange={e=>setSearch(e.target.value)}/>
                             </div>
-                            <button className="btn-custom" onClick={() => openMedModal()}>
-                                <FaPlus /> Tambah Obat
-                            </button>
+                            <button className="btn-g" onClick={()=>openMedModal()}><FaPlus size={12}/> Tambah Obat</button>
                         </div>
 
-                        <div className="table-container">
-                            <table>
+                        <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,overflow:'hidden'}}>
+                            <table className="tbl" style={{width:'100%',borderCollapse:'collapse'}}>
                                 <thead>
                                     <tr>
-                                        <th style={{ width: 60 }}>Foto</th>
+                                        <th style={{width:60}}>Foto</th>
                                         <th>Nama Obat</th>
                                         <th>Kategori</th>
                                         <th>Harga</th>
                                         <th>Stok</th>
-                                        <th>Satuan</th>
-                                        <th style={{ textAlign: 'center' }}>Aksi</th>
+                                        <th>Resep</th>
+                                        <th>Gratis Mhs</th>
+                                        <th style={{textAlign:'center'}}>Status</th>
+                                        <th style={{textAlign:'center'}}>Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredMeds.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={7} style={{ textAlign: 'center', padding: '48px' }}>
-                                                <div style={{ width: 60, height: 60, background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                                                    <FaPills size={24} style={{ color: '#94a3b8' }} />
+                                    {filteredMeds.length===0?(
+                                        <tr><td colSpan={8} style={{textAlign:'center',padding:40,color:'#64748b'}}>Tidak ada obat</td></tr>
+                                    ):filteredMeds.map(m=>(
+                                        <tr key={m._id}>
+                                            <td>
+                                                {m.image?<img src={`${API_URL}${m.image}`} alt={m.name} style={{width:44,height:44,objectFit:'cover',borderRadius:8,border:'1px solid #e2e8f0'}}/>
+                                                    :<div style={{width:44,height:44,borderRadius:8,background:'#f1f5f9',display:'flex',alignItems:'center',justifyContent:'center',color:'#94a3b8'}}><FaPills size={18}/></div>}
+                                            </td>
+                                            <td>
+                                                <div style={{fontWeight:500}}>{m.name}</div>
+                                                {m.genericName&&<div style={{fontSize:11,color:'#64748b'}}>{m.genericName}</div>}
+                                                {m.description&&<div style={{fontSize:11,color:'#94a3b8'}}>{m.description.substring(0,50)}{m.description.length>50?'...':''}</div>}
+                                            </td>
+                                            <td><span style={{background:'#f1f5f9',color:'#475569',padding:'3px 8px',borderRadius:12,fontSize:11}}>{CATEGORIES.find(c=>c.value===m.category)?.label||m.category}</span></td>
+                                            <td style={{fontWeight:500}}>{fmt(m.price)}</td>
+                                            <td>
+                                                <span style={{background:m.stock<=5?'#fee2e2':m.stock<=10?'#fef3c7':'#dcfce7',color:m.stock<=5?'#b91c1c':m.stock<=10?'#b45309':'#166534',padding:'3px 8px',borderRadius:12,fontSize:11,fontWeight:500}}>
+                                                    {m.stock} {m.unit} {m.stock<=10&&'⚠️'}
+                                                </span>
+                                            </td>
+                                            <td>{m.requiresPrescription?<span style={{background:'#fef3c7',color:'#b45309',padding:'3px 8px',borderRadius:12,fontSize:11,fontWeight:600}}>Ya</span>:<span style={{color:'#94a3b8',fontSize:12}}>-</span>}</td>
+                                            <td>{m.availableForStudentQuota?<span style={{background:'#ede9fe',color:'#7c3aed',padding:'3px 8px',borderRadius:12,fontSize:11,fontWeight:600}}><FaStar size={9} style={{marginRight:3}}/>Aktif</span>:<span style={{color:'#94a3b8',fontSize:12}}>-</span>}</td>
+                                            <td style={{textAlign:'center'}}>
+                                                {m.isActive!==false
+                                                    ?<span style={{background:'#dcfce7',color:'#166534',padding:'3px 10px',borderRadius:12,fontSize:11,fontWeight:600}}>Aktif</span>
+                                                    :<span style={{background:'#fee2e2',color:'#b91c1c',padding:'3px 10px',borderRadius:12,fontSize:11,fontWeight:600}}>Nonaktif</span>}
+                                            </td>
+                                            <td style={{textAlign:'center'}}>
+                                                <div style={{display:'flex',gap:6,justifyContent:'center'}}>
+                                                    <button style={{width:32,height:32,borderRadius:8,border:'none',background:'#dbeafe',color:'#2563eb',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>openMedModal(m)} title="Edit"><FaEdit size={14}/></button>
+                                                    <button style={{width:32,height:32,borderRadius:8,border:'none',background:m.isActive!==false?'#fee2e2':'#dcfce7',color:m.isActive!==false?'#b91c1c':'#16a34a',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>handleToggleActive(m)} title={m.isActive!==false?'Nonaktifkan':'Aktifkan'}>{m.isActive!==false?<FaToggleOff size={14}/>:<FaToggleOn size={14}/>}</button>
                                                 </div>
-                                                <h6 style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada obat</h6>
-                                                <p style={{ color: '#64748b', fontSize: 13 }}>Belum ada data obat atau coba kata kunci lain</p>
                                             </td>
                                         </tr>
-                                    ) : filteredMeds.map(m => {
-                                        const stockStatus = getStockBadge(m.stock);
-                                        return (
-                                            <tr key={m._id}>
-                                                <td>
-                                                    {m.image ? (
-                                                        <img
-                                                            src={`${API_URL}${m.image}`}
-                                                            alt={m.name}
-                                                            className="product-image"
-                                                        />
-                                                    ) : (
-                                                        <div className="product-image-placeholder">
-                                                            <FaPills size={20} />
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <div style={{ fontWeight: 500 }}>{m.name}</div>
-                                                    {m.description && (
-                                                        <div style={{ fontSize: 12, color: '#64748b' }}>{m.description.substring(0, 50)}</div>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <span style={{ background: '#f1f5f9', color: '#475569', padding: '4px 10px', borderRadius: '20px', fontSize: '12px' }}>
-                                                        {m.category || '-'}
-                                                    </span>
-                                                </td>
-                                                <td style={{ fontWeight: 500 }}>{formatCurrency(m.price)}</td>
-                                                <td>
-                                                    <span style={{
-                                                        background: stockStatus.bg,
-                                                        color: stockStatus.color,
-                                                        padding: '4px 10px',
-                                                        borderRadius: '20px',
-                                                        fontSize: '12px',
-                                                        fontWeight: 500,
-                                                        display: 'inline-block'
-                                                    }}>
-                                                        {m.stock} • {stockStatus.label}
-                                                    </span>
-                                                </td>
-                                                <td style={{ color: '#64748b' }}>{m.unit || 'tablet'}</td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    <div className="action-group" style={{ justifyContent: 'center' }}>
-                                                        <button className="action-btn edit" onClick={() => openMedModal(m)} title="Edit">
-                                                            <FaEdit />
-                                                        </button>
-                                                        <button className="action-btn delete" onClick={() => handleDeleteMed(m._id, m.name)} title="Hapus">
-                                                            <FaTrash />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 )}
+            </Container>
 
-                {/* Tab: Pesanan */}
-                {activeTab === 'orders' && (
-                    <div>
-                        <Row className="g-3 mb-3">
-                            <Col md={4}>
-                                <div className="search-container" style={{ maxWidth: '100%' }}>
-                                    <FaSearch className="search-icon" />
-                                    <input
-                                        type="text"
-                                        className="search-input"
-                                        placeholder="Cari nama pelanggan atau ID..."
-                                        value={orderSearch}
-                                        onChange={e => setOrderSearch(e.target.value)}
-                                    />
+            {/* ─── MODAL TAMBAH/EDIT OBAT ───────────────────────────────── */}
+            <Modal show={showMedModal} onHide={()=>setShowMedModal(false)} centered size="lg">
+                <div style={{padding:24}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+                        <h5 style={{fontWeight:700,marginBottom:0}}>{editingMed?'Edit Obat':'Tambah Obat Baru'}</h5>
+                        <button onClick={()=>setShowMedModal(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#64748b'}}>×</button>
+                    </div>
+                    <Form onSubmit={handleSaveMed}>
+                        <Row className="g-3">
+                            {/* Gambar */}
+                            <Col md={12}>
+                                <label style={{fontSize:12,color:'#64748b',marginBottom:6,display:'block',fontWeight:600}}>Gambar Obat</label>
+                                <div style={{display:'flex',alignItems:'center',gap:16}}>
+                                    <div style={{width:80,height:80,borderRadius:12,border:'2px dashed #e2e8f0',background:'#f8fafc',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0}}>
+                                        {imagePreview?<img src={imagePreview} alt="preview" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:<FaPills size={28} color="#94a3b8"/>}
+                                    </div>
+                                    <div>
+                                        <input ref={imageRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" style={{display:'none'}} onChange={e=>{ const f=e.target.files[0]; if(!f) return; if(f.size>3*1024*1024){toast.error('Maks 3MB');return;} setImageFile(f); setImagePreview(URL.createObjectURL(f)); }}/>
+                                        <button type="button" className="btn-o-sm" onClick={()=>imageRef.current.click()} style={{marginRight:8}}><FaUpload size={12} style={{marginRight:5}}/>{imagePreview?'Ganti':'Pilih Gambar'}</button>
+                                        {imageFile&&<button type="button" style={{background:'none',border:'none',color:'#b91c1c',fontSize:12,cursor:'pointer'}} onClick={()=>{setImageFile(null);setImagePreview(editingMed?.image?`${API_URL}${editingMed.image}`:null);}}>Hapus</button>}
+                                        <div style={{fontSize:11,color:'#94a3b8',marginTop:4}}>JPG, PNG, WebP · Maks 3MB</div>
+                                    </div>
                                 </div>
                             </Col>
-                            <Col md={3}>
-                                <select 
-                                    className="filter-select" 
-                                    value={filterOrderStatus} 
-                                    onChange={e => setFilterOrderStatus(e.target.value)}
-                                >
-                                    <option value="all">Semua Status</option>
-                                    {Object.entries(orderStatusConfig).map(([k,v]) => (
-                                        <option key={k} value={k}>{v.label}</option>
-                                    ))}
+
+                            <Col md={12}><hr style={{margin:'4px 0',borderColor:'#e2e8f0'}}/></Col>
+
+                            <Col md={6}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Nama Obat <span style={{color:'#b91c1c'}}>*</span></label>
+                                <input className="inp" value={medForm.name} onChange={e=>setMedForm(f=>({...f,name:e.target.value}))} required placeholder="Paracetamol 500mg"/>
+                            </Col>
+                            <Col md={6}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Nama Generik</label>
+                                <input className="inp" value={medForm.genericName} onChange={e=>setMedForm(f=>({...f,genericName:e.target.value}))} placeholder="Opsional"/>
+                            </Col>
+
+                            <Col md={6}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Jenis Obat <span style={{color:'#b91c1c'}}>*</span></label>
+                                <select className="inp" value={medForm.category} onChange={e=>setMedForm(f=>({...f,category:e.target.value}))}>
+                                    {CATEGORIES.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}
                                 </select>
                             </Col>
-                            <Col md={5} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                                <span style={{ fontSize: 14, color: '#64748b' }}>
-                                    {filteredOrders.length} pesanan ditemukan
-                                </span>
+                            <Col md={3}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Satuan</label>
+                                <select className="inp" value={medForm.unit} onChange={e=>setMedForm(f=>({...f,unit:e.target.value}))}>
+                                    {['tablet','kapsul','botol','sachet','tube','pcs','strip','ampul'].map(u=><option key={u} value={u}>{u}</option>)}
+                                </select>
+                            </Col>
+                            <Col md={3}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Harga (Rp) <span style={{color:'#b91c1c'}}>*</span></label>
+                                <input className="inp" type="number" min="0" value={medForm.price} onChange={e=>setMedForm(f=>({...f,price:e.target.value}))} required placeholder="0"/>
+                            </Col>
+
+                            <Col md={3}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Stok <span style={{color:'#b91c1c'}}>*</span></label>
+                                <input className="inp" type="number" min="0" value={medForm.stock} onChange={e=>setMedForm(f=>({...f,stock:e.target.value}))} required placeholder="0"/>
+                            </Col>
+
+                            <Col md={12}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Deskripsi</label>
+                                <textarea className="inp" rows={2} value={medForm.description} onChange={e=>setMedForm(f=>({...f,description:e.target.value}))} style={{resize:'none'}} placeholder="Indikasi, cara pakai, dll"/>
+                            </Col>
+
+                            {/* Toggle: Status Aktif */}
+                            <Col md={12}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:6,display:'block'}}>Status Ketersediaan Obat</label>
+                                <div className={`toggle-wrap ${medForm.isActive?'on':''}`}
+                                    style={{borderColor:medForm.isActive?'#16a34a':'#b91c1c',background:medForm.isActive?'#f0fdf4':'#fef2f2'}}
+                                    onClick={()=>setMedForm(f=>({...f,isActive:!f.isActive}))}>
+                                    {medForm.isActive
+                                        ?<FaToggleOn size={22} style={{color:'#16a34a'}}/>
+                                        :<FaToggleOff size={22} style={{color:'#b91c1c'}}/>}
+                                    <div>
+                                        <div style={{fontSize:13,fontWeight:600,color:medForm.isActive?'#166534':'#b91c1c'}}>
+                                            {medForm.isActive?'Aktif — tersedia untuk pasien':'Nonaktif — tidak bisa dibeli'}
+                                        </div>
+                                        <div style={{fontSize:11,color:'#94a3b8'}}>
+                                            {medForm.isActive?'Obat tampil normal di halaman farmasi':'Obat tetap tampil tapi tombol beli di-disable'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </Col>
+
+                            {/* Toggle: Butuh Resep */}
+                            <Col md={6}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:6,display:'block'}}>Butuh Resep Dokter?</label>
+                                <div className={`toggle-wrap ${medForm.requiresPrescription?'on':''}`} onClick={()=>setMedForm(f=>({...f,requiresPrescription:!f.requiresPrescription}))}>
+                                    {medForm.requiresPrescription?<FaToggleOn size={22} style={{color:'#16a34a'}}/>:<FaToggleOff size={22} style={{color:'#94a3b8'}}/>}
+                                    <div>
+                                        <div style={{fontSize:13,fontWeight:500,color:medForm.requiresPrescription?'#166534':'#475569'}}>{medForm.requiresPrescription?'Ya, butuh resep':'Tidak butuh resep'}</div>
+                                        <div style={{fontSize:11,color:'#94a3b8'}}>Pasien harus upload resep dokter</div>
+                                    </div>
+                                </div>
+                            </Col>
+
+                            {/* Toggle: Gratis Mahasiswa */}
+                            <Col md={6}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:6,display:'block'}}><FaGraduationCap style={{marginRight:4}}/>Tersedia untuk Kuota Gratis Mahasiswa?</label>
+                                <div className={`toggle-wrap ${medForm.availableForStudentQuota?'on':''}`}
+                                    onClick={()=>setMedForm(f=>({...f,availableForStudentQuota:!f.availableForStudentQuota}))}>
+                                    {medForm.availableForStudentQuota?<FaToggleOn size={22} style={{color:'#7c3aed'}}/>:<FaToggleOff size={22} style={{color:'#94a3b8'}}/>}
+                                    <div>
+                                        <div style={{fontSize:13,fontWeight:500,color:medForm.availableForStudentQuota?'#7c3aed':'#475569'}}>{medForm.availableForStudentQuota?'Aktif — masuk kuota gratis mhs':'Tidak aktif'}</div>
+                                        <div style={{fontSize:11,color:'#94a3b8'}}>Maks 8 pcs/bulan/mahasiswa</div>
+                                    </div>
+                                </div>
                             </Col>
                         </Row>
 
-                        <div className="table-container">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>ID Pesanan</th>
-                                        <th>Pelanggan</th>
-                                        <th>Total</th>
-                                        <th>Tanggal</th>
-                                        <th>Status</th>
-                                        <th style={{ textAlign: 'center' }}>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredOrders.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={6} style={{ textAlign: 'center', padding: '48px' }}>
-                                                <div style={{ width: 60, height: 60, background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                                                    <FaShoppingCart size={24} style={{ color: '#94a3b8' }} />
-                                                </div>
-                                                <h6 style={{ fontWeight: 600, marginBottom: 4 }}>Tidak ada pesanan</h6>
-                                                <p style={{ color: '#64748b', fontSize: 13 }}>Belum ada pesanan atau coba filter lain</p>
-                                            </td>
-                                        </tr>
-                                    ) : filteredOrders.map(o => (
-                                        <tr key={o._id}>
-                                            <td>
-                                                <code style={{ background: '#f1f5f9', padding: '4px 8px', borderRadius: '6px', fontSize: '12px' }}>
-                                                    {o._id.slice(-8).toUpperCase()}
-                                                </code>
-                                            </td>
-                                            <td>
-                                                <div style={{ fontWeight: 500 }}>{o.userId?.name || '-'}</div>
-                                                <div style={{ fontSize: 12, color: '#64748b' }}>{o.userId?.email}</div>
-                                            </td>
-                                            <td style={{ fontWeight: 500 }}>{formatCurrency(o.totalAmount)}</td>
-                                            <td style={{ fontSize: 13, color: '#475569' }}>
-                                                {new Date(o.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                            </td>
-                                            <td>{getOrderStatusBadge(o.status)}</td>
-                                            <td style={{ textAlign: 'center' }}>
-                                                <button 
-                                                    className="action-btn update" 
-                                                    onClick={() => {
-                                                        setSelectedOrder(o);
-                                                        setNewStatus(o.status);
-                                                        setShowOrderModal(true);
-                                                    }}
-                                                >
-                                                    Update Status
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {/* Modal Tambah/Edit Obat */}
-                <Modal show={showMedModal} onHide={() => setShowMedModal(false)} centered dialogClassName="modal-custom">
-                    <div className="modal-header-custom">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 40, height: 40, background: '#dcfce7', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
-                                {editingMed ? <FaEdit size={20} /> : <FaPlus size={20} />}
-                            </div>
-                            <h5 style={{ fontWeight: 600, marginBottom: 0 }}>
-                                {editingMed ? 'Edit Obat' : 'Tambah Obat Baru'}
-                            </h5>
-                        </div>
-                        <button onClick={() => setShowMedModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
-                    </div>
-                    
-                    <Form onSubmit={handleSaveMed}>
-                        <div className="modal-body-custom">
-                            <Row className="g-3">
-                                {/* Bagian Gambar Obat */}
-                                <Col md={12}>
-                                    <Form.Label className="form-label-custom d-block">
-                                        <FaImage style={{ marginRight: 6 }} /> Gambar Obat
-                                    </Form.Label>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                                        <div className="image-upload-box">
-                                            {imagePreview ? (
-                                                <img src={imagePreview} alt="preview" />
-                                            ) : (
-                                                <FaPills size={30} color="#94a3b8" />
-                                            )}
-                                        </div>
-                                        <div>
-                                            <input
-                                                ref={imageInputRef}
-                                                type="file"
-                                                accept="image/jpeg,image/jpg,image/png,image/webp"
-                                                style={{ display: 'none' }}
-                                                onChange={handleImageChange}
-                                            />
-                                            <button 
-                                                type="button" 
-                                                className="btn-custom-outline" 
-                                                style={{ padding: '8px 16px' }}
-                                                onClick={() => imageInputRef.current.click()}
-                                            >
-                                                <FaUpload style={{ marginRight: 6 }} />
-                                                {imagePreview ? 'Ganti Gambar' : 'Pilih Gambar'}
-                                            </button>
-                                            {imageFile && (
-                                                <button 
-                                                    type="button" 
-                                                    style={{ background: 'none', border: 'none', color: '#b91c1c', marginLeft: 8, cursor: 'pointer' }}
-                                                    onClick={() => { setImageFile(null); setImagePreview(editingMed?.image ? `${API_URL}${editingMed.image}` : null); }}
-                                                >
-                                                    Hapus
-                                                </button>
-                                            )}
-                                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                                                JPG, PNG, WebP · Maks. 3MB
-                                            </div>
-                                        </div>
-                                    </div>
-                                </Col>
-                                
-                                <Col md={12}>
-                                    <hr style={{ margin: '8px 0', borderColor: '#e2e8f0' }} />
-                                </Col>
-
-                                <Col md={12}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Nama Obat <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            value={medForm.name}
-                                            onChange={e => setMedForm(f=>({...f, name: e.target.value}))}
-                                            required
-                                            placeholder="Contoh: Paracetamol 500mg"
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Kategori</Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            value={medForm.category}
-                                            onChange={e => setMedForm(f=>({...f, category: e.target.value}))}
-                                            placeholder="Analgesik, Antibiotik, dll"
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Satuan</Form.Label>
-                                        <Form.Select 
-                                            className="form-control-custom"
-                                            value={medForm.unit} 
-                                            onChange={e => setMedForm(f=>({...f, unit: e.target.value}))}
-                                        >
-                                            <option value="tablet">Tablet</option>
-                                            <option value="kapsul">Kapsul</option>
-                                            <option value="botol">Botol</option>
-                                            <option value="sachet">Sachet</option>
-                                            <option value="tube">Tube</option>
-                                        </Form.Select>
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Harga (Rp) <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            type="number"
-                                            min="0"
-                                            value={medForm.price}
-                                            onChange={e => setMedForm(f=>({...f, price: e.target.value}))}
-                                            required
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Stok <span style={{ color: '#b91c1c' }}>*</span></Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            type="number"
-                                            min="0"
-                                            value={medForm.stock}
-                                            onChange={e => setMedForm(f=>({...f, stock: e.target.value}))}
-                                            required
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={12}>
-                                    <Form.Group>
-                                        <Form.Label className="form-label-custom">Deskripsi</Form.Label>
-                                        <Form.Control
-                                            className="form-control-custom"
-                                            as="textarea"
-                                            rows={2}
-                                            value={medForm.description}
-                                            onChange={e => setMedForm(f=>({...f, description: e.target.value}))}
-                                        />
-                                    </Form.Group>
-                                </Col>
-                            </Row>
-                        </div>
-                        <div className="modal-footer-custom">
-                            <button type="button" className="btn-custom-outline" onClick={() => setShowMedModal(false)}>
-                                Batal
-                            </button>
-                            <button type="submit" className="btn-custom" disabled={savingMed || uploadingImage}>
-                                {(savingMed || uploadingImage) ? <Spinner size="sm" style={{ marginRight: 8 }} /> : <FaSave style={{ marginRight: 8 }} />}
-                                {editingMed ? 'Simpan Perubahan' : 'Tambah Obat'}
+                        <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:20,paddingTop:16,borderTop:'1px solid #e2e8f0'}}>
+                            <button type="button" className="btn-o-sm" onClick={()=>setShowMedModal(false)}>Batal</button>
+                            <button type="submit" className="btn-g" disabled={savingMed||uploadingImg}>
+                                {(savingMed||uploadingImg)?<><Spinner size="sm" animation="border"/> Menyimpan...</>:<><FaSave size={12}/>{editingMed?'Simpan Perubahan':'Tambah Obat'}</>}
                             </button>
                         </div>
                     </Form>
-                </Modal>
+                </div>
+            </Modal>
 
-                {/* Modal Update Status Pesanan */}
-                <Modal show={showOrderModal} onHide={() => setShowOrderModal(false)} centered dialogClassName="modal-custom">
-                    <div className="modal-header-custom">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 40, height: 40, background: '#dcfce7', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
-                                <FaShoppingCart size={20} />
-                            </div>
-                            <h5 style={{ fontWeight: 600, marginBottom: 0 }}>Update Status Pesanan</h5>
-                        </div>
-                        <button onClick={() => setShowOrderModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}>×</button>
+            {/* ─── MODAL AKSI ORDER ─────────────────────────────────────── */}
+            <Modal show={showOrderModal} onHide={()=>setShowOrderModal(false)} centered size="lg">
+                <div style={{padding:24}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+                        <h5 style={{fontWeight:700,marginBottom:0}}>
+                            {orderAction==='verify-rx'&&<><FaFileImage style={{color:'#f59e0b',marginRight:8}}/>Verifikasi Resep</>}
+                            {orderAction==='adjust-items'&&<><FaEdit style={{color:'#2563eb',marginRight:8}}/>Sesuaikan Dosis</>}
+                            {orderAction==='status'&&<><FaBoxOpen style={{color:'#16a34a',marginRight:8}}/>Update Status Pesanan</>}
+                            {orderAction==='rx-preview'&&<><FaEye style={{color:'#2563eb',marginRight:8}}/>Foto Resep</>}
+                        </h5>
+                        <button onClick={()=>setShowOrderModal(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#64748b'}}>×</button>
                     </div>
-                    
-                    <div className="modal-body-custom">
-                        {selectedOrder && (
-                            <div>
-                                <div style={{ background: '#f8fafc', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-                                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{selectedOrder.userId?.name}</div>
-                                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>ID: {selectedOrder._id}</div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: 13, color: '#475569' }}>Total Pesanan</span>
-                                        <span style={{ fontWeight: 700, color: '#16a34a' }}>{formatCurrency(selectedOrder.totalAmount)}</span>
+
+                    {selectedOrder&&(
+                        <div>
+                            {/* Info pesanan */}
+                            <div style={{background:'#f8fafc',borderRadius:10,padding:14,marginBottom:16,fontSize:13}}>
+                                <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                                    <span style={{fontWeight:600}}>{selectedOrder.orderNumber}</span>
+                                    {getStatusBadge(selectedOrder.status)}
+                                </div>
+                                <div style={{color:'#64748b'}}>{selectedOrder.userId?.name} · {selectedOrder.userId?.email}</div>
+                                <div style={{display:'flex',gap:16,marginTop:4,fontSize:12,color:'#64748b'}}>
+                                    <span>Total: <strong style={{color:'#2563eb'}}>{fmt(selectedOrder.totalAmount)}</strong></span>
+                                    <span>{selectedOrder.deliveryMethod==='pickup'?'Pickup':'Diantar'}</span>
+                                </div>
+                            </div>
+
+                            {/* VERIFIKASI RESEP */}
+                            {orderAction==='verify-rx'&&(
+                                <div>
+                                    {selectedOrder.prescription?.imageUrl&&(
+                                        <div style={{marginBottom:16}}>
+                                            <p style={{fontSize:12,fontWeight:600,color:'#64748b',marginBottom:6}}>FOTO RESEP DOKTER</p>
+                                            <img src={`${API_URL}${selectedOrder.prescription.imageUrl}`} alt="Resep"
+                                                style={{maxWidth:'100%',maxHeight:300,objectFit:'contain',borderRadius:10,border:'1px solid #e2e8f0',display:'block'}}/>
+                                        </div>
+                                    )}
+                                    {!selectedOrder.prescription&&<div style={{background:'#fef3c7',borderRadius:10,padding:'12px 14px',marginBottom:12,fontSize:13,color:'#92400e'}}>⚠️ Pasien belum mengupload foto resep.</div>}
+
+                                    <p style={{fontSize:12,fontWeight:600,color:'#64748b',marginBottom:8}}>KEPUTUSAN VERIFIKASI</p>
+                                    <div style={{display:'flex',gap:8,marginBottom:12}}>
+                                        <button style={{flex:1,padding:'12px',borderRadius:10,border:`2px solid ${newStatus==='approve'?'#16a34a':'#e2e8f0'}`,background:newStatus==='approve'?'#f0fdf4':'#fff',color:newStatus==='approve'?'#166534':'#475569',cursor:'pointer',fontWeight:600,fontSize:13,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
+                                            onClick={()=>{setNewStatus('approve');setRejectReason('');}}>
+                                            <FaCheckCircle size={14}/> Setujui Resep
+                                        </button>
+                                        <button style={{flex:1,padding:'12px',borderRadius:10,border:`2px solid ${newStatus==='reject'?'#b91c1c':'#e2e8f0'}`,background:newStatus==='reject'?'#fef2f2':'#fff',color:newStatus==='reject'?'#b91c1c':'#475569',cursor:'pointer',fontWeight:600,fontSize:13,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
+                                            onClick={()=>setNewStatus('reject')}>
+                                            <FaTimesCircle size={14}/> Tolak Resep
+                                        </button>
+                                    </div>
+                                    {newStatus==='approve'&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'10px 14px',fontSize:12,color:'#166534'}}>Stok akan dikunci 15 menit untuk pembayaran. Pasien akan dapat notifikasi untuk segera bayar.</div>}
+                                    {newStatus==='reject'&&(
+                                        <div>
+                                            <label style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:4,display:'block'}}>Alasan Penolakan <span style={{color:'#b91c1c'}}>*</span></label>
+                                            <textarea className="inp" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Contoh: Resep tidak jelas/buram, resep expired, nama pasien tidak sesuai..." style={{resize:'none'}}/>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* SESUAIKAN DOSIS */}
+                            {orderAction==='adjust-items'&&(
+                                <div>
+                                    <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:12,color:'#1e3a8a',display:'flex',alignItems:'flex-start',gap:8}}>
+                                        <FaInfoCircle style={{marginTop:2,flexShrink:0}}/>
+                                        Sesuaikan jumlah obat sesuai dosis yang tertera di resep. Harga akan dikalkulasi ulang otomatis.
+                                    </div>
+                                    {adjustedItems.map((item,i)=>(
+                                        <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid #f1f5f9'}}>
+                                            <div style={{flex:1,fontSize:13,fontWeight:500}}>{item.name}</div>
+                                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                                <button style={{width:28,height:28,borderRadius:8,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}} onClick={()=>{ const a=[...adjustedItems]; a[i].quantity=Math.max(1,a[i].quantity-1); setAdjustedItems(a); }}>-</button>
+                                                <span style={{minWidth:30,textAlign:'center',fontWeight:600,fontSize:15}}>{item.quantity}</span>
+                                                <button style={{width:28,height:28,borderRadius:8,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}} onClick={()=>{ const a=[...adjustedItems]; a[i].quantity=a[i].quantity+1; setAdjustedItems(a); }}>+</button>
+                                            </div>
+                                            <div style={{minWidth:80,textAlign:'right',fontSize:13,color:'#2563eb',fontWeight:600}}>{fmt(item.price*item.quantity)}</div>
+                                        </div>
+                                    ))}
+                                    <div style={{display:'flex',justifyContent:'flex-end',paddingTop:10,fontWeight:700,fontSize:15}}>
+                                        Total Baru: <span style={{color:'#2563eb',marginLeft:8}}>{fmt(adjustedItems.reduce((s,i)=>s+i.price*i.quantity,0) + (selectedOrder.shippingCost||0))}</span>
                                     </div>
                                 </div>
-                                
-                                <Form.Group>
-                                    <Form.Label className="form-label-custom">Status Baru</Form.Label>
-                                    <Form.Select 
-                                        className="form-control-custom"
-                                        value={newStatus} 
-                                        onChange={e => setNewStatus(e.target.value)}
-                                    >
-                                        {Object.entries(orderStatusConfig).map(([k,v]) => (
-                                            <option key={k} value={k}>{v.label}</option>
-                                        ))}
-                                    </Form.Select>
-                                </Form.Group>
-                            </div>
-                        )}
-                    </div>
-                    
-                    <div className="modal-footer-custom">
-                        <button type="button" className="btn-custom-outline" onClick={() => setShowOrderModal(false)}>
-                            Batal
-                        </button>
-                        <button 
-                            type="button" 
-                            className="btn-custom" 
-                            onClick={handleUpdateOrderStatus} 
-                            disabled={updatingOrder}
-                        >
-                            {updatingOrder ? <Spinner size="sm" style={{ marginRight: 8 }} /> : <FaSave style={{ marginRight: 8 }} />}
-                            Simpan
-                        </button>
-                    </div>
-                </Modal>
-            </Container>
+                            )}
+
+                            {/* UPDATE STATUS */}
+                            {orderAction==='status'&&(
+                                <div>
+                                    <p style={{fontSize:12,fontWeight:600,color:'#64748b',marginBottom:8}}>PILIH STATUS BARU</p>
+                                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                                        {getValidNextStatuses(selectedOrder).map(s=>{
+                                            const v = STATUS_CFG[s];
+                                            return (
+                                                <div key={s} style={{border:`2px solid ${newStatus===s?v.color:'#e2e8f0'}`,borderRadius:12,padding:'12px 16px',cursor:'pointer',background:newStatus===s?v.bg:'#fff',transition:'all .15s'}} onClick={()=>setNewStatus(s)}>
+                                                    <div style={{display:'flex',alignItems:'center',gap:8,color:newStatus===s?v.color:'#475569',fontWeight:600,fontSize:13}}>
+                                                        <v.icon size={14}/>{v.label}
+                                                    </div>
+                                                    {s==='diproses'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>{selectedOrder.deliveryMethod==='pickup'?'Akan siap diambil dalam ±30 menit setelah ini':'Lanjutkan ke pengiriman setelah obat siap'}</div>}
+                                                    {s==='dikirim'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Estimasi tiba 1–2 hari kerja</div>}
+                                                    {s==='terkirim'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Konfirmasi obat sudah tiba ke pasien</div>}
+                                                    {s==='selesai'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Pesanan diselesaikan</div>}
+                                                    {s==='cancelled'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Batalkan pesanan dan kembalikan stok</div>}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* RX PREVIEW */}
+                            {orderAction==='rx-preview'&&selectedOrder.prescription?.imageUrl&&(
+                                <img src={`${API_URL}${selectedOrder.prescription.imageUrl}`} alt="Resep" style={{maxWidth:'100%',maxHeight:500,objectFit:'contain',borderRadius:10,display:'block',margin:'0 auto'}}/>
+                            )}
+                        </div>
+                    )}
+
+                    {orderAction!=='rx-preview'&&(
+                        <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:20,paddingTop:16,borderTop:'1px solid #e2e8f0'}}>
+                            <button className="btn-o-sm" onClick={()=>setShowOrderModal(false)}>Batal</button>
+                            <button className="btn-g" onClick={handleOrderAction} disabled={updatingOrder||
+                                (orderAction==='verify-rx'&&(!newStatus||(!selectedOrder?.prescription&&newStatus==='approve')||(newStatus==='reject'&&!rejectReason.trim())))||
+                                (orderAction==='status'&&!newStatus)}>
+                                {updatingOrder?<><Spinner size="sm" animation="border"/> Memproses...</>
+                                    :orderAction==='verify-rx'?<><FaCheckCircle size={12}/>Konfirmasi Verifikasi</>
+                                    :orderAction==='adjust-items'?<><FaSave size={12}/>Simpan Perubahan</>
+                                    :<><FaSave size={12}/>Update Status</>}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </Modal>
         </div>
     );
 };

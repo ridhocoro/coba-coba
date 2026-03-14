@@ -320,13 +320,29 @@ const handlePaymentPaid = async (payment, xenditEvent, io) => {
         // Update order farmasi
         if (payment.paymentType === 'medicine') {
             const order = await Order.findById(payment.referenceId);
-            if (order && order.status === 'awaiting_payment') {
+            if (order && order.status === 'pending') {
+                // Kurangi stok permanen, release lock
                 for (const item of order.items) {
                     await Medicine.findByIdAndUpdate(item.medicineId, {
                         $inc: { stock: -item.quantity, lockedStock: -item.quantity },
                     });
                 }
-                await Order.findByIdAndUpdate(payment.referenceId, { status: 'processing', paymentVerified: true });
+                order.status    = 'paid';
+                order.updatedAt = new Date();
+                await order.save();
+
+                // Notif spesifik order
+                await createNotification({
+                    userId : order.userId,
+                    type   : 'payment_verified',
+                    title  : 'Pembayaran Pesanan Berhasil ✅',
+                    message: `Pembayaran pesanan ${order.orderNumber} berhasil. Admin akan segera menyiapkan obat Anda.`,
+                    data   : { orderId: order._id },
+                    io,
+                });
+                if (io) io.to(`user-${order.userId}`).emit('order-status-update', {
+                    orderId: order._id.toString(), status: 'paid',
+                });
             }
         }
 
