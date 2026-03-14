@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, InputGroup, Spinner } from 'react-bootstrap';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { FaLock, FaEye, FaEyeSlash, FaArrowLeft, FaCheckCircle, FaTimesCircle, FaHeartbeat } from 'react-icons/fa';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+import api from '../utils/api';
 
 const ResetPassword = () => {
     const navigate = useNavigate();
@@ -36,7 +34,7 @@ const ResetPassword = () => {
             }
 
             try {
-                const res = await axios.get(`${API_URL}/auth/reset-password/validate`, {
+                const res = await api.get('/api/auth/reset-password/validate', {
                     params: { token, email }
                 });
                 setTokenValid(true);
@@ -57,16 +55,25 @@ const ResetPassword = () => {
     // Kekuatan password
     const getPasswordStrength = (pwd) => {
         if (!pwd) return null;
-        if (pwd.length < 6) return { label: 'Terlalu pendek', color: '#dc3545', width: '20%' };
-        if (pwd.length < 8) return { label: 'Lemah', color: '#fd7e14', width: '40%' };
-        const hasUpper = /[A-Z]/.test(pwd);
-        const hasNum = /[0-9]/.test(pwd);
+        const hasUpper   = /[A-Z]/.test(pwd);
+        const hasLower   = /[a-z]/.test(pwd);
+        const hasNum     = /[0-9]/.test(pwd);
         const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
-        const score = [hasUpper, hasNum, hasSpecial].filter(Boolean).length;
-        if (score === 0) return { label: 'Sedang', color: '#ffc107', width: '60%' };
-        if (score === 1) return { label: 'Kuat', color: '#20c997', width: '80%' };
-        return { label: 'Sangat Kuat', color: '#198754', width: '100%' };
+        const long       = pwd.length >= 8;
+        const score = [hasUpper, hasLower, hasNum, hasSpecial, long].filter(Boolean).length;
+        if (score <= 2) return { label: 'Lemah',       color: '#dc3545', width: '25%'  };
+        if (score === 3) return { label: 'Sedang',      color: '#fd7e14', width: '50%'  };
+        if (score === 4) return { label: 'Kuat',        color: '#20c997', width: '75%'  };
+        return              { label: 'Sangat Kuat', color: '#198754', width: '100%' };
     };
+
+    // Cek per-syarat untuk ditampilkan sebagai checklist
+    const pwdRules = password ? [
+        { ok: password.length >= 8,    text: 'Minimal 8 karakter'  },
+        { ok: /[A-Z]/.test(password),  text: 'Huruf besar (A-Z)'   },
+        { ok: /[a-z]/.test(password),  text: 'Huruf kecil (a-z)'   },
+        { ok: /[0-9]/.test(password),  text: 'Angka (0-9)'          },
+    ] : [];
 
     const strength = getPasswordStrength(password);
 
@@ -79,15 +86,27 @@ const ResetPassword = () => {
             return;
         }
 
-        if (password.length < 6) {
-            setError('Password minimal 6 karakter.');
+        if (password.length < 8) {
+            setError('Password minimal 8 karakter.');
+            return;
+        }
+        if (!/[A-Z]/.test(password)) {
+            setError('Password harus mengandung minimal 1 huruf besar (A-Z).');
+            return;
+        }
+        if (!/[a-z]/.test(password)) {
+            setError('Password harus mengandung minimal 1 huruf kecil (a-z).');
+            return;
+        }
+        if (!/[0-9]/.test(password)) {
+            setError('Password harus mengandung minimal 1 angka (0-9).');
             return;
         }
 
         setLoading(true);
 
         try {
-            await axios.post(`${API_URL}/auth/reset-password`, {
+            await api.post('/api/auth/reset-password', {
                 token,
                 email,
                 password,
@@ -243,7 +262,7 @@ const ResetPassword = () => {
                                                     </InputGroup.Text>
                                                     <Form.Control
                                                         type={showPassword ? 'text' : 'password'}
-                                                        placeholder="Minimal 6 karakter"
+                                                        placeholder="Min. 8 karakter, huruf besar, kecil, angka"
                                                         value={password}
                                                         onChange={e => setPassword(e.target.value)}
                                                         className="border-start-0 border-end-0 bg-white"
@@ -269,21 +288,29 @@ const ResetPassword = () => {
                                                     </Button>
                                                 </InputGroup>
 
-                                                {/* Indikator kekuatan password */}
-                                                {strength && (
+                                                {/* Indikator kekuatan + checklist syarat */}
+                                                {password && (
                                                     <div className="mt-2">
-                                                        <div style={{ height: 4, background: '#e9ecef', borderRadius: 4, overflow: 'hidden' }}>
+                                                        <div style={{ height: 4, background: '#e9ecef', borderRadius: 4, overflow: 'hidden', marginBottom: 6 }}>
                                                             <div style={{
                                                                 height: '100%',
-                                                                width: strength.width,
-                                                                background: strength.color,
+                                                                width: strength?.width || '0%',
+                                                                background: strength?.color || '#e9ecef',
                                                                 borderRadius: 4,
                                                                 transition: 'width 0.3s ease'
                                                             }} />
                                                         </div>
-                                                        <small style={{ color: strength.color, fontSize: '0.78rem' }}>
-                                                            Kekuatan: {strength.label}
-                                                        </small>
+                                                        <div className="d-flex flex-wrap gap-2">
+                                                            {pwdRules.map((r, i) => (
+                                                                <small key={i} style={{
+                                                                    color: r.ok ? '#198754' : '#dc3545',
+                                                                    fontSize: '0.75rem',
+                                                                    display: 'flex', alignItems: 'center', gap: 3
+                                                                }}>
+                                                                    {r.ok ? '✓' : '✗'} {r.text}
+                                                                </small>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                 )}
                                             </Form.Group>

@@ -12,6 +12,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
+import ForgotEmail from './pages/ForgotEmail';
 import ResetPassword from './pages/ResetPassword';
 import HealthCheck from './pages/HealthCheck';
 import BMICalculator from './pages/HealthCheck/BMICalculator';
@@ -70,7 +71,7 @@ const HomeRouter = () => {
     if (loading) return null;
     if (user?.role === 'admin')  return <AdminHome />;
     if (user?.role === 'doctor') return <Navigate to="/doctor" replace />;
-    return <Home />;
+    return <Home />; // 'user' dan 'mahasiswa' → Home
 };
 
 // ─── Dashboard redirect ───────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ const DashboardRouter = () => {
     if (!user) return <Navigate to="/login" />;
     if (user.role === 'admin')  return <Navigate to="/admin" />;
     if (user.role === 'doctor') return <Navigate to="/doctor" />;
-    return <UserDashboard />;
+    return <UserDashboard />; // 'user' dan 'mahasiswa'
 };
 
 // ─── App content ──────────────────────────────────────────────────────────────
@@ -100,6 +101,7 @@ function AppContent() {
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/forgot-email" element={<ForgotEmail />} />
                     <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/health-check" element={<HealthCheck />} />
                     <Route path="/health-check/bmi" element={<BMICalculator />} />
@@ -111,24 +113,24 @@ function AppContent() {
                     <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
                     {/* ===== USER ===== */}
-                    <Route path="/consultations" element={<ProtectedRoute allowedRoles={['user']}><Consultations /></ProtectedRoute>} />
+                    <Route path="/consultations" element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><Consultations /></ProtectedRoute>} />
 
                     {/* ⚠️ /book/:doctorId HARUS di atas /:id */}
                     <Route path="/consultations/book/:doctorId" element={
-                        <ProtectedRoute allowedRoles={['user']}><BookingSlot /></ProtectedRoute>
+                        <ProtectedRoute allowedRoles={['user','mahasiswa']}><BookingSlot /></ProtectedRoute>
                     } />
 
                     {/* Route chat dipakai oleh user DAN dokter (tombol "Buka Chat" di DoctorDashboard) */}
                     <Route path="/consultations/:id" element={
-                        <ProtectedRoute allowedRoles={['user', 'doctor']}><ConsultationChat /></ProtectedRoute>
+                        <ProtectedRoute allowedRoles={['user', 'mahasiswa', 'doctor']}><ConsultationChat /></ProtectedRoute>
                     } />
 
                     <Route path="/payment/success" element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
                     <Route path="/payment/failed"  element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
 
-                    <Route path="/pharmacy"    element={<ProtectedRoute allowedRoles={['user']}><Pharmacy /></ProtectedRoute>} />
-                    <Route path="/payments"    element={<ProtectedRoute allowedRoles={['user']}><PaymentHistory /></ProtectedRoute>} />
-                    <Route path="/appointments" element={<ProtectedRoute allowedRoles={['user']}><UserAppointments /></ProtectedRoute>} />
+                    <Route path="/pharmacy"    element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><Pharmacy /></ProtectedRoute>} />
+                    <Route path="/payments"    element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><PaymentHistory /></ProtectedRoute>} />
+                    <Route path="/appointments" element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><UserAppointments /></ProtectedRoute>} />
 
                     {/* ===== DOCTOR — semua dihandle DoctorDashboard ===== */}
                     <Route path="/doctor" element={

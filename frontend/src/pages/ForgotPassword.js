@@ -2,9 +2,7 @@ import React, { useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, InputGroup } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { FaEnvelope, FaArrowLeft, FaCheckCircle, FaHeartbeat } from 'react-icons/fa';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+import api from '../utils/api';
 
 const ForgotPassword = () => {
     const [email, setEmail] = useState('');
@@ -18,7 +16,7 @@ const ForgotPassword = () => {
         setLoading(true);
 
         try {
-            await axios.post(`${API_URL}/auth/forgot-password`, { email });
+            await api.post('/api/auth/forgot-password', { email });
             setSuccess(true);
         } catch (err) {
             const msg = err.response?.data?.message || 'Terjadi kesalahan. Silakan coba lagi.';

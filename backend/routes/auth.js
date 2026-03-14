@@ -6,474 +6,556 @@ const crypto     = require('crypto');
 const nodemailer = require('nodemailer');
 const User       = require('../models/User');
 const auth       = require('../middleware/auth');
+const { sendWhatsApp } = require('../utils/fonnte');
 
-// ─── Nodemailer Transporter ───────────────────────────────────────────────────
+// ─── Config ──────────────────────────────────────────────────────────────────
+const OTP_EXPIRES_MIN   = 5;           // OTP berlaku 5 menit
+const RESEND_COOLDOWN_S = 60;          // jeda antar resend (detik)
+const RESEND_MAX        = 3;           // max resend per jam per email/IP
+const RESEND_WINDOW_MS  = 60 * 60 * 1000; // 1 jam
+
+// ─── Nodemailer ──────────────────────────────────────────────────────────────
 const createTransporter = () => nodemailer.createTransport({
-    host  : process.env.SMTP_HOST || 'smtp.gmail.com',
-    port  : parseInt(process.env.SMTP_PORT) || 587,
-    secure: false,
-    auth  : { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    host   : process.env.SMTP_HOST || 'smtp.gmail.com',
+    port   : parseInt(process.env.SMTP_PORT) || 587,
+    secure : false,
+    auth   : { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 });
 
-// ─── Rate Limit Store — untuk forgot-password (in-memory) ────────────────────
-const rateLimitStore = new Map();
-const RATE_LIMIT_MAX    = 3;
-const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 menit
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+/** Generate 6-digit OTP */
+function generateOtp() {
+    return String(Math.floor(100000 + Math.random() * 900000));
+}
 
-const checkRateLimit = (email) => {
-    const now    = Date.now();
-    const record = rateLimitStore.get(email);
-    if (!record || now - record.firstRequestAt > RATE_LIMIT_WINDOW) {
-        rateLimitStore.set(email, { count: 1, firstRequestAt: now });
-        return { allowed: true };
-    }
-    if (record.count >= RATE_LIMIT_MAX) {
-        const waitMin = Math.ceil((RATE_LIMIT_WINDOW - (now - record.firstRequestAt)) / 60000);
-        return { allowed: false, waitMin };
-    }
-    record.count += 1;
-    return { allowed: true };
-};
+/** Normalise phone → +62xxx  (hapus spasi, dash, pastikan +62) */
+function normalisePhone(raw) {
+    // Hapus semua non-digit kecuali leading +
+    let p = String(raw).replace(/[\s\-]/g, '').replace(/[^\d+]/g, '');
+    if (p.startsWith('+62')) return p;
+    if (p.startsWith('62'))  return '+' + p;
+    if (p.startsWith('0'))   return '+62' + p.slice(1);
+    return '+62' + p;
+}
 
-// ─── OTP Store (in-memory, hashed, server-side only) ─────────────────────────
-// Struktur: email → { hashedOtp, expiresAt, attempts, lastSentAt }
-// TIDAK pernah menyimpan OTP plaintext di server
-const otpStore = new Map();
+/** XSS-safe: strip tag HTML dari string */
+function stripHtml(str) {
+    return String(str).replace(/<[^>]*>/g, '').replace(/[<>]/g, '').trim();
+}
 
-const OTP_EXPIRE_MS    = 10 * 60 * 1000; // 10 menit
-const OTP_MAX_ATTEMPTS = 5;              // maks 5x percobaan salah → OTP hangus
-const OTP_RESEND_WAIT  = 60 * 1000;     // 60 detik cooldown kirim ulang
-const OTP_RATE_MAX     = 5;             // maks 5 request OTP per jam per email
-const OTP_RATE_WINDOW  = 60 * 60 * 1000;
-
-const otpRateLimitStore = new Map();
-
-const checkOtpRateLimit = (email) => {
-    const now = Date.now();
-    const rec = otpRateLimitStore.get(email);
-    if (!rec || now - rec.windowStart > OTP_RATE_WINDOW) {
-        otpRateLimitStore.set(email, { count: 1, windowStart: now });
-        return { allowed: true };
-    }
-    if (rec.count >= OTP_RATE_MAX) {
-        const waitMin = Math.ceil((OTP_RATE_WINDOW - (now - rec.windowStart)) / 60000);
-        return { allowed: false, waitMin };
-    }
-    rec.count += 1;
-    return { allowed: true };
-};
-
-// Generate OTP — kembalikan plaintext (untuk dikirim email) + hash (untuk disimpan)
-const generateOtp = () => {
-    const otp    = Math.floor(100000 + Math.random() * 900000).toString();
-    const hashed = crypto.createHash('sha256').update(otp).digest('hex');
-    return { otp, hashed };
-};
-
-// Bersihkan otpStore dari entry yang sudah expired (setiap 5 menit)
-setInterval(() => {
-    const now = Date.now();
-    for (const [email, data] of otpStore.entries()) {
-        if (now > data.expiresAt) otpStore.delete(email);
-    }
-    for (const [email, data] of rateLimitStore.entries()) {
-        if (now - data.firstRequestAt > RATE_LIMIT_WINDOW) rateLimitStore.delete(email);
-    }
-    for (const [email, data] of otpRateLimitStore.entries()) {
-        if (now - data.windowStart > OTP_RATE_WINDOW) otpRateLimitStore.delete(email);
-    }
-}, 5 * 60 * 1000);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/send-otp
-// Kirim OTP 6-digit ke email. Email harus belum terdaftar.
-// ─────────────────────────────────────────────────────────────────────────────
-router.post('/send-otp', [
-    body('email')
-        .isEmail().withMessage('Format email tidak valid')
-        .normalizeEmail(),
-], async (req, res) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ message: errors.array()[0].msg });
-        }
-
-        const { email } = req.body;
-
-        // Rate limit per email
-        const rateCheck = checkOtpRateLimit(email);
-        if (!rateCheck.allowed) {
-            return res.status(429).json({
-                message: `Terlalu banyak permintaan OTP. Coba lagi dalam ${rateCheck.waitMin} menit.`
-            });
-        }
-
-        // Email sudah terdaftar? Tolak (hindari user lama request OTP berulang)
-        const existing = await User.findOne({ email });
-        if (existing) {
-            return res.status(400).json({ message: 'Email sudah terdaftar. Silakan login.' });
-        }
-
-        // Cooldown kirim ulang (60 detik)
-        const prev = otpStore.get(email);
-        if (prev) {
-            const secondsLeft = Math.ceil((prev.lastSentAt + OTP_RESEND_WAIT - Date.now()) / 1000);
-            if (secondsLeft > 0) {
-                return res.status(429).json({
-                    message : `Harap tunggu ${secondsLeft} detik sebelum kirim ulang OTP.`,
-                    secondsLeft
-                });
-            }
-        }
-
-        const { otp, hashed } = generateOtp();
-
-        // Simpan HANYA hash — plaintext OTP tidak disimpan di server
-        otpStore.set(email, {
-            hashedOtp : hashed,
-            expiresAt : Date.now() + OTP_EXPIRE_MS,
-            attempts  : 0,
-            lastSentAt: Date.now(),
-        });
-
-        // Kirim email
-        const transporter = createTransporter();
-        await transporter.sendMail({
-            from   : `"Klinik Pratama IPB" <${process.env.SMTP_USER}>`,
-            to     : email,
-            subject: 'Kode OTP Pendaftaran – Klinik Pratama IPB',
-            html   : `
-<!DOCTYPE html><html>
-<head><meta charset="UTF-8"><style>
+/** Kirim OTP email */
+async function sendOtpEmail(email, name, otp) {
+    const transporter = createTransporter();
+    await transporter.sendMail({
+        from    : `"Klinik Pratama IPB" <${process.env.SMTP_USER}>`,
+        to      : email,
+        subject : 'Kode OTP Verifikasi — Klinik Pratama IPB',
+        html    : `
+<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
   body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
-  .wrap{max-width:480px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
-  .hdr{background:linear-gradient(135deg,#0d6efd,#0a58ca);padding:32px 40px;text-align:center}
-  .hdr h1{color:#fff;margin:0;font-size:22px}.hdr p{color:rgba(255,255,255,.85);margin:6px 0 0;font-size:14px}
-  .body{padding:36px 40px;text-align:center}
-  .body p{color:#444;font-size:15px;line-height:1.6;margin:0 0 12px;text-align:left}
-  .otp{background:#f0f5ff;border:2px dashed #0d6efd;border-radius:12px;padding:20px 10px;margin:20px 0;
-       letter-spacing:12px;font-size:38px;font-weight:700;color:#0d6efd;text-align:center}
-  .note{background:#fff8e1;border-left:4px solid #ffc107;border-radius:4px;padding:12px 16px;
-        font-size:13px;color:#7a6000;margin-bottom:16px;text-align:left}
-  .ftr{border-top:1px solid #e9ecef;padding:16px 40px;text-align:center;color:#aaa;font-size:12px}
-</style></head>
-<body>
-  <div class="wrap">
-    <div class="hdr"><h1>🏥 Klinik Pratama IPB</h1><p>Verifikasi Email Pendaftaran</p></div>
-    <div class="body">
-      <p>Halo! Gunakan kode OTP berikut untuk menyelesaikan pendaftaran akun Anda:</p>
-      <div class="otp">${otp}</div>
-      <div class="note">⏰ <strong>Berlaku 10 menit</strong> · Jangan bagikan kode ini kepada siapapun termasuk pihak klinik.</div>
-      <p style="font-size:13px;color:#888">Jika Anda tidak meminta kode ini, abaikan email ini. Tidak ada tindakan yang perlu dilakukan.</p>
-    </div>
-    <div class="ftr">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
+  .wrap{max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
+  .hdr{background:linear-gradient(135deg,#0d6efd,#0a58ca);padding:28px 36px;text-align:center}
+  .hdr h1{color:#fff;margin:0;font-size:20px} .hdr p{color:rgba(255,255,255,.85);margin:4px 0 0;font-size:13px}
+  .body{padding:32px 36px}
+  .body p{color:#444;font-size:14px;line-height:1.6;margin:0 0 14px}
+  .otp-box{background:#f0f7ff;border:2px dashed #0d6efd;border-radius:10px;padding:18px;text-align:center;margin:20px 0}
+  .otp{font-size:38px;font-weight:700;color:#0d6efd;letter-spacing:10px}
+  .note{background:#fff8e1;border-left:4px solid #ffc107;border-radius:4px;padding:10px 14px;font-size:12px;color:#7a6000;margin-bottom:12px}
+  .footer{border-top:1px solid #e9ecef;padding:16px 36px;text-align:center;color:#aaa;font-size:11px}
+</style></head><body>
+<div class="wrap">
+  <div class="hdr"><h1>🏥 Klinik Pratama IPB</h1><p>Verifikasi Akun Anda</p></div>
+  <div class="body">
+    <p>Halo, <strong>${name}</strong>!</p>
+    <p>Gunakan kode OTP berikut untuk menyelesaikan pendaftaran:</p>
+    <div class="otp-box"><div class="otp">${otp}</div></div>
+    <div class="note">⏰ <strong>Kode ini hanya berlaku ${OTP_EXPIRES_MIN} menit</strong> dan hanya bisa digunakan satu kali.</div>
+    <p>Jika Anda tidak mendaftar, abaikan email ini.</p>
   </div>
-</body></html>
-            `,
-        });
+  <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
+</div>
+</body></html>`,
+    });
+}
 
-        res.json({ message: 'Kode OTP telah dikirim ke email Anda. Berlaku 10 menit.' });
+/**
+ * Cek & update rate-limit resend OTP.
+ * Menggunakan field di DB (otpResendCount, otpResendWindowStart) agar bisa tie ke email.
+ * IP juga dicek via in-memory map.
+ * Return { allowed, cooldownSeconds }
+ */
+const ipResendMap = new Map(); // key: IP, value: { count, windowStart, lastSent }
 
-    } catch (error) {
-        console.error('[OTP] send-otp error:', error);
-        res.status(500).json({ message: 'Gagal mengirim OTP. Silakan coba lagi.' });
+function checkIpResend(ip) {
+    const now = Date.now();
+    const rec = ipResendMap.get(ip) || { count: 0, windowStart: now, lastSent: 0 };
+    if (now - rec.windowStart > RESEND_WINDOW_MS) {
+        // reset window
+        ipResendMap.set(ip, { count: 1, windowStart: now, lastSent: now });
+        return { allowed: true };
     }
-});
+    if (rec.count >= RESEND_MAX) {
+        return { allowed: false, reason: 'ip_limit' };
+    }
+    rec.count++;
+    rec.lastSent = now;
+    ipResendMap.set(ip, rec);
+    return { allowed: true };
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/register
-// Register + validasi OTP dalam satu langkah.
-// OTP divalidasi ulang di sini (bukan hanya di /verify-otp) agar tidak bisa dibypass.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── POST /register ───────────────────────────────────────────────────────────
 router.post('/register', [
-    body('name').trim().isLength({ min: 3 }).withMessage('Nama minimal 3 karakter'),
+    body('name').notEmpty().withMessage('Nama harus diisi'),
     body('email').isEmail().normalizeEmail().withMessage('Format email tidak valid'),
-    body('password').isLength({ min: 6 }).withMessage('Password minimal 6 karakter')
+    body('phone').notEmpty().withMessage('NoHP harus diisi'),
+    body('dateOfBirth').notEmpty().withMessage('Tanggal lahir harus diisi'),
+    body('gender').isIn(['laki-laki', 'perempuan']).withMessage('Jenis kelamin tidak valid'),
+    body('password')
+        .isLength({ min: 8 }).withMessage('Password minimal 8 karakter')
+        .matches(/[A-Z]/).withMessage('Password harus mengandung huruf besar')
+        .matches(/[a-z]/).withMessage('Password harus mengandung huruf kecil')
         .matches(/[0-9]/).withMessage('Password harus mengandung angka'),
-    body('phone').notEmpty().withMessage('Nomor telepon harus diisi'),
-    body('otp').isLength({ min: 6, max: 6 }).isNumeric()
-        .withMessage('OTP harus 6 digit angka'),
+    body('confirmPassword').notEmpty(),
 ], async (req, res) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ message: errors.array()[0].msg });
-        }
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
 
-        const { name, email, password, phone, otp, address } = req.body;
+        let { name, email, password, confirmPassword, phone, dateOfBirth, gender } = req.body;
 
-        // ── Validasi OTP ──────────────────────────────────────────────────────
-        const record = otpStore.get(email);
+        // XSS guard pada name
+        name = stripHtml(name);
+        if (!name) return res.status(400).json({ message: 'Nama tidak valid' });
 
-        if (!record) {
-            return res.status(400).json({ message: 'OTP tidak ditemukan atau sudah kedaluwarsa. Kirim ulang OTP terlebih dahulu.' });
-        }
-        if (Date.now() > record.expiresAt) {
-            otpStore.delete(email);
-            return res.status(400).json({ message: 'OTP sudah kedaluwarsa. Silakan kirim ulang.' });
-        }
-        if (record.attempts >= OTP_MAX_ATTEMPTS) {
-            otpStore.delete(email);
-            return res.status(429).json({ message: 'Terlalu banyak percobaan OTP salah. Silakan kirim ulang.' });
-        }
+        // Konfirmasi password
+        if (password !== confirmPassword)
+            return res.status(400).json({ message: 'Password dan konfirmasi password tidak cocok' });
 
-        const hashedInput = crypto.createHash('sha256').update(otp).digest('hex');
-        if (hashedInput !== record.hashedOtp) {
-            record.attempts += 1;
-            const remaining = OTP_MAX_ATTEMPTS - record.attempts;
-            if (remaining <= 0) {
-                otpStore.delete(email);
-                return res.status(400).json({ message: 'OTP salah. Batas percobaan habis. Silakan kirim ulang OTP.' });
+        // Normalise phone
+        phone = normalisePhone(phone);
+        const digits = phone.replace(/\D/g, '');
+        if (digits.length < 10)
+            return res.status(400).json({ message: 'NoHP minimal 10 digit' });
+
+        // Cek duplikat email & phone
+        const existingEmail = await User.findOne({ email });
+        if (existingEmail) {
+            if (existingEmail.isVerified) {
+                return res.status(400).json({ message: 'Email sudah digunakan' });
             }
-            return res.status(400).json({
-                message     : `OTP salah. Sisa percobaan: ${remaining}.`,
-                attemptsLeft: remaining
+            // Unverified → timpa OTP & data lama (user daftar ulang)
+            const otp = generateOtp();
+            existingEmail.name              = name;
+            existingEmail.password          = password; // akan di-hash oleh pre-save
+            existingEmail.phone             = phone;
+            existingEmail.dateOfBirth       = dateOfBirth;
+            existingEmail.gender            = gender;
+            existingEmail.emailOtp          = otp;
+            existingEmail.emailOtpExpires   = new Date(Date.now() + OTP_EXPIRES_MIN * 60000);
+            existingEmail.emailOtpInvalidated = false;
+            existingEmail.otpResendCount    = 0;
+            existingEmail.otpResendWindowStart = new Date();
+            existingEmail.createdAt         = new Date();
+            await existingEmail.save();
+            await sendOtpEmail(email, name, otp);
+            return res.status(200).json({
+                message : 'Akun belum terverifikasi. Kode OTP baru telah dikirim.',
+                email,
+                needsVerification: true,
             });
         }
 
-        // ── Cek email belum terdaftar (double check) ──────────────────────────
-        const existing = await User.findOne({ email });
-        if (existing) {
-            otpStore.delete(email);
-            return res.status(400).json({ message: 'Email sudah terdaftar. Silakan login.' });
-        }
+        const existingPhone = await User.findOne({ phone, isVerified: true });
+        if (existingPhone)
+            return res.status(400).json({ message: 'Nomor HP sudah digunakan' });
 
-        // ── Buat user baru ─────────────────────────────────────────────────────
-        const user = new User({ name, email, password, phone, address });
+        // Role berdasarkan email domain
+        const role = email.toLowerCase().endsWith('@apps.ipb.ac.id') ? 'mahasiswa' : 'user';
+
+        // Buat user unverified
+        const otp  = generateOtp();
+        const user = new User({
+            name, email, password, phone, dateOfBirth, gender, role,
+            isVerified           : false,
+            emailOtp             : otp,
+            emailOtpExpires      : new Date(Date.now() + OTP_EXPIRES_MIN * 60000),
+            emailOtpInvalidated  : false,
+            otpResendCount       : 0,
+            otpResendWindowStart : new Date(),
+        });
         await user.save();
-
-        // Hapus OTP setelah register berhasil (one-time use)
-        otpStore.delete(email);
-
-        const jwtSecret = process.env.JWT_SECRET;
-        if (!jwtSecret) throw new Error('JWT_SECRET tidak dikonfigurasi');
-
-        const token = jwt.sign(
-            { userId: user._id, role: user.role },
-            jwtSecret,
-            { expiresIn: process.env.JWT_EXPIRE || '24h' }
-        );
+        await sendOtpEmail(email, name, otp);
 
         res.status(201).json({
-            token,
-            user: { id: user._id, name, email, role: user.role }
+            message : 'Kode OTP telah dikirim ke email Anda.',
+            email,
+            needsVerification: true,
         });
-
-    } catch (error) {
-        console.error('[Auth] register error:', error);
+    } catch (err) {
+        console.error('[auth] register:', err);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/login
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── POST /verify-otp ─────────────────────────────────────────────────────────
+router.post('/verify-otp', [
+    body('email').isEmail().normalizeEmail(),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP harus 6 digit'),
+], async (req, res) => {
+    try {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
+
+        const { email, otp } = req.body;
+        const user = await User.findOne({ email });
+
+        if (!user || user.isVerified)
+            return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
+
+        // Cek invalidasi (resend → OTP lama hangus)
+        if (user.emailOtpInvalidated)
+            return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku. Gunakan kode terbaru dari email.' });
+
+        // Cek expiry
+        if (!user.emailOtpExpires || new Date() > user.emailOtpExpires) {
+            return res.status(400).json({
+                message   : 'Kode OTP sudah kedaluwarsa.',
+                expired   : true,
+            });
+        }
+
+        // Cek kode
+        if (user.emailOtp !== otp)
+            return res.status(400).json({ message: 'Kode OTP salah, silakan coba lagi' });
+
+        // Verifikasi berhasil
+        user.isVerified          = true;
+        user.emailOtp            = undefined;
+        user.emailOtpExpires     = undefined;
+        user.emailOtpInvalidated = false;
+        await user.save();
+
+        const token = jwt.sign(
+            { userId: user._id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE || '24h' }
+        );
+
+        res.json({
+            message : 'Verifikasi berhasil! Selamat datang.',
+            token,
+            user    : { id: user._id, name: user.name, email: user.email, role: user.role },
+        });
+    } catch (err) {
+        console.error('[auth] verify-otp:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ─── POST /resend-otp ─────────────────────────────────────────────────────────
+router.post('/resend-otp', [
+    body('email').isEmail().normalizeEmail(),
+], async (req, res) => {
+    try {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
+
+        const { email } = req.body;
+        const ip        = req.ip || req.connection?.remoteAddress || 'unknown';
+        const user      = await User.findOne({ email });
+
+        if (!user || user.isVerified)
+            return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
+
+        const now = Date.now();
+
+        // ── Cooldown: jeda 60 detik sejak OTP terakhir dikirim ───────────────
+        if (user.emailOtpExpires) {
+            const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
+            const elapsed    = now - lastSentAt;
+            if (elapsed < RESEND_COOLDOWN_S * 1000) {
+                const remaining = Math.ceil((RESEND_COOLDOWN_S * 1000 - elapsed) / 1000);
+                return res.status(429).json({
+                    message         : `Tunggu ${remaining} detik sebelum kirim ulang.`,
+                    cooldownSeconds : remaining,
+                });
+            }
+        }
+
+        // ── Rate-limit per email (DB) ─────────────────────────────────────────
+        if (user.otpResendWindowStart && (now - user.otpResendWindowStart.getTime()) < RESEND_WINDOW_MS) {
+            if ((user.otpResendCount || 0) >= RESEND_MAX) {
+                return res.status(429).json({
+                    message   : 'Batas pengiriman OTP tercapai (3x per jam). Coba lagi nanti.',
+                    rateLimit : true,
+                });
+            }
+        } else {
+            // Reset window
+            user.otpResendCount       = 0;
+            user.otpResendWindowStart = new Date();
+        }
+
+        // ── Rate-limit per IP (in-memory) ────────────────────────────────────
+        const ipCheck = checkIpResend(ip);
+        if (!ipCheck.allowed) {
+            return res.status(429).json({
+                message   : 'Terlalu banyak permintaan dari perangkat ini. Coba lagi dalam 1 jam.',
+                rateLimit : true,
+            });
+        }
+
+        // ── Generate OTP baru, hanguskan yang lama ────────────────────────────
+        const newOtp = generateOtp();
+        user.emailOtp            = newOtp;
+        user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
+        user.emailOtpInvalidated = false;          // OTP baru aktif
+        user.otpResendCount      = (user.otpResendCount || 0) + 1;
+        await user.save();
+
+        await sendOtpEmail(email, user.name, newOtp);
+
+        res.json({
+            message         : 'Kode OTP baru telah dikirim ke email Anda.',
+            cooldownSeconds : RESEND_COOLDOWN_S,
+        });
+    } catch (err) {
+        console.error('[auth] resend-otp:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ─── POST /login ──────────────────────────────────────────────────────────────
 router.post('/login', [
     body('email').isEmail().normalizeEmail(),
     body('password').notEmpty(),
 ], async (req, res) => {
     try {
         const { email, password } = req.body;
-
         const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ message: 'Email atau password salah' });
-        }
-        if (user.isActive === false) {
+
+        if (!user) return res.status(400).json({ message: 'Email atau password salah' });
+        // user.isVerified === undefined artinya user lama (dibuat sebelum fitur OTP)
+        // → tetap izinkan login, anggap sudah verified
+        if (user.isVerified === false)
+            return res.status(403).json({ message: 'Akun belum diverifikasi. Cek email Anda.', needsVerification: true, email });
+        if (user.isActive === false)
             return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
-        }
 
         const isMatch = await user.comparePassword(password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Email atau password salah' });
-        }
-
-        const jwtSecret = process.env.JWT_SECRET;
-        if (!jwtSecret) throw new Error('JWT_SECRET tidak dikonfigurasi');
+        if (!isMatch) return res.status(400).json({ message: 'Email atau password salah' });
 
         const token = jwt.sign(
             { userId: user._id, role: user.role },
-            jwtSecret,
+            process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRE || '24h' }
         );
-
         res.json({ token, user: { id: user._id, name: user.name, email, role: user.role } });
-
-    } catch (error) {
-        console.error('[Auth] login error:', error);
+    } catch (err) {
+        console.error('[auth] login:', err);
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/auth/me
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── GET /me ──────────────────────────────────────────────────────────────────
 router.get('/me', auth, async (req, res) => {
     try {
-        const user = await User.findById(req.userId).select('-password');
+        const user = await User.findById(req.userId).select('-password -emailOtp');
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
         res.json(user);
-    } catch (error) {
+    } catch (err) {
         res.status(500).json({ message: 'Server error' });
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/forgot-password
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── POST /forgot-email  (cari email lewat NoHP, OTP via WA) ─────────────────
+router.post('/forgot-email', [
+    body('phone').notEmpty().withMessage('Nomor HP harus diisi'),
+], async (req, res) => {
+    try {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
+
+        let { phone } = req.body;
+        phone = normalisePhone(phone);
+
+        // Cari user dengan berbagai kemungkinan format phone:
+        // user lama mungkin simpan "081234...", "6281234...", atau "+6281234..."
+        const digits = phone.replace(/\D/g, ''); // e.g. "6281234567"
+        const altFormats = [
+            phone,                          // +6281234567
+            digits,                         // 6281234567
+            '0' + digits.slice(2),          // 081234567 (buang 62, tambah 0)
+        ];
+        const user = await User.findOne({
+            phone: { $in: altFormats },
+            isVerified: { $ne: false },     // undefined atau true = OK
+        });
+        if (!user)
+            return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
+
+        const ip  = req.ip || req.connection?.remoteAddress || 'unknown';
+        const now = Date.now();
+
+        // Cooldown 60 detik
+        if (user.emailOtpExpires) {
+            const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
+            const elapsed    = now - lastSentAt;
+            if (elapsed < RESEND_COOLDOWN_S * 1000) {
+                const remaining = Math.ceil((RESEND_COOLDOWN_S * 1000 - elapsed) / 1000);
+                return res.status(429).json({ message: `Tunggu ${remaining} detik.`, cooldownSeconds: remaining });
+            }
+        }
+
+        // Rate-limit per IP
+        const ipCheck = checkIpResend(ip + ':forgot-email');
+        if (!ipCheck.allowed)
+            return res.status(429).json({ message: 'Terlalu banyak permintaan. Coba lagi nanti.' });
+
+        const otp = generateOtp();
+        user.emailOtp            = otp;
+        user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
+        user.emailOtpInvalidated = false; // reset agar tidak terblokir dari sesi lama
+        await user.save();
+
+        await sendWhatsApp(phone,
+            `*Klinik Pratama IPB*\nKode OTP untuk melihat email terdaftar:\n\n*${otp}*\n\nBerlaku 5 menit. Jangan bagikan kode ini kepada siapapun.`
+        );
+
+        res.json({ message: 'Kode OTP telah dikirim via WhatsApp.', cooldownSeconds: RESEND_COOLDOWN_S });
+    } catch (err) {
+        console.error('[auth] forgot-email:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ─── POST /forgot-email/verify ────────────────────────────────────────────────
+router.post('/forgot-email/verify', [
+    body('phone').notEmpty(),
+    body('otp').isLength({ min: 6, max: 6 }),
+], async (req, res) => {
+    try {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
+
+        let { phone, otp } = req.body;
+        phone = normalisePhone(phone);
+
+        const digits2 = phone.replace(/\D/g, '');
+        const altFormats2 = [phone, digits2, '0' + digits2.slice(2)];
+        const user = await User.findOne({
+            phone: { $in: altFormats2 },
+            isVerified: { $ne: false },
+        });
+        if (!user)
+            return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
+
+        // Cek invalidasi hanya jika OTP masih ada (bukan sisa sesi lama)
+        if (user.emailOtp && user.emailOtpInvalidated)
+            return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku.' });
+        if (!user.emailOtp || !user.emailOtpExpires || new Date() > user.emailOtpExpires)
+            return res.status(400).json({ message: 'Kode OTP sudah kedaluwarsa.', expired: true });
+        if (user.emailOtp !== otp)
+            return res.status(400).json({ message: 'Kode OTP salah, silakan coba lagi' });
+
+        // Hanguskan OTP setelah berhasil
+        user.emailOtp            = undefined;
+        user.emailOtpExpires     = undefined;
+        user.emailOtpInvalidated = false;
+        await user.save();
+
+        // Sensor email: a*****@domain.com
+        const [localPart, domain] = user.email.split('@');
+        const masked = localPart.length <= 2
+            ? localPart[0] + '***'
+            : localPart[0] + '*'.repeat(Math.min(localPart.length - 2, 5)) + localPart.slice(-1);
+        const maskedEmail = `${masked}@${domain}`;
+
+        res.json({ message: 'Verifikasi berhasil.', email: maskedEmail });
+    } catch (err) {
+        console.error('[auth] forgot-email/verify:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ─── Forgot Password & Reset (pertahankan dari versi lama) ───────────────────
+const rateLimitStore = new Map();
+const checkRateLimit = (key) => {
+    const now = Date.now(), WINDOW = 15 * 60 * 1000, MAX = 3;
+    const rec = rateLimitStore.get(key);
+    if (!rec || now - rec.firstRequestAt > WINDOW) {
+        rateLimitStore.set(key, { count: 1, firstRequestAt: now });
+        return { allowed: true };
+    }
+    if (rec.count >= MAX) {
+        return { allowed: false, waitMin: Math.ceil((WINDOW - (now - rec.firstRequestAt)) / 60000) };
+    }
+    rec.count++;
+    return { allowed: true };
+};
+
 router.post('/forgot-password', [
     body('email').isEmail().normalizeEmail().withMessage('Email tidak valid'),
 ], async (req, res) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ message: errors.array()[0].msg });
-        }
-
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
         const { email } = req.body;
-
-        const rateCheck = checkRateLimit(email);
-        if (!rateCheck.allowed) {
-            return res.status(429).json({
-                message: `Terlalu banyak permintaan. Coba lagi dalam ${rateCheck.waitMin} menit.`
-            });
-        }
-
+        const rl = checkRateLimit(email);
+        if (!rl.allowed)
+            return res.status(429).json({ message: `Terlalu banyak permintaan. Coba lagi dalam ${rl.waitMin} menit.` });
         const user = await User.findOne({ email });
-        // Response generik agar tidak bisa enumerate user
-        if (!user) {
-            return res.json({ message: 'Jika email terdaftar, link reset password akan dikirim.' });
-        }
-        if (!user.isActive) {
-            return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
-        }
-
+        // isVerified===undefined = user lama sebelum fitur OTP → anggap sudah verified
+        if (!user || user.isVerified === false)
+            return res.json({ message: 'Jika email terdaftar, link reset password akan dikirim ke email Anda.' });
+        if (!user.isActive)
+            return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan.' });
         const resetToken  = crypto.randomBytes(32).toString('hex');
-        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-
-        user.resetPasswordToken   = hashedToken;
+        user.resetPasswordToken   = crypto.createHash('sha256').update(resetToken).digest('hex');
         user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
         await user.save();
-
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        const resetLink   = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
-
+        const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
         const transporter = createTransporter();
         await transporter.sendMail({
-            from   : `"Klinik Pratama IPB" <${process.env.SMTP_USER}>`,
-            to     : email,
-            subject: 'Reset Password – Klinik Pratama IPB',
-            html   : `
-<!DOCTYPE html><html>
-<head><meta charset="UTF-8"><style>
-  body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
-  .wrap{max-width:560px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
-  .hdr{background:linear-gradient(135deg,#0d6efd,#0a58ca);padding:32px 40px;text-align:center}
-  .hdr h1{color:#fff;margin:0;font-size:22px}.hdr p{color:rgba(255,255,255,.85);margin:6px 0 0;font-size:14px}
-  .body{padding:36px 40px}
-  .body p{color:#444;font-size:15px;line-height:1.6;margin:0 0 16px}
-  .btn{display:inline-block;padding:14px 36px;background:#0d6efd;color:#fff!important;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600;margin:8px 0 24px}
-  .note{background:#fff8e1;border-left:4px solid #ffc107;border-radius:4px;padding:12px 16px;font-size:13px;color:#7a6000;margin-bottom:16px}
-  .link-box{background:#f1f3f5;border-radius:6px;padding:10px 14px;font-size:12px;color:#555;word-break:break-all;margin-bottom:24px}
-  .ftr{border-top:1px solid #e9ecef;padding:20px 40px;text-align:center;color:#aaa;font-size:12px}
-</style></head>
-<body>
-  <div class="wrap">
-    <div class="hdr"><h1>🏥 Klinik Pratama IPB</h1><p>Reset Password Akun Anda</p></div>
-    <div class="body">
-      <p>Halo, <strong>${user.name}</strong>!</p>
-      <p>Kami menerima permintaan untuk mereset password akun Anda. Klik tombol di bawah:</p>
-      <div style="text-align:center"><a href="${resetLink}" class="btn">Reset Password Saya</a></div>
-      <div class="note">⏰ <strong>Link berlaku 15 menit</strong> dan hanya bisa digunakan satu kali.</div>
-      <p>Jika tombol tidak berfungsi, salin link ini ke browser:</p>
-      <div class="link-box">${resetLink}</div>
-      <p>Jika Anda tidak meminta ini, abaikan email ini.</p>
-    </div>
-    <div class="ftr">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
-  </div>
-</body></html>
-            `,
+            from: `"Klinik Pratama IPB" <${process.env.SMTP_USER}>`, to: email,
+            subject: 'Reset Password - Klinik Pratama IPB',
+            html: `<p>Klik link berikut untuk reset password (berlaku 15 menit):</p><p><a href="${resetLink}">${resetLink}</a></p>`,
         });
-
-        res.json({ message: 'Jika email terdaftar, link reset password akan dikirim.' });
-
-    } catch (error) {
-        console.error('[Auth] forgot-password error:', error);
-        res.status(500).json({ message: 'Gagal mengirim email. Silakan coba lagi.' });
-    }
+        res.json({ message: 'Jika email terdaftar, link reset password akan dikirim ke email Anda.' });
+    } catch (err) { res.status(500).json({ message: 'Gagal mengirim email.' }); }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/auth/reset-password/validate
-// ─────────────────────────────────────────────────────────────────────────────
 router.get('/reset-password/validate', async (req, res) => {
     try {
         const { token, email } = req.query;
-        if (!token || !email) {
-            return res.status(400).json({ message: 'Token atau email tidak valid.' });
-        }
-
-        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-        const user = await User.findOne({
-            email             : decodeURIComponent(email),
-            resetPasswordToken: hashedToken,
-            resetPasswordExpires: { $gt: Date.now() },
-        });
-
-        if (!user) {
-            return res.status(400).json({ message: 'Link tidak valid atau sudah kedaluwarsa.' });
-        }
-
+        if (!token || !email) return res.status(400).json({ message: 'Token atau email tidak valid.' });
+        const hashed = crypto.createHash('sha256').update(token).digest('hex');
+        const user = await User.findOne({ email: decodeURIComponent(email), resetPasswordToken: hashed, resetPasswordExpires: { $gt: Date.now() } });
+        if (!user) return res.status(400).json({ message: 'Link tidak valid atau sudah kedaluwarsa.' });
         res.json({ valid: true, name: user.name });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-    }
+    } catch { res.status(500).json({ message: 'Server error' }); }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/reset-password
-// ─────────────────────────────────────────────────────────────────────────────
 router.post('/reset-password', [
-    body('token').notEmpty(),
-    body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 6 }).withMessage('Password minimal 6 karakter'),
+    body('token').notEmpty(), body('email').isEmail().normalizeEmail(),
+    body('password').isLength({ min: 8 }).matches(/[A-Z]/).matches(/[a-z]/).matches(/[0-9]/),
     body('confirmPassword').notEmpty(),
 ], async (req, res) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ message: errors.array()[0].msg });
-        }
-
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
         const { token, email, password, confirmPassword } = req.body;
-
-        if (password !== confirmPassword) {
+        if (password !== confirmPassword)
             return res.status(400).json({ message: 'Konfirmasi password tidak cocok.' });
-        }
-
-        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-        const user = await User.findOne({
-            email,
-            resetPasswordToken  : hashedToken,
-            resetPasswordExpires: { $gt: Date.now() },
-        });
-
-        if (!user) {
-            return res.status(400).json({ message: 'Link tidak valid atau sudah kedaluwarsa.' });
-        }
-
+        const hashed = crypto.createHash('sha256').update(token).digest('hex');
+        const user   = await User.findOne({ email, resetPasswordToken: hashed, resetPasswordExpires: { $gt: Date.now() } });
+        if (!user) return res.status(400).json({ message: 'Link tidak valid atau sudah kedaluwarsa.' });
         user.password             = password;
         user.resetPasswordToken   = undefined;
         user.resetPasswordExpires = undefined;
         await user.save();
-
-        res.json({ message: 'Password berhasil diubah. Silakan login.' });
-
-    } catch (error) {
-        console.error('[Auth] reset-password error:', error);
-        res.status(500).json({ message: 'Server error' });
-    }
+        res.json({ message: 'Password berhasil diubah.' });
+    } catch { res.status(500).json({ message: 'Server error' }); }
 });
 
 module.exports = router;

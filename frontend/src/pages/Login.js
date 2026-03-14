@@ -17,12 +17,19 @@ const Login = () => {
         e.preventDefault();
         setError('');
         setLoading(true);
-        const success = await login(email, password);
-        setLoading(false);
-        if (success) {
-            navigate('/');
-        } else {
-            setError('Email atau password salah. Silakan coba lagi.');
+        try {
+            const success = await login(email, password);
+            setLoading(false);
+            if (success) navigate('/');
+            else setError('Email atau password salah. Silakan coba lagi.');
+        } catch (err) {
+            setLoading(false);
+            // Akun belum verifikasi → arahkan ke halaman register step OTP
+            if (err?.response?.data?.needsVerification) {
+                navigate('/register', { state: { step: 'otp', email: email } });
+            } else {
+                setError(err?.response?.data?.message || 'Email atau password salah. Silakan coba lagi.');
+            }
         }
     };
 
@@ -74,15 +81,15 @@ const Login = () => {
                                                 autoComplete="email"
                                             />
                                         </InputGroup>
+                                        <div className="text-end mt-1">
+                                            <Link to="/forgot-email" className="small text-decoration-none" style={{ color: '#0d6efd' }}>
+                                                Lupa email?
+                                            </Link>
+                                        </div>
                                     </Form.Group>
 
                                     <Form.Group className="mb-4">
-                                        <div className="d-flex justify-content-between align-items-center mb-1">
-                                            <Form.Label className="fw-medium text-secondary mb-0">Password</Form.Label>
-                                            <Link to="/forgot-password" className="small text-decoration-none" style={{ color: '#0d6efd' }}>
-                                                Lupa password?
-                                            </Link>
-                                        </div>
+                                        <Form.Label className="fw-medium text-secondary mb-1">Password</Form.Label>
                                         <InputGroup style={{ height: '52px' }}>
                                             <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '10px 0 0 10px' }}>
                                                 <FaLock className="text-secondary" size={16} />
@@ -119,6 +126,11 @@ const Login = () => {
                                                 }
                                             </Button>
                                         </InputGroup>
+                                        <div className="text-end mt-1">
+                                            <Link to="/forgot-password" className="small text-decoration-none" style={{ color: '#0d6efd' }}>
+                                                Lupa password?
+                                            </Link>
+                                        </div>
                                     </Form.Group>
 
                                     <Button

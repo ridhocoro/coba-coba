@@ -118,6 +118,8 @@ export const AuthProvider = ({ children }) => {
       toast.success('Login berhasil!');
       return true;
     } catch (error) {
+      // Re-throw agar Login.js bisa handle needsVerification
+      if (error.response?.data?.needsVerification) throw error;
       toast.error(error.response?.data?.message || 'Login gagal');
       return false;
     }

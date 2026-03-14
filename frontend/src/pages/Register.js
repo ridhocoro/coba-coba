@@ -1,477 +1,619 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Container, Row, Col, Card, Form, Button, Alert, InputGroup } from 'react-bootstrap';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { toast } from 'react-hot-toast';
 import {
-    FaUser, FaEnvelope, FaLock, FaPhone,
-    FaEye, FaEyeSlash, FaCheckCircle,
-    FaShieldAlt, FaPaperPlane, FaRedo,
+    FaUser, FaEnvelope, FaLock, FaPhone, FaEye, FaEyeSlash,
+    FaCheckCircle, FaVenusMars, FaShieldAlt,
 } from 'react-icons/fa';
 
-// ─── Konstanta ────────────────────────────────────────────────────────────────
-const RESEND_COOLDOWN = 60; // detik
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const Register = () => {
-    const navigate  = useNavigate();
-    const { register } = useAuth();
+function normalisePhoneDisplay(raw) {
+    // Hanya izinkan angka + tanda + di awal; hapus spasi & dash
+    return raw.replace(/[\s\-]/g, '').replace(/(?!^\+)[^\d]/g, '');
+}
 
-    // ── Form state ──────────────────────────────────────────────────────────
-    const [formData, setFormData] = useState({
-        name: '', email: '', password: '', confirmPassword: '', phone: '',
+function passwordStrength(pw) {
+    if (!pw) return { score: 0, label: '', variant: 'secondary' };
+    let s = 0;
+    if (pw.length >= 8)        s++;
+    if (/[a-z]/.test(pw))      s++;
+    if (/[A-Z]/.test(pw))      s++;
+    if (/[0-9]/.test(pw))      s++;
+    if (/[^a-zA-Z0-9]/.test(pw)) s++;
+    if (s <= 2) return { score: 33,  label: 'Lemah',  variant: 'danger'  };
+    if (s <= 3) return { score: 66,  label: 'Sedang', variant: 'warning' };
+    return       { score: 100, label: 'Kuat',   variant: 'success' };
+}
+
+// ─── Step 1: Form pendaftaran ─────────────────────────────────────────────────
+function RegisterForm({ onSuccess }) {
+    const [form, setForm] = useState({
+        name: '', email: '', phone: '', dobDay: '', dobMonth: '', dobYear: '',
+        gender: '', password: '', confirmPassword: '',
     });
-    const [errors,    setErrors]    = useState({});
-    const [agreeTerms, setAgreeTerms] = useState(false);
-    const [showPw,    setShowPw]    = useState(false);
-    const [showCpw,   setShowCpw]   = useState(false);
-    const [loading,   setLoading]   = useState(false);
+    const [errors,      setErrors]      = useState({});
+    const [showPw,      setShowPw]      = useState(false);
+    const [showCpw,     setShowCpw]     = useState(false);
+    const [submitting,  setSubmitting]  = useState(false);
+    const [dobOpen,     setDobOpen]     = useState(null); // 'day'|'month'|'year'|null
 
-    // ── OTP state ────────────────────────────────────────────────────────────
-    const [otpStep,     setOtpStep]     = useState(false);   // false = form, true = OTP input
-    const [otp,         setOtp]         = useState(['', '', '', '', '', '']);
-    const [otpSending,  setOtpSending]  = useState(false);
-    const [otpError,    setOtpError]    = useState('');
-    const [countdown,   setCountdown]   = useState(0);       // detik sisa cooldown
-    const [attemptsLeft, setAttemptsLeft] = useState(5);
-
-    const otpRefs = useRef([]);
-    const countdownRef = useRef(null);
-
-    // ── Countdown timer ─────────────────────────────────────────────────────
-    useEffect(() => {
-        return () => clearInterval(countdownRef.current);
-    }, []);
-
-    const startCountdown = (seconds = RESEND_COOLDOWN) => {
-        setCountdown(seconds);
-        clearInterval(countdownRef.current);
-        countdownRef.current = setInterval(() => {
-            setCountdown(prev => {
-                if (prev <= 1) { clearInterval(countdownRef.current); return 0; }
-                return prev - 1;
-            });
-        }, 1000);
+    // Jumlah hari sesuai bulan (dan tahun untuk Feb kabisat)
+    const getDaysInMonth = (month, year) => {
+        if (!month) return 31;
+        const m = parseInt(month);
+        const y = parseInt(year) || new Date().getFullYear();
+        return new Date(y, m, 0).getDate(); // new Date(y, m, 0) → hari terakhir bulan m
     };
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-        if (errors[name]) setErrors(prev => ({ ...prev, [name]: null }));
+    const set = (field, val) => {
+        setForm(f => {
+            const next = { ...f, [field]: val };
+            // Auto-reset dobDay jika melebihi jumlah hari bulan yang dipilih
+            const maxDay = getDaysInMonth(
+                field === 'dobMonth' ? val : f.dobMonth,
+                field === 'dobYear'  ? val : f.dobYear
+            );
+            if (parseInt(next.dobDay) > maxDay) next.dobDay = '';
+            return next;
+        });
+        setErrors(e => ({ ...e, [field]: undefined, submit: undefined }));
     };
 
-    const validateForm = () => {
+    const handlePhone = (e) => {
+        // Hanya digit + optional leading +
+        const raw = e.target.value.replace(/[\s\-]/g, '');
+        const cleaned = raw.replace(/[^\d+]/g, '').replace(/(?!^\+)\+/g, '');
+        set('phone', cleaned);
+    };
+
+    const validate = () => {
         const e = {};
-        if (!formData.name.trim() || formData.name.trim().length < 3)
+        if (!form.name.trim() || form.name.trim().length < 3)
             e.name = 'Nama minimal 3 karakter';
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
+        if (!emailRegex.test(form.email))
             e.email = 'Format email tidak valid';
-        if (formData.password.length < 6)
-            e.password = 'Password minimal 6 karakter';
-        else if (!/[0-9]/.test(formData.password))
-            e.password = 'Password harus mengandung angka';
-        if (formData.password !== formData.confirmPassword)
+        const digits = form.phone.replace(/\D/g, '');
+        if (digits.length < 10)
+            e.phone = 'NoHP minimal 10 digit';
+        if (!form.dobDay || !form.dobMonth || !form.dobYear)
+            e.dateOfBirth = 'Tanggal lahir harus diisi lengkap';
+        if (!form.gender)
+            e.gender = 'Jenis kelamin harus dipilih';
+        if (form.password.length < 8 || !/[A-Z]/.test(form.password) || !/[a-z]/.test(form.password) || !/[0-9]/.test(form.password))
+            e.password = 'Password min. 8 karakter, harus ada huruf besar, huruf kecil, dan angka';
+        if (form.password !== form.confirmPassword)
             e.confirmPassword = 'Password tidak cocok';
-        const phone = formData.phone.replace(/[^\d+]/g, '');
-        if (phone.length < 8 || phone.length > 15)
-            e.phone = 'Nomor telepon 8–15 digit';
-        if (!agreeTerms)
-            e.agreeTerms = 'Anda harus menyetujui syarat dan ketentuan';
         setErrors(e);
-        return Object.keys(e).length === 0;
+        return !Object.keys(e).length;
     };
 
-    // ── Kirim OTP ────────────────────────────────────────────────────────────
-    const sendOtp = async () => {
-        if (!validateForm()) return;
-        setOtpSending(true);
-        setOtpError('');
-        try {
-            await api.post('/api/auth/send-otp', { email: formData.email });
-            setOtpStep(true);
-            setOtp(['', '', '', '', '', '']);
-            setAttemptsLeft(5);
-            startCountdown();
-            // Fokus ke kotak OTP pertama setelah render
-            setTimeout(() => otpRefs.current[0]?.focus(), 100);
-        } catch (err) {
-            const msg = err.response?.data?.message || 'Gagal mengirim OTP.';
-            const sec = err.response?.data?.secondsLeft;
-            if (sec) startCountdown(sec);
-            setOtpError(msg);
-        } finally {
-            setOtpSending(false);
-        }
-    };
-
-    // ── Kirim ulang OTP ──────────────────────────────────────────────────────
-    const resendOtp = async () => {
-        if (countdown > 0) return;
-        setOtpSending(true);
-        setOtpError('');
-        try {
-            await api.post('/api/auth/send-otp', { email: formData.email });
-            setOtp(['', '', '', '', '', '']);
-            setAttemptsLeft(5);
-            startCountdown();
-            setTimeout(() => otpRefs.current[0]?.focus(), 100);
-        } catch (err) {
-            const msg = err.response?.data?.message || 'Gagal kirim ulang OTP.';
-            const sec = err.response?.data?.secondsLeft;
-            if (sec) startCountdown(sec);
-            setOtpError(msg);
-        } finally {
-            setOtpSending(false);
-        }
-    };
-
-    // ── Handle input OTP per kotak ───────────────────────────────────────────
-    const handleOtpChange = (idx, val) => {
-        // Hanya angka
-        const digit = val.replace(/\D/g, '').slice(-1);
-        const next  = [...otp];
-        next[idx] = digit;
-        setOtp(next);
-        setOtpError('');
-        // Auto fokus ke kotak berikutnya
-        if (digit && idx < 5) otpRefs.current[idx + 1]?.focus();
-    };
-
-    const handleOtpKeyDown = (idx, e) => {
-        if (e.key === 'Backspace' && !otp[idx] && idx > 0) {
-            otpRefs.current[idx - 1]?.focus();
-        }
-        // Paste support
-        if (e.key === 'v' && (e.ctrlKey || e.metaKey)) return;
-    };
-
-    const handleOtpPaste = (e) => {
-        e.preventDefault();
-        const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-        if (!pasted) return;
-        const next = [...otp];
-        pasted.split('').forEach((d, i) => { if (i < 6) next[i] = d; });
-        setOtp(next);
-        const lastIdx = Math.min(pasted.length, 5);
-        otpRefs.current[lastIdx]?.focus();
-    };
-
-    // ── Submit register dengan OTP ───────────────────────────────────────────
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const otpString = otp.join('');
-        if (otpString.length < 6) {
-            setOtpError('Masukkan 6 digit kode OTP');
-            return;
-        }
-        setLoading(true);
-        setOtpError('');
+        if (!validate()) return;
+        setSubmitting(true);
         try {
-            const cleanPhone = formData.phone.replace(/[^\d+]/g, '');
-            const success = await register({
-                name    : formData.name.trim(),
-                email   : formData.email,
-                password: formData.password,
-                phone   : cleanPhone,
-                otp     : otpString,
+            const phone = form.phone;
+            await api.post('/api/auth/register', {
+                name: form.name.trim(), email: form.email.trim().toLowerCase(),
+                phone, dateOfBirth: form.dobYear && form.dobMonth && form.dobDay ? `${form.dobYear}-${form.dobMonth.padStart(2,'0')}-${form.dobDay.padStart(2,'0')}` : '', gender: form.gender,
+                password: form.password, confirmPassword: form.confirmPassword,
             });
-            if (success) navigate('/');
-        } catch (error) {
-            const msg = error.response?.data?.message || error.message || 'Terjadi kesalahan.';
-            const left = error.response?.data?.attemptsLeft;
-            if (left !== undefined) setAttemptsLeft(left);
-            if (left === 0 || msg.toLowerCase().includes('kedaluwarsa') || msg.toLowerCase().includes('hangus')) {
-                // OTP hangus, kembalikan ke form
-                setOtpStep(false);
-                setOtp(['', '', '', '', '', '']);
-            }
-            setOtpError(msg);
+            onSuccess(form.email.trim().toLowerCase());
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Gagal mendaftar';
+            if (msg.toLowerCase().includes('email')) setErrors(e => ({ ...e, email: msg }));
+            else if (msg.toLowerCase().includes('hp') || msg.toLowerCase().includes('nomor')) setErrors(e => ({ ...e, phone: msg }));
+            else setErrors(e => ({ ...e, submit: msg }));
         } finally {
-            setLoading(false);
+            setSubmitting(false);
         }
     };
 
-    // ── Password strength ────────────────────────────────────────────────────
-    const pwStrength = (() => {
-        const p = formData.password;
-        if (!p) return { score: 0, label: '', variant: 'secondary' };
-        let s = 0;
-        if (p.length >= 6) s++;
-        if (p.length >= 8) s++;
-        if (/[0-9]/.test(p)) s++;
-        if (/[a-z]/.test(p)) s++;
-        if (/[A-Z]/.test(p)) s++;
-        if (s <= 2) return { score: 33,  label: 'Lemah',  variant: 'danger'  };
-        if (s <= 4) return { score: 66,  label: 'Sedang', variant: 'warning' };
-        return             { score: 100, label: 'Kuat',   variant: 'success' };
-    })();
+    const pw = passwordStrength(form.password);
 
-    const isIPBEmail = formData.email.toLowerCase().endsWith('@apps.ipb.ac.id');
+    // Helper: label dengan asterisk merah
+    const Req = () => <span style={{color:'#dc3545', marginLeft:2}}>*</span>;
 
-    // ────────────────────────────────────────────────────────────────────────
+    const fieldStyle = { marginBottom: 20 };
+    const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6, display: 'block' };
+    const inputBase  = {
+        width: '100%', height: 48, padding: '0 14px 0 42px',
+        border: '1px solid #dee2e6', borderRadius: 10, fontSize: 14,
+        background: '#fff', outline: 'none', transition: 'border-color .2s',
+        boxSizing: 'border-box',
+    };
+    const inputErr   = { borderColor: '#dc3545' };
+    const iconStyle  = {
+        position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
+        color: '#9ca3af', pointerEvents: 'none',
+    };
+    const helperStyle = { fontSize: 11.5, color: '#6b7280', marginTop: 4, lineHeight: 1.4 };
+    const errStyle    = { fontSize: 11.5, color: '#dc3545', marginTop: 4 };
+
     return (
-        <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', padding: '20px 0' }}>
-            <Container fluid style={{ maxWidth: '500px' }}>
-                <Row className="justify-content-center">
-                    <Col xs={12}>
-                        {/* Header */}
-                        <div className="text-center mb-4">
-                            <div className="bg-white shadow-sm rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
-                                style={{ width: 64, height: 64 }}>
-                                <FaUser size={28} color="#0d6efd" />
+        <form onSubmit={handleSubmit} noValidate>
+            {errors.submit && (
+                <div className="alert alert-danger py-2 small mb-4" style={{borderRadius:8}}>{errors.submit}</div>
+            )}
+
+            {/* ── Nama Lengkap ── */}
+            <div style={fieldStyle}>
+                <label style={labelStyle}>Nama Lengkap <Req/></label>
+                <div style={{position:'relative'}}>
+                    <FaUser size={13} style={iconStyle}/>
+                    <input type="text"
+                        style={{...inputBase, ...(errors.name ? inputErr : {})}}
+                        placeholder="Nama lengkap Anda"
+                        value={form.name}
+                        onChange={e => set('name', e.target.value.replace(/<[^>]*>/g, ''))}
+                        maxLength={80}
+                        onFocus={e=>e.target.style.borderColor='#0d6efd'}
+                        onBlur={e=>e.target.style.borderColor=errors.name?'#dc3545':'#dee2e6'}
+                    />
+                </div>
+                {errors.name && <div style={errStyle}>{errors.name}</div>}
+            </div>
+
+            {/* ── Email ── */}
+            <div style={fieldStyle}>
+                <label style={labelStyle}>Email <Req/></label>
+                <div style={{position:'relative'}}>
+                    <FaEnvelope size={13} style={iconStyle}/>
+                    <input type="email"
+                        style={{...inputBase, ...(errors.email ? inputErr : {})}}
+                        placeholder="nama@email.com"
+                        value={form.email}
+                        onChange={e => set('email', e.target.value)}
+                        onFocus={e=>e.target.style.borderColor='#0d6efd'}
+                        onBlur={e=>e.target.style.borderColor=errors.email?'#dc3545':'#dee2e6'}
+                    />
+                </div>
+                {errors.email
+                    ? <div style={errStyle}>{errors.email}</div>
+                    : form.email.toLowerCase().endsWith('@apps.ipb.ac.id')
+                        ? <div style={{...helperStyle, color:'#16a34a', fontWeight:500}}>
+                            <FaCheckCircle size={10} style={{marginRight:4}}/>Email mahasiswa IPB terdeteksi — kuota obat gratis aktif
+                          </div>
+                        : <div style={helperStyle}>
+                            Gunakan email <strong>@apps.ipb.ac.id</strong> jika Anda mahasiswa untuk akses kuota obat gratis.
+                          </div>
+                }
+            </div>
+
+            {/* ── Nomor HP ── */}
+            <div style={fieldStyle}>
+                <label style={labelStyle}>Nomor HP <Req/></label>
+                <div style={{position:'relative'}}>
+                    <FaPhone size={13} style={iconStyle}/>
+                    <input type="tel"
+                        style={{...inputBase, ...(errors.phone ? inputErr : {})}}
+                        placeholder="081234567890 atau +6281234567890"
+                        value={form.phone}
+                        onChange={handlePhone}
+                        maxLength={16}
+                        onFocus={e=>e.target.style.borderColor='#0d6efd'}
+                        onBlur={e=>e.target.style.borderColor=errors.phone?'#dc3545':'#dee2e6'}
+                    />
+                </div>
+                {errors.phone
+                    ? <div style={errStyle}>{errors.phone}</div>
+                    : <div style={helperStyle}>Hanya angka. Awalan 0 atau +62 / 62 diterima.</div>
+                }
+            </div>
+
+            {/* ── Tanggal Lahir (full width) ── */}
+            <div style={fieldStyle}>
+                <label style={labelStyle}>Tanggal Lahir <Req/></label>
+                <div style={{display:'flex', gap:8, position:'relative'}}>
+                    {[
+                        { key:'day',   label: form.dobDay   || 'Tanggal', items: Array.from({length:getDaysInMonth(form.dobMonth, form.dobYear)},(_,i)=>({val:String(i+1),label:String(i+1)})), flex:'0 0 100px' },
+                        { key:'month', label: form.dobMonth ? ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][+form.dobMonth-1] : 'Bulan', items: ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'].map((m,i)=>({val:String(i+1),label:m})), flex:'1' },
+                        { key:'year',  label: form.dobYear  || 'Tahun',   items: Array.from({length:new Date().getFullYear()-1939},(_,i)=>{ const y=new Date().getFullYear()-i; return {val:String(y),label:String(y)}; }), flex:'0 0 90px' },
+                    ].map(col=>(
+                            <div key={col.key} style={{flex:col.flex, position:'relative'}}>
+                                <button type="button"
+                                    onClick={()=>setDobOpen(dobOpen===col.key?null:col.key)}
+                                    style={{
+                                        width:'100%', height:48, padding:'0 10px',
+                                        background:'#fff',
+                                        border:`1px solid ${errors.dateOfBirth?'#dc3545':'#dee2e6'}`,
+                                        borderRadius:10, fontSize:13, textAlign:'center',
+                                        display:'flex', alignItems:'center', justifyContent:'center', gap:4,
+                                        cursor:'pointer',
+                                        color:(col.key==='day'&&form.dobDay)||(col.key==='month'&&form.dobMonth)||(col.key==='year'&&form.dobYear)?'#212529':'#9ca3af',
+                                        whiteSpace:'nowrap', overflow:'hidden',
+                                        transition:'border-color .2s',
+                                    }}>
+                                    <span style={{overflow:'hidden',textOverflow:'ellipsis',fontSize:13}}>{col.label}</span>
+                                    <span style={{fontSize:9,color:'#9ca3af',flexShrink:0}}>▾</span>
+                                </button>
+                                {dobOpen===col.key && (
+                                    <div style={{
+                                        position:'absolute', top:52, left:0, zIndex:9999,
+                                        background:'#fff', border:'1px solid #e5e7eb',
+                                        borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,.12)',
+                                        maxHeight:200, overflowY:'auto',
+                                        minWidth: col.key==='month'?150:'100%',
+                                        width: col.key==='month'?150:'100%',
+                                    }}>
+                                        {col.items.map(item=>{
+                                            const selected=(col.key==='day'&&form.dobDay===item.val)||(col.key==='month'&&form.dobMonth===item.val)||(col.key==='year'&&form.dobYear===item.val);
+                                            return (
+                                                <div key={item.val}
+                                                    onClick={()=>{ set(col.key==='day'?'dobDay':col.key==='month'?'dobMonth':'dobYear', item.val); setDobOpen(null); }}
+                                                    style={{padding:'9px 14px',fontSize:13,cursor:'pointer',background:selected?'#eff6ff':'#fff',color:selected?'#0d6efd':'#374151',fontWeight:selected?600:'normal'}}
+                                                    onMouseEnter={e=>{if(!selected)e.currentTarget.style.background='#f9fafb'}}
+                                                    onMouseLeave={e=>{if(!selected)e.currentTarget.style.background='#fff'}}
+                                                >{item.label}</div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
-                            <h5 className="fw-bold mb-1">Buat Akun Baru</h5>
-                            <p className="text-secondary small mb-0">Daftar untuk mengakses semua layanan</p>
+                        ))}
+                        {dobOpen && <div style={{position:'fixed',inset:0,zIndex:9998}} onClick={()=>setDobOpen(null)}/>}
+                    </div>
+                    {errors.dateOfBirth && <div style={errStyle}>{errors.dateOfBirth}</div>}
+                </div>
+
+            {/* ── Jenis Kelamin (full width) ── */}
+            <div style={fieldStyle}>
+                <label style={labelStyle}>Jenis Kelamin <Req/></label>
+                    <div style={{position:'relative'}}>
+                        <FaVenusMars size={13} style={iconStyle}/>
+                        <select
+                            style={{...inputBase, paddingLeft:42, appearance:'none', cursor:'pointer', ...(errors.gender?inputErr:{})}}
+                            value={form.gender}
+                            onChange={e => set('gender', e.target.value)}
+                            onFocus={e=>e.target.style.borderColor='#0d6efd'}
+                            onBlur={e=>e.target.style.borderColor=errors.gender?'#dc3545':'#dee2e6'}
+                        >
+                            <option value="">Pilih</option>
+                            <option value="laki-laki">Laki-laki</option>
+                            <option value="perempuan">Perempuan</option>
+                        </select>
+                        <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',fontSize:10,color:'#9ca3af'}}>▾</span>
+                    </div>
+                    {errors.gender && <div style={errStyle}>{errors.gender}</div>}
+            </div>
+
+            {/* ── Password ── */}
+            <div style={fieldStyle}>
+                <label style={labelStyle}>Password <Req/></label>
+                <div style={{position:'relative'}}>
+                    <FaLock size={13} style={iconStyle}/>
+                    <input type={showPw ? 'text' : 'password'}
+                        style={{...inputBase, paddingRight:44, ...(errors.password?inputErr:{})}}
+                        placeholder="Min. 8 karakter, huruf besar, kecil, angka"
+                        value={form.password}
+                        onChange={e => set('password', e.target.value)}
+                        onFocus={e=>e.target.style.borderColor='#0d6efd'}
+                        onBlur={e=>e.target.style.borderColor=errors.password?'#dc3545':'#dee2e6'}
+                    />
+                    <button type="button"
+                        onClick={() => setShowPw(v=>!v)}
+                        style={{position:'absolute',right:0,top:0,height:48,width:44,background:'none',border:'none',cursor:'pointer',color:'#9ca3af',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                        {showPw ? <FaEyeSlash size={14}/> : <FaEye size={14}/>}
+                    </button>
+                </div>
+                {errors.password
+                    ? <div style={errStyle}>{errors.password}</div>
+                    : form.password && (
+                        <div style={{marginTop:8}}>
+                            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                                <span style={{fontSize:11.5,color:'#6b7280'}}>Kekuatan:</span>
+                                <span style={{fontSize:11.5,fontWeight:600,color:pw.variant==='danger'?'#dc3545':pw.variant==='warning'?'#f59e0b':'#16a34a'}}>{pw.label}</span>
+                            </div>
+                            <div style={{height:3,background:'#e5e7eb',borderRadius:4,overflow:'hidden'}}>
+                                <div style={{height:'100%',width:`${pw.score}%`,borderRadius:4,transition:'width .3s',background:pw.variant==='danger'?'#dc3545':pw.variant==='warning'?'#f59e0b':'#16a34a'}}/>
+                            </div>
                         </div>
+                    )
+                }
+            </div>
 
-                        <Card className="border-0 shadow-sm" style={{ borderRadius: 12 }}>
-                            <Card.Body className="p-4">
+            {/* ── Konfirmasi Password ── */}
+            <div style={{marginBottom:28}}>
+                <label style={labelStyle}>Konfirmasi Password <Req/></label>
+                <div style={{position:'relative'}}>
+                    <FaLock size={13} style={iconStyle}/>
+                    <input type={showCpw ? 'text' : 'password'}
+                        style={{...inputBase, paddingRight:44, ...(errors.confirmPassword?inputErr:{})}}
+                        placeholder="Ulangi password"
+                        value={form.confirmPassword}
+                        onChange={e => set('confirmPassword', e.target.value)}
+                        onFocus={e=>e.target.style.borderColor='#0d6efd'}
+                        onBlur={e=>e.target.style.borderColor=errors.confirmPassword?'#dc3545':'#dee2e6'}
+                    />
+                    <button type="button"
+                        onClick={() => setShowCpw(v=>!v)}
+                        style={{position:'absolute',right:0,top:0,height:48,width:44,background:'none',border:'none',cursor:'pointer',color:'#9ca3af',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                        {showCpw ? <FaEyeSlash size={14}/> : <FaEye size={14}/>}
+                    </button>
+                </div>
+                {errors.confirmPassword
+                    ? <div style={errStyle}>{errors.confirmPassword}</div>
+                    : form.password && form.confirmPassword && form.password === form.confirmPassword &&
+                        <div style={{...helperStyle,color:'#16a34a',fontWeight:500,marginTop:4}}>
+                            <FaCheckCircle size={10} style={{marginRight:4}}/>Password cocok
+                        </div>
+                }
+            </div>
 
-                                {/* ═══════════════════════════════════════════
-                                    STEP 1 — Formulir pendaftaran
-                                ═══════════════════════════════════════════ */}
-                                {!otpStep && (
-                                    <>
-                                        {errors.submit && <Alert variant="danger" className="small py-2 mb-3">{errors.submit}</Alert>}
+            {/* ── Keterangan wajib ── */}
+            <p style={{fontSize:11.5,color:'#9ca3af',marginBottom:16}}>
+                <span style={{color:'#dc3545'}}>*</span> Kolom wajib diisi
+            </p>
 
-                                        {/* Nama */}
-                                        <Form.Group className="mb-3">
-                                            <Form.Label className="fw-medium small text-secondary">Nama Lengkap</Form.Label>
-                                            <InputGroup style={{ height: 48 }}>
-                                                <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
-                                                    <FaUser className="text-secondary" size={14} />
-                                                </InputGroup.Text>
-                                                <Form.Control type="text" name="name" value={formData.name}
-                                                    onChange={handleChange} placeholder="Masukkan nama lengkap"
-                                                    className="border-start-0 bg-white"
-                                                    style={{ height: 48, borderRadius: '0 8px 8px 0' }}
-                                                    isInvalid={!!errors.name} />
-                                                {formData.name.trim().length >= 3 && !errors.name && (
-                                                    <InputGroup.Text className="bg-white border-start-0" style={{ borderRadius: '0 8px 8px 0' }}>
-                                                        <FaCheckCircle className="text-success" size={14} />
-                                                    </InputGroup.Text>
-                                                )}
-                                                <Form.Control.Feedback type="invalid">{errors.name}</Form.Control.Feedback>
-                                            </InputGroup>
-                                        </Form.Group>
+            <button type="submit"
+                className="btn btn-primary w-100 fw-semibold"
+                style={{height:50, borderRadius:10, fontSize:15, letterSpacing:.2}}
+                disabled={submitting}>
+                {submitting
+                    ? <><span className="spinner-border spinner-border-sm me-2"/>Memproses...</>
+                    : 'Daftar Sekarang'
+                }
+            </button>
+        </form>
+    );
+}
 
-                                        {/* Email */}
-                                        <Form.Group className="mb-3">
-                                            <Form.Label className="fw-medium small text-secondary">Email</Form.Label>
-                                            <InputGroup style={{ height: 48 }}>
-                                                <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
-                                                    <FaEnvelope className="text-secondary" size={14} />
-                                                </InputGroup.Text>
-                                                <Form.Control type="email" name="email" value={formData.email}
-                                                    onChange={handleChange} placeholder="nama@email.com"
-                                                    className="border-start-0 bg-white"
-                                                    style={{ height: 48, borderRadius: '0 8px 8px 0' }}
-                                                    isInvalid={!!errors.email} />
-                                                <Form.Control.Feedback type="invalid">{errors.email}</Form.Control.Feedback>
-                                            </InputGroup>
-                                            {isIPBEmail && (
-                                                <div style={{ background: '#ede9fe', borderRadius: 6, padding: '6px 10px', marginTop: 6, fontSize: 12, color: '#5b21b6', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                    🎓 Email mahasiswa IPB terdeteksi — harga obat gratis!
-                                                </div>
-                                            )}
-                                        </Form.Group>
+// ─── Step 2: Verifikasi OTP ───────────────────────────────────────────────────
+const OTP_EXPIRES_S   = 5 * 60;   // 5 menit
+const RESEND_COOLDOWN = 60;        // detik
 
-                                        {/* Telepon */}
-                                        <Form.Group className="mb-3">
-                                            <Form.Label className="fw-medium small text-secondary">Nomor Telepon</Form.Label>
-                                            <InputGroup style={{ height: 48 }}>
-                                                <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
-                                                    <FaPhone className="text-secondary" size={14} />
-                                                </InputGroup.Text>
-                                                <Form.Control type="tel" name="phone" value={formData.phone}
-                                                    onChange={handleChange} placeholder="08xxx atau +628xxx"
-                                                    className="border-start-0 bg-white"
-                                                    style={{ height: 48, borderRadius: '0 8px 8px 0' }}
-                                                    isInvalid={!!errors.phone} />
-                                                <Form.Control.Feedback type="invalid">{errors.phone}</Form.Control.Feedback>
-                                            </InputGroup>
-                                        </Form.Group>
+function OtpVerify({ email, onVerified, fromLogin = false }) {
+    const [otp,          setOtp]          = useState(['', '', '', '', '', '']);
+    const [submitting,   setSubmitting]   = useState(false);
+    const [error,        setError]        = useState('');
+    const [expired,      setExpired]      = useState(false);
 
-                                        {/* Password */}
-                                        <Form.Group className="mb-3">
-                                            <Form.Label className="fw-medium small text-secondary">Password</Form.Label>
-                                            <InputGroup style={{ height: 48 }}>
-                                                <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
-                                                    <FaLock className="text-secondary" size={14} />
-                                                </InputGroup.Text>
-                                                <Form.Control type={showPw ? 'text' : 'password'} name="password"
-                                                    value={formData.password} onChange={handleChange}
-                                                    placeholder="Min. 6 karakter, ada angka"
-                                                    className="border-start-0 border-end-0 bg-white"
-                                                    style={{ height: 48 }} isInvalid={!!errors.password} />
-                                                <Button variant="light" className="border bg-white" type="button"
-                                                    onClick={() => setShowPw(v => !v)}
-                                                    style={{ borderRadius: '0 8px 8px 0', height: 48, width: 48 }}>
-                                                    {showPw ? <FaEyeSlash size={14} className="text-secondary" /> : <FaEye size={14} className="text-secondary" />}
-                                                </Button>
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">{errors.password}</Form.Control.Feedback>
-                                            {formData.password && (
-                                                <div className="mt-2">
-                                                    <div className="d-flex justify-content-between mb-1">
-                                                        <small className="text-muted">Kekuatan:</small>
-                                                        <small className={`text-${pwStrength.variant} fw-bold`}>{pwStrength.label}</small>
-                                                    </div>
-                                                    <div className="progress" style={{ height: 4 }}>
-                                                        <div className={`progress-bar bg-${pwStrength.variant}`} style={{ width: `${pwStrength.score}%` }} />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </Form.Group>
+    // Countdown untuk expiry OTP
+    const [otpTimer,     setOtpTimer]     = useState(OTP_EXPIRES_S);
+    // Cooldown tombol kirim ulang
+    const [cooldown,     setCooldown]     = useState(fromLogin ? 0 : RESEND_COOLDOWN);
+    const [resending,    setResending]    = useState(false);
 
-                                        {/* Konfirmasi Password */}
-                                        <Form.Group className="mb-4">
-                                            <Form.Label className="fw-medium small text-secondary">Konfirmasi Password</Form.Label>
-                                            <InputGroup style={{ height: 48 }}>
-                                                <InputGroup.Text className="bg-white border-end-0" style={{ borderRadius: '8px 0 0 8px' }}>
-                                                    <FaLock className="text-secondary" size={14} />
-                                                </InputGroup.Text>
-                                                <Form.Control type={showCpw ? 'text' : 'password'} name="confirmPassword"
-                                                    value={formData.confirmPassword} onChange={handleChange}
-                                                    placeholder="Ulangi password"
-                                                    className="border-start-0 border-end-0 bg-white"
-                                                    style={{ height: 48 }} isInvalid={!!errors.confirmPassword} />
-                                                <Button variant="light" className="border bg-white" type="button"
-                                                    onClick={() => setShowCpw(v => !v)}
-                                                    style={{ borderRadius: '0 8px 8px 0', height: 48, width: 48 }}>
-                                                    {showCpw ? <FaEyeSlash size={14} className="text-secondary" /> : <FaEye size={14} className="text-secondary" />}
-                                                </Button>
-                                            </InputGroup>
-                                            <Form.Control.Feedback type="invalid">{errors.confirmPassword}</Form.Control.Feedback>
-                                            {formData.password && formData.confirmPassword && formData.password === formData.confirmPassword && (
-                                                <Form.Text className="text-success small"><FaCheckCircle className="me-1" />Password cocok</Form.Text>
-                                            )}
-                                        </Form.Group>
+    const inputs = useRef([]);
 
-                                        {/* Syarat */}
-                                        <Form.Group className="mb-4">
-                                            <Form.Check>
-                                                <Form.Check.Input type="checkbox" checked={agreeTerms}
-                                                    onChange={e => { setAgreeTerms(e.target.checked); if (errors.agreeTerms) setErrors(p => ({ ...p, agreeTerms: null })); }}
-                                                    isInvalid={!!errors.agreeTerms} />
-                                                <Form.Check.Label className="small">
-                                                    Saya menyetujui <Link to="/terms" className="text-primary text-decoration-none">Syarat dan Ketentuan</Link>
-                                                </Form.Check.Label>
-                                                <Form.Control.Feedback type="invalid">{errors.agreeTerms}</Form.Control.Feedback>
-                                            </Form.Check>
-                                        </Form.Group>
+    // ── Timer OTP expiry ─────────────────────────────────────────────────────
+    useEffect(() => {
+        if (otpTimer <= 0) { setExpired(true); return; }
+        const t = setTimeout(() => setOtpTimer(v => v - 1), 1000);
+        return () => clearTimeout(t);
+    }, [otpTimer]);
 
-                                        {/* Tombol Kirim OTP */}
-                                        <Button variant="primary" className="w-100 fw-medium mb-3"
-                                            style={{ borderRadius: 8, height: 48, fontSize: '0.95rem' }}
-                                            onClick={sendOtp} disabled={otpSending}>
-                                            {otpSending
-                                                ? 'Mengirim OTP...'
-                                                : <><FaPaperPlane className="me-2" />Kirim Kode OTP ke Email</>}
-                                        </Button>
+    // ── Cooldown kirim ulang ─────────────────────────────────────────────────
+    useEffect(() => {
+        if (cooldown <= 0) return;
+        const t = setTimeout(() => setCooldown(v => v - 1), 1000);
+        return () => clearTimeout(t);
+    }, [cooldown]);
 
-                                        <div className="text-center">
-                                            <span className="text-secondary small">
-                                                Sudah punya akun?{' '}
-                                                <Link to="/login" className="text-primary fw-medium text-decoration-none">Masuk</Link>
-                                            </span>
-                                        </div>
-                                    </>
-                                )}
+    const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
 
-                                {/* ═══════════════════════════════════════════
-                                    STEP 2 — Input OTP
-                                ═══════════════════════════════════════════ */}
-                                {otpStep && (
-                                    <Form onSubmit={handleSubmit}>
-                                        {/* Ikon & Judul */}
-                                        <div className="text-center mb-4">
-                                            <div style={{ width: 56, height: 56, background: '#dbeafe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                                                <FaShieldAlt size={24} color="#2563eb" />
-                                            </div>
-                                            <h6 className="fw-bold mb-1">Masukkan Kode OTP</h6>
-                                            <p className="text-secondary small mb-0">
-                                                Kode 6 digit telah dikirim ke<br />
-                                                <strong className="text-dark">{formData.email}</strong>
-                                            </p>
-                                        </div>
+    const handleOtpChange = (i, val) => {
+        if (!/^\d?$/.test(val)) return;
+        const next = [...otp];
+        next[i] = val;
+        setOtp(next);
+        setError('');
+        if (val && i < 5) inputs.current[i + 1]?.focus();
+    };
 
-                                        {/* 6 kotak OTP */}
-                                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16 }}>
-                                            {otp.map((digit, idx) => (
-                                                <input
-                                                    key={idx}
-                                                    ref={el => (otpRefs.current[idx] = el)}
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    maxLength={1}
-                                                    value={digit}
-                                                    onChange={e => handleOtpChange(idx, e.target.value)}
-                                                    onKeyDown={e => handleOtpKeyDown(idx, e)}
-                                                    onPaste={idx === 0 ? handleOtpPaste : undefined}
-                                                    style={{
-                                                        width: 44, height: 52, textAlign: 'center',
-                                                        fontSize: 22, fontWeight: 700,
-                                                        border: `2px solid ${otpError ? '#dc3545' : digit ? '#0d6efd' : '#dee2e6'}`,
-                                                        borderRadius: 10, outline: 'none',
-                                                        transition: 'border-color .15s',
-                                                        caretColor: 'transparent',
-                                                    }}
-                                                />
-                                            ))}
-                                        </div>
+    const handleKeyDown = (i, e) => {
+        if (e.key === 'Backspace' && !otp[i] && i > 0) inputs.current[i - 1]?.focus();
+    };
 
-                                        {/* Error OTP */}
-                                        {otpError && (
-                                            <Alert variant="danger" className="small py-2 text-center mb-3">
-                                                {otpError}
-                                                {attemptsLeft < 5 && attemptsLeft > 0 && (
-                                                    <> (Sisa percobaan: <strong>{attemptsLeft}</strong>)</>
-                                                )}
-                                            </Alert>
-                                        )}
+    const handlePaste = (e) => {
+        const paste = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+        if (paste.length === 6) {
+            setOtp(paste.split(''));
+            inputs.current[5]?.focus();
+        }
+    };
 
-                                        {/* Kirim ulang */}
-                                        <div className="text-center mb-3">
-                                            {countdown > 0 ? (
-                                                <small className="text-muted">
-                                                    Kirim ulang dalam <strong>{countdown}s</strong>
-                                                </small>
-                                            ) : (
-                                                <button type="button" className="btn btn-link btn-sm p-0 text-decoration-none"
-                                                    onClick={resendOtp} disabled={otpSending}>
-                                                    <FaRedo className="me-1" size={11} />
-                                                    {otpSending ? 'Mengirim...' : 'Kirim Ulang OTP'}
-                                                </button>
-                                            )}
-                                        </div>
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const code = otp.join('');
+        if (code.length < 6) { setError('Masukkan 6 digit kode OTP'); return; }
+        if (expired) { setError('OTP sudah kedaluwarsa. Silakan kirim ulang.'); return; }
+        setSubmitting(true);
+        try {
+            const res = await api.post('/api/auth/verify-otp', { email, otp: code });
+            onVerified(res.data.token, res.data.user);
+        } catch (err) {
+            const data = err.response?.data;
+            if (data?.expired) {
+                setExpired(true);
+                setError('OTP sudah kedaluwarsa. Silakan kirim ulang.');
+            } else {
+                setError(data?.message || 'Kode OTP salah, silakan coba lagi');
+                setOtp(['', '', '', '', '', '']);
+                inputs.current[0]?.focus();
+            }
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-                                        {/* Tombol Daftar */}
-                                        <Button type="submit" variant="primary" className="w-100 fw-medium mb-3"
-                                            style={{ borderRadius: 8, height: 48, fontSize: '0.95rem' }}
-                                            disabled={loading || otp.join('').length < 6}>
-                                            {loading ? 'Mendaftarkan...' : <><FaCheckCircle className="me-2" />Verifikasi & Daftar</>}
-                                        </Button>
+    const handleResend = async () => {
+        if (cooldown > 0) return;
+        setResending(true);
+        try {
+            const res = await api.post('/api/auth/resend-otp', { email });
+            setOtp(['', '', '', '', '', '']);
+            setError('');
+            setExpired(false);
+            setOtpTimer(OTP_EXPIRES_S);
+            setCooldown(res.data.cooldownSeconds || RESEND_COOLDOWN);
+            toast.success('Kode OTP baru telah dikirim ke email Anda');
+            inputs.current[0]?.focus();
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Gagal mengirim ulang OTP';
+            if (err.response?.data?.cooldownSeconds) {
+                setCooldown(err.response.data.cooldownSeconds);
+            }
+            toast.error(msg);
+        } finally {
+            setResending(false);
+        }
+    };
 
-                                        {/* Kembali */}
-                                        <div className="text-center">
-                                            <button type="button" className="btn btn-link btn-sm text-secondary text-decoration-none"
-                                                onClick={() => { setOtpStep(false); setOtpError(''); }}>
-                                                ← Kembali ubah data
-                                            </button>
-                                        </div>
-                                    </Form>
-                                )}
+    return (
+        <form onSubmit={handleSubmit}>
+            <div className="text-center mb-4">
+                <div className="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 rounded-circle mb-3"
+                    style={{ width: 64, height: 64 }}>
+                    <FaShieldAlt size={28} className="text-primary"/>
+                </div>
+                <h5 className="fw-bold mb-1">Verifikasi Email</h5>
+                <p className="text-secondary small mb-0">
+                    Kode OTP dikirim ke <strong>{email}</strong>
+                </p>
+            </div>
 
-                            </Card.Body>
-                        </Card>
+            {/* OTP Timer */}
+            {!expired ? (
+                <div className="text-center mb-3">
+                    <span className={`badge ${otpTimer <= 60 ? 'bg-danger' : 'bg-secondary'} bg-opacity-10 text-${otpTimer <= 60 ? 'danger' : 'secondary'} px-3 py-2`}
+                        style={{ fontSize: 13 }}>
+                        ⏱ OTP berlaku: {fmt(otpTimer)}
+                    </span>
+                </div>
+            ) : (
+                <div className="alert alert-warning py-2 text-center small mb-3">
+                    Kode OTP sudah kedaluwarsa.
+                </div>
+            )}
 
-                        <p className="text-center text-secondary small mt-4 mb-0">
-                            © {new Date().getFullYear()} Klinik Pratama IPB
-                        </p>
-                    </Col>
-                </Row>
-            </Container>
+            {/* 6 kotak OTP */}
+            <div className="d-flex justify-content-center gap-2 mb-3">
+                {otp.map((digit, i) => (
+                    <input key={i}
+                        ref={el => inputs.current[i] = el}
+                        type="text" inputMode="numeric" maxLength={1}
+                        value={digit}
+                        onChange={e => handleOtpChange(i, e.target.value)}
+                        onKeyDown={e => handleKeyDown(i, e)}
+                        onPaste={i === 0 ? handlePaste : undefined}
+                        className={`form-control text-center fw-bold ${error ? 'is-invalid border-danger' : digit ? 'border-primary' : ''}`}
+                        style={{ width: 46, height: 54, fontSize: 22, borderRadius: 10,
+                            backgroundColor: digit ? '#eff6ff' : '#fff',
+                            transition: 'all .15s' }}
+                    />
+                ))}
+            </div>
+
+            {error && <div className="text-danger text-center small mb-3">{error}</div>}
+
+            <button type="submit" className="btn btn-primary w-100 fw-medium mb-3"
+                style={{ height: 48, borderRadius: 8 }} disabled={submitting || otp.join('').length < 6}>
+                {submitting ? <><span className="spinner-border spinner-border-sm me-2"/>Memverifikasi...</> : 'Verifikasi'}
+            </button>
+
+            {/* Kirim ulang */}
+            <div className="text-center">
+                {cooldown > 0 ? (
+                    <small className="text-muted">Kirim ulang dalam <strong>{cooldown}s</strong></small>
+                ) : (
+                    <button type="button" className="btn btn-link btn-sm text-decoration-none p-0"
+                        onClick={handleResend} disabled={resending}>
+                        {resending ? 'Mengirim...' : '🔄 Kirim Ulang OTP'}
+                    </button>
+                )}
+            </div>
+        </form>
+    );
+}
+
+// ─── Main Register component ──────────────────────────────────────────────────
+const Register = () => {
+    const navigate  = useNavigate();
+    const location  = useLocation();
+    const { login: ctxLogin } = useAuth();
+    // Support redirect dari Login saat akun belum terverifikasi
+    const initStep  = location.state?.step  || 'form';
+    const initEmail = location.state?.email || '';
+    const [step,  setStep]  = useState(initStep);
+    const [email, setEmail] = useState(initEmail);
+
+    const handleFormSuccess = (registeredEmail) => {
+        setEmail(registeredEmail);
+        setStep('otp');
+    };
+
+    const handleVerified = useCallback(async (token, user) => {
+        // Auto-login: simpan token ke localStorage & set context
+        localStorage.setItem('token', token);
+        localStorage.setItem('lastActivity', Date.now().toString());
+        // Trigger AuthContext fetchUser via token change
+        window.location.href = '/';  // Hard redirect agar AuthContext reload
+    }, []);
+
+    return (
+        <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', padding: '24px 0' }}>
+            <div style={{ maxWidth: 480, margin: '0 auto', width: '100%', padding: '0 16px' }}>
+                {/* Header */}
+                <div className="text-center mb-4">
+                    <div className="bg-white shadow-sm rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
+                        style={{ width: 64, height: 64 }}>
+                        <FaUser size={26} className="text-primary"/>
+                    </div>
+                    <h5 className="fw-bold mb-1">
+                        {step === 'form' ? 'Buat Akun Baru' : 'Masukkan Kode OTP'}
+                    </h5>
+                    <p className="text-secondary small mb-0">
+                        {step === 'form' ? 'Daftar untuk mengakses semua layanan' : 'Cek inbox email Anda'}
+                    </p>
+                </div>
+
+                {/* Step indicator */}
+                <div className="d-flex align-items-center justify-content-center gap-2 mb-4">
+                    <div className="d-flex align-items-center gap-1">
+                        <div className="rounded-circle d-flex align-items-center justify-content-center fw-bold"
+                            style={{ width: 28, height: 28, fontSize: 12,
+                                background: '#0d6efd', color: '#fff' }}>
+                            {step === 'otp' ? <FaCheckCircle size={14}/> : '1'}
+                        </div>
+                        <small className={step === 'form' ? 'fw-bold text-primary' : 'text-muted'}>Data Diri</small>
+                    </div>
+                    <div style={{ width: 32, height: 2, background: step === 'otp' ? '#0d6efd' : '#dee2e6', borderRadius: 2 }}/>
+                    <div className="d-flex align-items-center gap-1">
+                        <div className="rounded-circle d-flex align-items-center justify-content-center fw-bold"
+                            style={{ width: 28, height: 28, fontSize: 12,
+                                background: step === 'otp' ? '#0d6efd' : '#dee2e6',
+                                color: step === 'otp' ? '#fff' : '#6c757d' }}>
+                            2
+                        </div>
+                        <small className={step === 'otp' ? 'fw-bold text-primary' : 'text-muted'}>Verifikasi</small>
+                    </div>
+                </div>
+
+                <div className="card border-0 shadow-sm" style={{ borderRadius: 12 }}>
+                    <div className="card-body p-4">
+                        {step === 'form'
+                            ? <RegisterForm onSuccess={handleFormSuccess}/>
+                            : <OtpVerify email={email} onVerified={handleVerified} fromLogin={initStep==='otp'}/>
+                        }
+                    </div>
+                </div>
+
+                {step === 'form' && (
+                    <p className="text-center small text-secondary mt-3 mb-0">
+                        Sudah punya akun?{' '}
+                        <Link to="/login" className="text-primary fw-medium text-decoration-none">Masuk</Link>
+                    </p>
+                )}
+
+                <p className="text-center text-secondary small mt-3 mb-0">
+                    © {new Date().getFullYear()} Klinik Pratama IPB
+                </p>
+            </div>
         </div>
     );
 };

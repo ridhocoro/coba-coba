@@ -62,6 +62,7 @@ require('./utils/ExpiredOrderCron').startCron(io);
 
 // ── Cron: appointment — auto no-show & reminder H-24 ─────────────────────────
 require('./utils/AppointmentCron').startCron(io);
+require('./utils/CleanupUnverifiedUsersCron').startCron(); // hapus user unverified > 24 jam
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
