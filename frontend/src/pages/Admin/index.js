@@ -8,11 +8,12 @@ import {
     FaUsers, FaUserMd, FaCalendarCheck, FaPrescription,
     FaMoneyBillWave, FaFileMedical, FaChartLine, FaPills,
     FaCheckCircle, FaTimesCircle, FaEye, FaDownload, FaEdit,
-    FaQrcode, FaUniversity, FaArrowRight
+    FaQrcode, FaUniversity, FaArrowRight, FaCog
 } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { Line, Bar } from 'react-chartjs-2';
+import ClinicSettingsTab from './ClinicSettings';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -628,6 +629,7 @@ const AdminDashboard = () => {
                                 { key: 'pharmacy',      icon: <FaPills />,         label: 'Farmasi' },
                                 { key: 'transactions',  icon: <FaChartLine />,     label: 'Transaksi' },
                                 { key: 'users',         icon: <FaUsers />,         label: 'Pengguna' },
+                                { key: 'clinicSettings',icon: <FaCog />,           label: 'Pengaturan Klinik' },
                             ].map(item => (
                                 <Nav.Link
                                     key={item.key}
@@ -1184,6 +1186,11 @@ const AdminDashboard = () => {
                                     </Table>
                                 </div>
                             </div>
+                        )}
+
+                        {/* ══ PENGATURAN KLINIK TAB ══════════════════════════════ */}
+                        {activeTab === 'clinicSettings' && (
+                            <ClinicSettingsTab />
                         )}
 
                     </Col>

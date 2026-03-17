@@ -46,10 +46,11 @@ const DAYS_INFO = [
     { val: 3, label: 'Rabu' },
     { val: 4, label: 'Kamis' },
     { val: 5, label: 'Jumat' },
+    { val: 6, label: 'Sabtu' },
 ];
 
-// Default schedule — semua hari kosong
-const makeEmptySchedule = () => ({ '1':[],'2':[],'3':[],'4':[],'5':[] });
+// Default schedule — semua hari kosong (Senin–Sabtu, key '1'–'6')
+const makeEmptySchedule = () => ({ '1':[],'2':[],'3':[],'4':[],'5':[],'6':[] });
 
 const DEF_CONS = {
     schedule: makeEmptySchedule(),
@@ -564,6 +565,8 @@ const SectionJanjiTemu = ({ socketRef }) => {
     const [processing, setProcessing] = useState({});
     const [completeTarget, setCompleteTarget] = useState(null);
     const [completeNotes, setCompleteNotes]   = useState('');
+    const [completeAssessment, setCompleteAssessment] = useState('');
+    const [completePlan, setCompletePlan]     = useState('');
     const [completing, setCompleting]         = useState(false);
     const [cancelTarget, setCancelTarget]     = useState(null);
     const [cancelReason, setCancelReason]     = useState('');
@@ -610,11 +613,22 @@ const SectionJanjiTemu = ({ socketRef }) => {
     };
 
     const doComplete = async () => {
+        if (!completeAssessment.trim()) { toast.error('Diagnosis wajib diisi'); return; }
+        if (!completePlan.trim())       { toast.error('Rencana Terapi wajib diisi'); return; }
         setCompleting(true);
         try {
-            await api.put(`/api/appointments/doctor/${completeTarget._id}/complete`, { notes: completeNotes });
+            await api.put(`/api/appointments/doctor/${completeTarget._id}/complete`, {
+                notes:             completeNotes,
+                assessment:        completeAssessment,
+                plan:              completePlan,
+                objectiveFindings: completeNotes,
+            });
             toast.success('Janji temu selesai ✅');
-            setCompleteTarget(null); setCompleteNotes(''); fetchData();
+            setCompleteTarget(null);
+            setCompleteNotes('');
+            setCompleteAssessment('');
+            setCompletePlan('');
+            fetchData();
         } catch (e) { toast.error(e.response?.data?.message || 'Gagal'); }
         finally { setCompleting(false); }
     };
@@ -629,8 +643,12 @@ const SectionJanjiTemu = ({ socketRef }) => {
         finally { setCancelling(false); }
     };
 
-    const todayStr = new Date().toLocaleDateString('sv-SE');
-    const todayCount = appointments.filter(a => new Date(a.appointmentDate).toLocaleDateString('sv-SE') === todayStr).length;
+    const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+    const todayStr   = new Date(Date.now() + WIB_OFFSET_MS).toISOString().slice(0, 10);
+    const todayCount = appointments.filter(a => {
+        if (!a.appointmentDate) return false;
+        return new Date(new Date(a.appointmentDate).getTime() + WIB_OFFSET_MS).toISOString().slice(0, 10) === todayStr;
+    }).length;
 
     return (
         <div>
@@ -683,7 +701,7 @@ const SectionJanjiTemu = ({ socketRef }) => {
                                     const proc = processing[a._id];
                                     const canCI    = a.status === 'scheduled';
                                     const canComp  = a.status === 'checked_in';
-                                    const canCancl = a.status === 'scheduled' && (new Date(a.scheduledAt || a.appointmentDate).getTime() - Date.now() > 2 * 3600000);
+                                    const canCancl = a.status === 'scheduled' && (new Date(a.scheduledAt || a.appointmentDate).getTime() - Date.now() > 24 * 3600000);
                                     const accent   = APPT_STATUS[a.status]?.color || colors.border;
                                     return (
                                         <tr key={a._id} style={{ borderBottom: `1px solid #f8fafc`, background: i % 2 ? '#fafafa' : '#fff', borderLeft: `3px solid ${accent}` }}>
@@ -701,7 +719,7 @@ const SectionJanjiTemu = ({ socketRef }) => {
                                             <td style={TD}>
                                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                                     {canCI   && <Btn size="sm" variant="success" disabled={!!proc} onClick={() => doCheckin(a._id)}>{proc === 'ci' ? '…' : '✅ Check-in'}</Btn>}
-                                                    {canComp && <Btn size="sm" variant="primary" onClick={() => { setCompleteTarget(a); setCompleteNotes(''); }}>🏁 Selesai</Btn>}
+                                                    {canComp && <Btn size="sm" variant="primary" onClick={() => { setCompleteTarget(a); setCompleteNotes(''); setCompleteAssessment(''); setCompletePlan(''); }}>🏁 Selesai</Btn>}
                                                     {canCancl && <Btn size="sm" variant="red_outline" onClick={() => { setCancelTarget(a); setCancelReason(''); }}>❌ Batal</Btn>}
                                                 </div>
                                             </td>
@@ -714,18 +732,45 @@ const SectionJanjiTemu = ({ socketRef }) => {
                 </Card>
             )}
 
-            {/* Complete modal */}
+            {/* Complete modal — rekam medis wajib */}
             <Modal open={!!completeTarget} onClose={() => setCompleteTarget(null)} title="🏁 Selesaikan Janji Temu">
                 <p style={{ margin: '0 0 14px', color: colors.muted, fontSize: 14 }}>
                     Pasien: <strong>{completeTarget?.userId?.name}</strong> — pukul <strong>{completeTarget?.appointmentTime}</strong>
                 </p>
-                <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: colors.text }}>Catatan Dokter (opsional)</label>
-                <textarea value={completeNotes} onChange={e => setCompleteNotes(e.target.value)} rows={4}
-                    placeholder="Hasil pemeriksaan, diagnosis, rekomendasi..."
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 18 }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
+                            Pemeriksaan Fisik / Temuan Objektif <span style={{ color: colors.muted, fontWeight: 400 }}>(opsional)</span>
+                        </label>
+                        <textarea value={completeNotes} onChange={e => setCompleteNotes(e.target.value)} rows={2}
+                            placeholder="Tekanan darah, suhu, temuan fisik..."
+                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
+                            Diagnosis <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <textarea value={completeAssessment} onChange={e => setCompleteAssessment(e.target.value)} rows={2}
+                            placeholder="Contoh: ISPA ringan, Gastritis akut..."
+                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${!completeAssessment.trim() ? '#fca5a5' : colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
+                            Rencana Terapi / Tindakan <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <textarea value={completePlan} onChange={e => setCompletePlan(e.target.value)} rows={2}
+                            placeholder="Contoh: Pemberian antibiotik amoxicillin 3x500mg, istirahat 3 hari..."
+                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${!completePlan.trim() ? '#fca5a5' : colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                </div>
+                <p style={{ fontSize: 11, color: colors.muted, margin: '8px 0 14px' }}>
+                    <span style={{ color: '#ef4444' }}>*</span> Diagnosis dan Rencana Terapi wajib diisi sebelum menyelesaikan janji.
+                </p>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                     <Btn variant="ghost" onClick={() => setCompleteTarget(null)}>Batal</Btn>
-                    <Btn variant="success" onClick={doComplete} disabled={completing}>{completing ? '…' : '✅ Tandai Selesai'}</Btn>
+                    <Btn variant="success" onClick={doComplete} disabled={completing || !completeAssessment.trim() || !completePlan.trim()}>
+                        {completing ? '…' : '✅ Tandai Selesai'}
+                    </Btn>
                 </div>
             </Modal>
 
@@ -808,15 +853,33 @@ const SectionKonsultasi = ({ socketRef }) => {
         finally { setProcessing(p => ({ ...p, [id]: null })); }
     };
 
-    const handleEnd = async (id) => {
-        if (!window.confirm('Akhiri sesi konsultasi ini?')) return;
-        setProcessing(p => ({ ...p, [id]: 'end' }));
+    const [endTarget,     setEndTarget]     = useState(null);
+    const [endAssessment, setEndAssessment] = useState('');
+    const [endPlan,       setEndPlan]       = useState('');
+    const [endObjective,  setEndObjective]  = useState('');
+    const [ending,        setEnding]        = useState(false);
+
+    const handleEnd = (id) => {
+        const c = consultations.find(x => x._id === id);
+        setEndTarget(c || { _id: id });
+        setEndAssessment(''); setEndPlan(''); setEndObjective('');
+    };
+
+    const doEnd = async () => {
+        if (!endAssessment.trim()) { toast.error('Diagnosis wajib diisi'); return; }
+        if (!endPlan.trim())       { toast.error('Rencana Terapi wajib diisi'); return; }
+        setEnding(true);
         try {
-            const r = await api.put(`/api/consultations/${id}/end`);
-            setConsultations(prev => prev.map(c => c._id === id ? r.data.consultation : c));
-            toast.success('Sesi selesai');
+            const r = await api.put(`/api/consultations/${endTarget._id}/end`, {
+                assessment:        endAssessment,
+                plan:              endPlan,
+                objectiveFindings: endObjective,
+            });
+            setConsultations(prev => prev.map(c => c._id === endTarget._id ? r.data.consultation : c));
+            toast.success('Sesi konsultasi selesai ✅');
+            setEndTarget(null);
         } catch (e) { toast.error(e.response?.data?.message || 'Gagal mengakhiri'); }
-        finally { setProcessing(p => ({ ...p, [id]: null })); }
+        finally { setEnding(false); }
     };
 
     const TABS = [
@@ -887,7 +950,7 @@ const SectionKonsultasi = ({ socketRef }) => {
                                 )}
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     {canStart && <Btn size="sm" variant="success" disabled={!!proc} onClick={() => handleStart(c._id)}>{proc === 'start' ? '…' : '▶ Mulai Sesi'}</Btn>}
-                                    {canEnd   && <Btn size="sm" variant="danger"  disabled={!!proc} onClick={() => handleEnd(c._id)}>{proc === 'end' ? '…' : '⏹ Akhiri Sesi'}</Btn>}
+                                    {canEnd   && <Btn size="sm" variant="danger"  onClick={() => handleEnd(c._id)}>⏹ Akhiri Sesi</Btn>}
                                     {canChat  && <Btn size="sm" variant="outline" onClick={() => navigate(`/consultations/${c._id}`)}>💬 Buka Chat</Btn>}
                                 </div>
                             </Card>
@@ -895,6 +958,49 @@ const SectionKonsultasi = ({ socketRef }) => {
                     })}
                 </div>
             )}
+
+            {/* Modal Akhiri Sesi — rekam medis wajib */}
+            <Modal open={!!endTarget} onClose={() => setEndTarget(null)} title="⏹ Akhiri Sesi Konsultasi">
+                <p style={{ margin: '0 0 14px', color: colors.muted, fontSize: 14 }}>
+                    Pasien: <strong>{endTarget?.userId?.name || '—'}</strong>
+                    {endTarget?.scheduledAt && <> — <strong>{new Date(endTarget.scheduledAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })} WIB</strong></>}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
+                            Pemeriksaan Fisik / Temuan Objektif <span style={{ color: colors.muted, fontWeight: 400 }}>(opsional)</span>
+                        </label>
+                        <textarea value={endObjective} onChange={e => setEndObjective(e.target.value)} rows={2}
+                            placeholder="Temuan dari pemeriksaan fisik, hasil lab, dll..."
+                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
+                            Diagnosis <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <textarea value={endAssessment} onChange={e => setEndAssessment(e.target.value)} rows={2}
+                            placeholder="Contoh: ISPA ringan, Gastritis akut, Hipertensi grade I..."
+                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${!endAssessment.trim() ? '#fca5a5' : colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
+                            Rencana Terapi / Tindakan <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <textarea value={endPlan} onChange={e => setEndPlan(e.target.value)} rows={2}
+                            placeholder="Contoh: Amoxicillin 3x500mg 5 hari, istirahat, kontrol jika tidak membaik..."
+                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${!endPlan.trim() ? '#fca5a5' : colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                </div>
+                <p style={{ fontSize: 11, color: colors.muted, margin: '8px 0 14px' }}>
+                    <span style={{ color: '#ef4444' }}>*</span> Diagnosis dan Rencana Terapi wajib diisi. Rekam medis ini akan tersedia untuk pasien.
+                </p>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <Btn variant="ghost" onClick={() => setEndTarget(null)}>Batal</Btn>
+                    <Btn variant="danger" onClick={doEnd} disabled={ending || !endAssessment.trim() || !endPlan.trim()}>
+                        {ending ? '…' : '⏹ Akhiri & Simpan Rekam Medis'}
+                    </Btn>
+                </div>
+            </Modal>
         </div>
     );
 };
@@ -1073,9 +1179,12 @@ const SectionPasien = () => {
                                 </div>
                             ))}
                         </div>
-                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                             <Btn variant="ghost" onClick={() => setSelected(null)}>Tutup</Btn>
                             {['ongoing','in_progress'].includes(c.status) && <Btn variant="primary" onClick={() => { navigate(`/consultations/${c._id}`); setSelected(null); }}>💬 Buka Chat</Btn>}
+                            {['completed','no_show'].includes(c.status) && !c.medicalRecord?.isCompleted && (
+                                <Btn variant="outline" onClick={() => { navigate(`/consultations/${c._id}`); setSelected(null); }}>📋 Lengkapi Rekam Medis</Btn>
+                            )}
                         </div>
                     </div>
                 ); })()}
@@ -1550,6 +1659,14 @@ const SectionAturJadwal = () => {
     const [settings, setSettings] = useState({ allowChat: true, allowVideoCall: true });
     const [loading, setLoading]   = useState(true);
     const [saving, setSaving]     = useState(false);
+    const [consWeek, setConsWeek] = useState({ weekStart: null, weekEnd: null, isExpired: true });
+    const [apptWeek, setApptWeek] = useState({ weekStart: null, weekEnd: null, isExpired: true });
+
+    const fmtWeekRange = (weekStart, weekEnd) => {
+        if (!weekStart || !weekEnd) return null;
+        const opt = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' };
+        return `${new Date(weekStart).toLocaleDateString('id-ID', opt)} – ${new Date(weekEnd).toLocaleDateString('id-ID', opt)}`;
+    };
 
     useEffect(() => {
         const load = async () => {
@@ -1567,6 +1684,7 @@ const SectionAturJadwal = () => {
                         schedule: av.schedule ?? makeEmptySchedule(),
                         isActive: av.isActive ?? true,
                     }));
+                    setConsWeek({ weekStart: av.weekStart, weekEnd: av.weekEnd, isExpired: av.isExpired ?? true });
                 }
                 if (ar.status === 'fulfilled' && ar.value.data?.availability) {
                     const av = ar.value.data.availability;
@@ -1575,6 +1693,7 @@ const SectionAturJadwal = () => {
                         schedule: av.schedule ?? makeEmptySchedule(),
                         isActive: av.isActive ?? true,
                     }));
+                    setApptWeek({ weekStart: av.weekStart, weekEnd: av.weekEnd, isExpired: av.isExpired ?? true });
                 }
                 if (pr.status === 'fulfilled' && pr.value.data?.doctor?.consultationSettings) {
                     setSettings(pr.value.data.doctor.consultationSettings);
@@ -1600,11 +1719,15 @@ const SectionAturJadwal = () => {
         if (total === 0) { toast.error('Pilih minimal satu slot'); return; }
         setSaving(true);
         try {
-            await Promise.all([
+            const [r] = await Promise.all([
                 api.put('/api/availability/my', { schedule: consForm.schedule, isActive: consForm.isActive }),
                 api.put('/api/doctors/my/settings', settings),
             ]);
-            toast.success('Jadwal & pengaturan konsultasi disimpan ✅');
+            if (r.data?.availability) {
+                const av = r.data.availability;
+                setConsWeek({ weekStart: av.weekStart, weekEnd: av.weekEnd, isExpired: av.isExpired ?? false });
+            }
+            toast.success(r.data?.message || 'Jadwal konsultasi online berhasil dirilis ✅');
         } catch (e) { toast.error(e.response?.data?.message || 'Gagal menyimpan'); }
         finally { setSaving(false); }
     };
@@ -1614,8 +1737,12 @@ const SectionAturJadwal = () => {
         if (total === 0) { toast.error('Pilih minimal satu slot'); return; }
         setSaving(true);
         try {
-            await api.put('/api/appointments/doctor/availability', { schedule: apptForm.schedule, isActive: apptForm.isActive });
-            toast.success('Jadwal janji temu disimpan ✅');
+            const r = await api.put('/api/appointments/doctor/availability', { schedule: apptForm.schedule, isActive: apptForm.isActive });
+            if (r.data?.availability) {
+                const av = r.data.availability;
+                setApptWeek({ weekStart: av.weekStart, weekEnd: av.weekEnd, isExpired: av.isExpired ?? false });
+            }
+            toast.success(r.data?.message || 'Jadwal janji temu berhasil dirilis ✅');
         } catch (e) { toast.error(e.response?.data?.message || 'Gagal menyimpan'); }
         finally { setSaving(false); }
     };
@@ -1647,6 +1774,26 @@ const SectionAturJadwal = () => {
             {/* ─── KONSULTASI ONLINE ─── */}
             {tab === 'online' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+                    {/* Banner status minggu */}
+                    {consWeek.isExpired ? (
+                        <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 20 }}>⚠️</span>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>Jadwal minggu ini belum dirilis</div>
+                                <div style={{ fontSize: 12, color: '#b45309' }}>Pasien tidak bisa booking konsultasi online. Atur slot di bawah lalu klik Rilis Jadwal.</div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 20 }}>✅</span>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: 13, color: '#166534' }}>Jadwal aktif minggu ini</div>
+                                <div style={{ fontSize: 12, color: '#15803d' }}>Berlaku: {fmtWeekRange(consWeek.weekStart, consWeek.weekEnd)}</div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Header card */}
                     <Card style={{ padding: 24 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -1654,7 +1801,7 @@ const SectionAturJadwal = () => {
                             <Toggle checked={consForm.isActive} onChange={() => setConsForm(f => ({ ...f, isActive: !f.isActive }))} label={consForm.isActive ? 'Aktif' : 'Nonaktif'} />
                         </div>
                         <div style={{ fontSize: 12, color: colors.muted, marginBottom: 20 }}>
-                            Klik slot untuk mengaktifkan / menonaktifkan. Setiap hari dapat memiliki kombinasi slot yang berbeda.
+                            Klik slot untuk mengaktifkan / menonaktifkan. Jadwal berlaku dari Senin hingga Sabtu minggu yang ditentukan saat Anda klik Rilis Jadwal.
                         </div>
 
                         {/* Grid per-hari */}
@@ -1693,7 +1840,7 @@ const SectionAturJadwal = () => {
                     </Card>
 
                     <Btn onClick={saveOnline} disabled={saving} style={{ width: '100%', justifyContent: 'center' }} size="lg">
-                        {saving ? '…' : '💾 Simpan Jadwal & Pengaturan Konsultasi'}
+                        {saving ? '…' : '🚀 Rilis Jadwal Konsultasi Online'}
                     </Btn>
                 </div>
             )}
@@ -1701,13 +1848,33 @@ const SectionAturJadwal = () => {
             {/* ─── JANJI TEMU ─── */}
             {tab === 'offline' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+                    {/* Banner status minggu */}
+                    {apptWeek.isExpired ? (
+                        <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 20 }}>⚠️</span>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>Jadwal minggu ini belum dirilis</div>
+                                <div style={{ fontSize: 12, color: '#b45309' }}>Pasien tidak bisa booking janji temu. Atur slot di bawah lalu klik Rilis Jadwal.</div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 20 }}>✅</span>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: 13, color: '#166534' }}>Jadwal aktif minggu ini</div>
+                                <div style={{ fontSize: 12, color: '#15803d' }}>Berlaku: {fmtWeekRange(apptWeek.weekStart, apptWeek.weekEnd)}</div>
+                            </div>
+                        </div>
+                    )}
+
                     <Card style={{ padding: 24 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                             <div style={{ fontWeight: 700, fontSize: 16, color: colors.text }}>Jadwal Janji Temu</div>
                             <Toggle checked={apptForm.isActive} onChange={() => setApptForm(f => ({ ...f, isActive: !f.isActive }))} label={apptForm.isActive ? 'Aktif' : 'Nonaktif'} />
                         </div>
                         <div style={{ fontSize: 12, color: colors.muted, marginBottom: 20 }}>
-                            Klik slot untuk mengaktifkan / menonaktifkan.
+                            Klik slot untuk mengaktifkan / menonaktifkan. Jadwal berlaku dari Senin hingga Sabtu minggu yang ditentukan saat Anda klik Rilis Jadwal.
                         </div>
 
                         <ScheduleGrid
@@ -1724,7 +1891,7 @@ const SectionAturJadwal = () => {
                     </Card>
 
                     <Btn onClick={saveOffline} disabled={saving} style={{ width: '100%', justifyContent: 'center' }} size="lg">
-                        {saving ? '…' : '💾 Simpan Jadwal Janji Temu'}
+                        {saving ? '…' : '🚀 Rilis Jadwal Janji Temu'}
                     </Btn>
                 </div>
             )}
@@ -1745,11 +1912,15 @@ const ProfileField = ({ label, value, onChange, placeholder, required, hint }) =
 
 const SectionProfile = () => {
     const [form, setForm] = useState({ name: '', specialization: '', qualification: '', gender: '', bio: '', experience: '' });
-    const [loading, setLoading]     = useState(true);
-    const [saving, setSaving]       = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [photoUrl, setPhotoUrl]   = useState('');
-    const fileRef = useRef(null);
+    const [loading, setLoading]         = useState(true);
+    const [saving, setSaving]           = useState(false);
+    const [uploading, setUploading]     = useState(false);
+    const [uploadingSig, setUploadingSig] = useState(false);
+    const [photoUrl, setPhotoUrl]       = useState('');
+    const [signatureUrl, setSignatureUrl] = useState('');
+    const [consultationFee, setConsultationFee] = useState(null); // read-only display
+    const fileRef  = useRef(null);
+    const sigRef   = useRef(null);
 
     useEffect(() => {
         api.get('/api/doctors/my/profile')
@@ -1765,6 +1936,8 @@ const SectionProfile = () => {
                     experience:     d.experience     != null ? String(d.experience) : '',
                 });
                 setPhotoUrl(d.photo || '');
+                setSignatureUrl(d.signatureUrl || '');
+                setConsultationFee(d.consultationFee ?? null);
             })
             .catch(() => toast.error('Gagal memuat profil'))
             .finally(() => setLoading(false));
@@ -1797,10 +1970,28 @@ const SectionProfile = () => {
         finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
     };
 
+    const handleSignature = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { toast.error('Ukuran file maksimal 5 MB'); return; }
+        setUploadingSig(true);
+        try {
+            const fd = new FormData();
+            fd.append('signature', file);
+            const r = await api.post('/api/doctors/my/signature', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+            setSignatureUrl(r.data.signatureUrl);
+            toast.success('Tanda tangan berhasil diupload ✅');
+        } catch (e) { toast.error(e.response?.data?.message || 'Gagal upload tanda tangan'); }
+        finally { setUploadingSig(false); if (sigRef.current) sigRef.current.value = ''; }
+    };
+
     if (loading) return <Spinner />;
 
     const fullPhoto = photoUrl
         ? (photoUrl.startsWith('http') ? photoUrl : `${API_URL}${photoUrl}`)
+        : null;
+    const fullSig = signatureUrl
+        ? (signatureUrl.startsWith('http') ? signatureUrl : `${API_URL}${signatureUrl}`)
         : null;
 
     return (
@@ -1907,6 +2098,51 @@ const SectionProfile = () => {
                     <Btn onClick={saveProfile} disabled={saving} style={{ width: '100%', justifyContent: 'center' }} size="lg">
                         {saving ? '…' : '💾 Simpan Profil'}
                     </Btn>
+                </div>
+            </Card>
+
+            {/* ── Biaya Konsultasi (read-only) ── */}
+            <Card style={{ padding: 24, marginBottom: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: colors.text, marginBottom: 4 }}>💰 Biaya Konsultasi</div>
+                        <div style={{ fontSize: 13, color: colors.muted }}>Biaya hanya dapat diubah oleh admin klinik.</div>
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: colors.primary }}>
+                        {consultationFee !== null
+                            ? `Rp ${Number(consultationFee).toLocaleString('id-ID')}`
+                            : <span style={{ color: colors.muted, fontSize: 14 }}>Belum diatur</span>
+                        }
+                    </div>
+                </div>
+            </Card>
+
+            {/* ── Tanda Tangan Digital ── */}
+            <Card style={{ padding: 24 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: colors.text, marginBottom: 4 }}>✍️ Tanda Tangan Digital</div>
+                <div style={{ fontSize: 13, color: colors.muted, marginBottom: 16 }}>
+                    Tanda tangan ini akan dicetak di pojok kanan bawah surat sakit PDF. Gunakan gambar dengan latar belakang putih atau transparan.
+                </div>
+                <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    {/* Preview */}
+                    <div style={{
+                        width: 180, height: 100, border: `2px dashed ${colors.border}`, borderRadius: 10,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: '#fafafa', overflow: 'hidden', flexShrink: 0,
+                    }}>
+                        {fullSig
+                            ? <img src={fullSig} alt="Tanda tangan" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                            : <span style={{ fontSize: 12, color: colors.muted, textAlign: 'center', padding: 8 }}>Belum ada tanda tangan</span>
+                        }
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <input type="file" accept="image/jpeg,image/png,image/webp" ref={sigRef} onChange={handleSignature} style={{ display: 'none' }} />
+                        <Btn size="sm" variant="outline" onClick={() => sigRef.current?.click()} disabled={uploadingSig}>
+                            {uploadingSig ? '⬆ Mengunggah…' : '📤 Upload Tanda Tangan'}
+                        </Btn>
+                        <div style={{ fontSize: 11, color: colors.subtle, marginTop: 6 }}>JPG · PNG · WEBP · maks 5 MB</div>
+                        <div style={{ fontSize: 11, color: colors.subtle, marginTop: 2 }}>Disarankan: ukuran 400×200 px, latar putih</div>
+                    </div>
                 </div>
             </Card>
         </div>

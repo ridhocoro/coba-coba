@@ -42,7 +42,7 @@ const StatusBadge = ({ status }) => {
 
 // ── Derive hari praktik dari schedule Map (key '1'–'5') ──────────────────────
 function getPracticeDays(availability) {
-    if (!availability) return [1,2,3,4,5];
+    if (!availability) return [1,2,3,4,5,6];
     // availability.practiceDays (lama) atau dari schedule Map baru
     if (availability.practiceDays) return availability.practiceDays;
     if (availability.schedule) {
@@ -50,33 +50,57 @@ function getPracticeDays(availability) {
             .filter(([, slots]) => Array.isArray(slots) && slots.length > 0)
             .map(([day]) => Number(day));
     }
-    return [1,2,3,4,5];
+    return [1,2,3,4,5,6];
 }
 
-// ── Generate hari praktik dalam 7 hari ke depan saja (tidak melompat minggu) ──
-function generateAvailableDates(practiceDays = [1,2,3,4,5]) {
-    const dates = [];
-    const now   = new Date();
-    for (let i = 0; i <= 6; i++) {
-        const d        = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
-        const localDow = d.getDay();
-        if (practiceDays.includes(localDow)) {
-            const y  = d.getFullYear();
-            const mo = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
+// ── Generate tanggal praktik dari rentang weekStart–weekEnd ──────────────────
+// Menampilkan semua hari dalam rentang yang ada di practiceDays.
+// Hari ini (offset=0) ditampilkan jika masih dalam rentang.
+// Hari Minggu (dow=0) selalu diskip.
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function generateAvailableDates(practiceDays = [1,2,3,4,5,6], weekStart = null, weekEnd = null) {
+    const dates  = [];
+    const nowWIB = new Date(Date.now() + WIB_OFFSET_MS);
+
+    // Tentukan rentang: jika weekStart/weekEnd tersedia gunakan itu, else fallback 7 hari
+    const startMs = weekStart ? new Date(weekStart).getTime() + WIB_OFFSET_MS : nowWIB.getTime();
+    const endMs   = weekEnd   ? new Date(weekEnd).getTime()   + WIB_OFFSET_MS : nowWIB.getTime() + 7 * 24 * 60 * 60 * 1000;
+
+    let cursor = new Date(Math.max(startMs, nowWIB.getTime())); // mulai dari hari ini atau weekStart, mana yang lebih baru
+    // Set cursor ke awal hari (UTC midnight WIB)
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate()));
+
+    while (cursor.getTime() <= endMs) {
+        const dow = cursor.getUTCDay();
+        if (dow !== 0 && practiceDays.includes(dow)) {
+            const y  = cursor.getUTCFullYear();
+            const mo = String(cursor.getUTCMonth() + 1).padStart(2, '0');
+            const dd = String(cursor.getUTCDate()).padStart(2, '0');
             dates.push(`${y}-${mo}-${dd}`);
         }
+        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
     }
     return dates;
 }
 
-// Cek apakah bisa cancel (>2 jam sebelum scheduledAt)
+// Semua batas (cancel & reschedule) adalah h-24 jam sebelum jadwal
+const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
+
 function canCancel(scheduledAt) {
-    return new Date(scheduledAt).getTime() - Date.now() > 2 * 60 * 60 * 1000;
+    return new Date(scheduledAt).getTime() - Date.now() > CANCEL_DEADLINE_MS;
 }
-// Cek apakah bisa reschedule (>24 jam sebelum scheduledAt)
 function canReschedule(scheduledAt) {
-    return new Date(scheduledAt).getTime() - Date.now() > 24 * 60 * 60 * 1000;
+    return new Date(scheduledAt).getTime() - Date.now() > CANCEL_DEADLINE_MS;
+}
+
+// Format deadline: "Senin, 23 Jun 2025 pukul 09:00 WIB"
+function fmtDeadline(scheduledAt) {
+    const dl = new Date(new Date(scheduledAt).getTime() - CANCEL_DEADLINE_MS);
+    return dl.toLocaleString('id-ID', {
+        weekday: 'long', day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta',
+    }) + ' WIB';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -251,7 +275,11 @@ const Appointments = () => {
 
     // ── Available dates for reschedule ─────────────────────────────────────
     const reschedDates = reschedTarget
-        ? generateAvailableDates(getPracticeDays(reschedTarget.doctorId?.availability))
+        ? generateAvailableDates(
+            getPracticeDays(reschedTarget.doctorId?.availability),
+            reschedTarget.doctorId?.availability?.weekStart,
+            reschedTarget.doctorId?.availability?.weekEnd
+          )
         : [];
 
     const activeAppts  = myAppointments.filter(a => ['scheduled','checked_in'].includes(a.status));
@@ -324,8 +352,17 @@ const Appointments = () => {
                         {selectedDoctor && (
                             <div style={s.card}>
                                 <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#111827' }}>2️⃣ Pilih Tanggal</div>
+                                {!selectedDoctor.availability?.weekStart ? (
+                                    <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#92400e' }}>
+                                        ⚠️ Dokter belum merilis jadwal untuk minggu ini. Silakan cek kembali beberapa saat lagi.
+                                    </div>
+                                ) : (
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                    {generateAvailableDates(getPracticeDays(selectedDoctor.availability)).map(dateStr => {
+                                    {generateAvailableDates(
+                                        getPracticeDays(selectedDoctor.availability),
+                                        selectedDoctor.availability?.weekStart,
+                                        selectedDoctor.availability?.weekEnd
+                                    ).map(dateStr => {
                                         const [y, mo, d] = dateStr.split('-').map(Number);
                                         const dateObj = new Date(Date.UTC(y, mo - 1, d));
                                         const label   = dateObj.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -345,6 +382,7 @@ const Appointments = () => {
                                         );
                                     })}
                                 </div>
+                                )}
                             </div>
                         )}
 
@@ -395,7 +433,7 @@ const Appointments = () => {
                                     <div style={{ fontWeight: 600, fontSize: 14, color: '#166534', marginBottom: 6 }}>Ringkasan Janji Temu</div>
                                     <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.8 }}>
                                         <div>👨‍⚕️ <strong>Dokter</strong>: dr. {selectedDoctor.doctor.name} ({selectedDoctor.doctor.specialization})</div>
-                                        <div>📅 <strong>Tanggal</strong>: {fmtDT(new Date(...selectedDate.split('-').map(Number)).toUTCString(), null)}</div>
+                                        <div>📅 <strong>Tanggal</strong>: {(() => { const [y,m,d] = selectedDate.split('-').map(Number); return new Date(Date.UTC(y,m-1,d)).toLocaleDateString('id-ID', { weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'UTC' }); })()}</div>
                                         <div>🕐 <strong>Waktu</strong>: {selectedSlot.startTime} – {selectedSlot.endTime} WIB</div>
                                         <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>📍 Hadir langsung ke klinik dan tunjukkan nama Anda ke admin</div>
                                     </div>
@@ -558,6 +596,9 @@ const SlotBtn = ({ slot, selected, onSelect }) => (
 const AppointmentCard = ({ appt, onCancel, onReschedule }) => {
     const doc  = appt.doctorId;
     const isActive = ['scheduled','checked_in'].includes(appt.status);
+    const showActions = appt.status === 'scheduled';
+    const canAct = showActions && canCancel(appt.scheduledAt);
+
     return (
         <div style={{
             background: '#fff', border: `1px solid ${appt.status === 'checked_in' ? '#86efac' : '#e5e7eb'}`,
@@ -578,22 +619,34 @@ const AppointmentCard = ({ appt, onCancel, onReschedule }) => {
             {appt.doctorNotes && <div style={{ fontSize: 12, color: '#374151', background: '#f9fafb', padding: '6px 10px', borderRadius: 6 }}>📝 Catatan Dokter: {appt.doctorNotes}</div>}
             {appt.cancelReason && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 6 }}>Alasan: {appt.cancelReason}</div>}
 
+            {/* Timer deadline — tampilkan selama jadwal belum lewat */}
+            {showActions && appt.scheduledAt && (
+                <div style={{
+                    marginTop: 10, padding: '8px 12px', borderRadius: 8,
+                    background: canAct ? '#f0fdf4' : '#fef2f2',
+                    border: `1px solid ${canAct ? '#bbf7d0' : '#fecaca'}`,
+                    fontSize: 12, color: canAct ? '#166534' : '#b91c1c',
+                }}>
+                    {canAct
+                        ? <>⏰ Anda dapat mengubah atau membatalkan jadwal ini hingga: <strong>{fmtDeadline(appt.scheduledAt)}</strong></>
+                        : <>🔒 Batas perubahan/pembatalan telah lewat ({fmtDeadline(appt.scheduledAt)})</>
+                    }
+                </div>
+            )}
+
             {isActive && (onCancel || onReschedule) && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                    {onReschedule && appt.status === 'scheduled' && canReschedule(appt.scheduledAt) && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    {onReschedule && showActions && canAct && (
                         <button onClick={onReschedule}
                             style={{ padding: '6px 14px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                             🔄 Reschedule
                         </button>
                     )}
-                    {onCancel && appt.status === 'scheduled' && canCancel(appt.scheduledAt) && (
+                    {onCancel && showActions && canAct && (
                         <button onClick={onCancel}
                             style={{ padding: '6px 14px', background: '#fff', color: '#ef4444', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                             ❌ Batalkan
                         </button>
-                    )}
-                    {appt.status === 'scheduled' && !canCancel(appt.scheduledAt) && (
-                        <span style={{ fontSize: 12, color: '#9ca3af', padding: '6px 0' }}>Tidak bisa dibatalkan — &lt;2 jam sebelum jadwal</span>
                     )}
                 </div>
             )}

@@ -48,6 +48,16 @@ const appointmentSchema = new mongoose.Schema({
     cancelledBy   : { type: String, enum: ['user', 'doctor', 'admin', ''] , default: '' },
     cancelledAt   : { type: Date },
 
+    // ── Rekam Medis (SOAP) — diisi saat selesai ───────────────────
+    medicalRecord : {
+        objectiveFindings : { type: String, default: '' },
+        assessment        : { type: String, default: '' }, // diagnosis — WAJIB
+        plan              : { type: String, default: '' }, // rencana terapi — WAJIB
+        doctorNotes       : { type: String, default: '' },
+        isCompleted       : { type: Boolean, default: false },
+        completedAt       : { type: Date },
+    },
+
     // ── Reschedule ────────────────────────────────────────────────
     rescheduledFrom : {
         appointmentDate : Date,

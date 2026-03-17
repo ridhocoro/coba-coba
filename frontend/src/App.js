@@ -46,6 +46,7 @@ import ManageConsultations from './pages/Admin/ManageConsultations';
 import ManageAppointments from './pages/Admin/ManageAppointments';
 import ManagePharmacy from './pages/Admin/ManagePharmacy';
 import AdminManualPayment from './pages/Admin/ManualPayment';
+import ClinicSettings from './pages/Admin/ClinicSettings';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -148,6 +149,7 @@ function AppContent() {
                     <Route path="/admin/appointments"    element={<ProtectedRoute allowedRoles={['admin']}><ManageAppointments /></ProtectedRoute>} />
                     <Route path="/admin/pharmacy"        element={<ProtectedRoute allowedRoles={['admin']}><ManagePharmacy /></ProtectedRoute>} />
                     <Route path="/admin/manual-payments" element={<ProtectedRoute allowedRoles={['admin']}><AdminManualPayment /></ProtectedRoute>} />
+                    <Route path="/admin/clinic-settings" element={<ProtectedRoute allowedRoles={['admin']}><ClinicSettings /></ProtectedRoute>} />
 
                     {/* ===== 404 ===== */}
                     <Route path="*" element={

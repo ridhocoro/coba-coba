@@ -74,19 +74,41 @@ const orderSchema = new mongoose.Schema({
     status: {
         type: String,
         enum: [
-            'waiting_prescription',   // menunggu verifikasi resep
-            'prescription_rejected',  // resep ditolak, bisa upload ulang
-            'pending',                // menunggu bayar (stok di-lock 15 mnt)
-            'paid',                   // bayar berhasil via Xendit
-            'diproses',               // admin sedang siapkan obat
-            'dikirim',                // (diantar) sudah dikirim
-            'terkirim',               // (diantar) sudah tiba
-            'siap_diambil',           // (pickup) siap diambil
+            'waiting_prescription',
+            'prescription_rejected',
+            'pending',
+            'paid',
+            'diproses',
+            'dikirim',
+            'terkirim',
+            'siap_diambil',
             'selesai',
             'expired',
             'cancelled',
+            'refund_requested',   // pasien ajukan refund, menunggu review admin
+            'refund_rejected',    // admin tolak refund
+            'refunded',           // refund berhasil diproses
         ],
         default: 'pending',
+    },
+
+    // ── Refund Farmasi ────────────────────────────────────────────
+    refund: {
+        videoUrl       : { type: String },   // URL Cloudinary video bukti
+        videoPublicId  : { type: String },   // Cloudinary public_id untuk delete
+        reason         : { type: String },   // alasan refund dari pasien
+        requestedAt    : { type: Date },
+        reviewedAt     : { type: Date },
+        reviewedBy     : { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        rejectReason   : { type: String },
+        bankCode       : { type: String },
+        accountNumber  : { type: String },
+        accountName    : { type: String },
+        xenditRefundId       : { type: String },
+        xenditDisbursementId : { type: String },
+        method         : { type: String, enum: ['xendit_refund','xendit_disbursement','manual'] },
+        processedAt    : { type: Date },
+        notes          : { type: String },
     },
 
     orderNumber    : { type: String, unique: true },

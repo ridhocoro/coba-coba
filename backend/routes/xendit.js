@@ -1,10 +1,15 @@
 /**
  * /api/xendit
  *
- * POST   /create-invoice          → buat Xendit invoice (consultation / medicine / appointment)
- * GET    /status/:externalId      → cek status pembayaran
- * POST   /webhook                 → callback dari Xendit (otomatis saat bayar berhasil)
- * POST   /refund/:consultationId  → trigger refund manual (placeholder) untuk doctor_no_show
+ * POST /create-invoice          → buat Xendit invoice
+ * GET  /status/:externalId      → cek status pembayaran
+ * POST /webhook                 → callback Xendit (bayar berhasil)
+ * POST /refund/:consultationId  → proses refund otomatis (internal/admin)
+ *
+ * Logika refund:
+ *   - paidAt < 7 hari lalu  → Xendit Refund API (instant)
+ *   - paidAt >= 7 hari lalu → Xendit Disbursement/Payout API (perlu nomor rekening)
+ *   - Semua refund 100% (biaya payment gateway ditanggung klinik, bukan dipotong dari pasien)
  */
 
 const express    = require('express');
@@ -20,19 +25,42 @@ const Doctor       = require('../models/Doctor');
 const User         = require('../models/User');
 const { createNotification } = require('../utils/notificationHelper');
 
-const XENDIT_SECRET_KEY    = process.env.XENDIT_SECRET_KEY;
+const XENDIT_SECRET_KEY     = process.env.XENDIT_SECRET_KEY;
 const XENDIT_CALLBACK_TOKEN = process.env.XENDIT_CALLBACK_TOKEN;
-const FRONTEND_URL         = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL          = process.env.FRONTEND_URL || 'http://localhost:3000';
+const WIB_OFFSET            = 7 * 60 * 60 * 1000;
+const REFUND_WINDOW_MS      = 7 * 24 * 60 * 60 * 1000; // 7 hari
 
-const WIB_OFFSET = 7 * 60 * 60 * 1000;
-
-// ── Header Basic Auth Xendit ─────────────────────────────────────────────────
 const xenditHeaders = () => ({
     Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
     'Content-Type': 'application/json',
 });
 
-// ── POST /create-invoice ─────────────────────────────────────────────────────
+// Daftar bank Xendit Disbursement yang didukung
+const XENDIT_BANKS = [
+    { code: 'BCA',       name: 'Bank Central Asia (BCA)' },
+    { code: 'BNI',       name: 'Bank Negara Indonesia (BNI)' },
+    { code: 'BRI',       name: 'Bank Rakyat Indonesia (BRI)' },
+    { code: 'MANDIRI',   name: 'Bank Mandiri' },
+    { code: 'PERMATA',   name: 'Bank Permata' },
+    { code: 'CIMB',      name: 'CIMB Niaga' },
+    { code: 'DANAMON',   name: 'Bank Danamon' },
+    { code: 'OCBC',      name: 'OCBC NISP' },
+    { code: 'MAYBANK',   name: 'Maybank' },
+    { code: 'BTN',       name: 'Bank Tabungan Negara (BTN)' },
+    { code: 'MUAMALAT',  name: 'Bank Muamalat' },
+    { code: 'BSI',       name: 'Bank Syariah Indonesia (BSI)' },
+    { code: 'JAGO',      name: 'Bank Jago' },
+    { code: 'SEABANK',   name: 'SeaBank' },
+    { code: 'NOBU',      name: 'Bank Nobu' },
+];
+
+// ── GET /banks ────────────────────────────────────────────────────────────────
+router.get('/banks', (req, res) => {
+    res.json({ success: true, banks: XENDIT_BANKS });
+});
+
+// ── POST /create-invoice ──────────────────────────────────────────────────────
 router.post('/create-invoice', auth, async (req, res) => {
     try {
         const { amount, paymentType, referenceId, description } = req.body;
@@ -43,100 +71,70 @@ router.post('/create-invoice', auth, async (req, res) => {
 
         const externalId = `INV-${paymentType.toUpperCase()}-${Date.now()}-${Math.random().toString(36).substr(2,6).toUpperCase()}`;
 
-        // Simpan record payment (untuk medicine/appointment)
-        // Untuk consultation, xenditExternalId disimpan di Consultation sendiri
         let payment = null;
         if (paymentType !== 'consultation') {
             payment = new Payment({
-                userId        : req.userId,
-                transactionId : externalId,
-                amount,
-                currency      : 'idr',
-                status        : 'pending',
-                paymentType,
-                referenceId,
+                userId: req.userId, transactionId: externalId,
+                amount, currency: 'idr', status: 'pending', paymentType, referenceId,
             });
             await payment.save();
         }
 
-        // Update consultation dengan externalId agar webhook bisa link
         if (paymentType === 'consultation') {
             const c = await Consultation.findById(referenceId);
             if (!c) return res.status(404).json({ error: 'Konsultasi tidak ditemukan' });
             if (c.userId.toString() !== req.userId) return res.status(403).json({ error: 'Akses ditolak' });
             if (c.status !== 'pending_payment') {
-                return res.status(400).json({ error: `Status konsultasi saat ini: ${c.status}. Tidak bisa bayar.` });
+                return res.status(400).json({ error: `Status konsultasi: ${c.status}. Tidak bisa bayar.` });
             }
             c.xenditExternalId = externalId;
+            c.amount = amount; // simpan snapshot amount
             await c.save();
         }
 
-        // Buat Xendit invoice
         const invoicePayload = {
             external_id         : externalId,
             amount,
             description         : description || `Pembayaran ${paymentType} – Klinik Pratama IPB`,
-            invoice_duration    : 900,   // 15 menit (sama dengan slot lock)
+            invoice_duration    : 900,
             success_redirect_url: `${FRONTEND_URL}/payment/success?external_id=${externalId}`,
             failure_redirect_url: `${FRONTEND_URL}/payment/failed?external_id=${externalId}`,
             currency            : 'IDR',
             payment_methods     : ['BCA','BNI','BRI','MANDIRI','PERMATA','OVO','DANA','SHOPEEPAY','LINKAJA','QRIS'],
         };
 
-        const xenditRes  = await axios.post('https://api.xendit.co/v2/invoices', invoicePayload, { headers: xenditHeaders() });
-        const invoice    = xenditRes.data;
+        const xenditRes = await axios.post('https://api.xendit.co/v2/invoices', invoicePayload, { headers: xenditHeaders() });
+        const invoice   = xenditRes.data;
 
-        // Simpan xendit invoice id ke record payment (non-consultation)
-        if (payment) {
-            payment.stripePaymentIntentId = invoice.id;
-            await payment.save();
-        }
-
-        // Simpan xendit invoice id ke consultation
+        if (payment) { payment.stripePaymentIntentId = invoice.id; await payment.save(); }
         if (paymentType === 'consultation') {
-            await Consultation.findByIdAndUpdate(referenceId, {
-                xenditInvoiceId: invoice.id,
-                xenditExternalId: externalId,
-            });
+            await Consultation.findByIdAndUpdate(referenceId, { xenditInvoiceId: invoice.id, xenditExternalId: externalId });
         }
 
-        res.json({
-            success    : true,
-            invoiceUrl : invoice.invoice_url,
-            externalId,
-            invoiceId  : invoice.id,
-            expiryDate : invoice.expiry_date,
-        });
+        res.json({ success: true, invoiceUrl: invoice.invoice_url, externalId, invoiceId: invoice.id, expiryDate: invoice.expiry_date });
     } catch (err) {
-        console.error('[Xendit] create-invoice error:', err.response?.data || err.message);
+        console.error('[Xendit] create-invoice:', err.response?.data || err.message);
         res.status(500).json({ error: 'Gagal membuat invoice: ' + (err.response?.data?.message || err.message) });
     }
 });
 
-// ── GET /status/:externalId ──────────────────────────────────────────────────
+// ── GET /status/:externalId ───────────────────────────────────────────────────
 router.get('/status/:externalId', auth, async (req, res) => {
     try {
         const { externalId } = req.params;
 
-        // Cek di consultation dulu
         const consultation = await Consultation.findOne({ xenditExternalId: externalId });
         if (consultation) {
-            // Jika sudah confirmed, langsung return
             if (['confirmed','in_progress','completed'].includes(consultation.status)) {
                 return res.json({ success: true, status: 'paid', type: 'consultation', consultation });
             }
-            // Fallthrough ke cek Xendit jika masih pending
         }
 
-        // Cek di payment record
         const payment = await Payment.findOne({ transactionId: externalId });
-
-        // Jika sudah paid lokal, return langsung
         if (payment?.status === 'paid') {
             return res.json({ success: true, status: 'paid', type: payment.paymentType, payment });
         }
 
-        // Cek ke Xendit
         const xenditRes = await axios.get(
             `https://api.xendit.co/v2/invoices?external_id=${externalId}`,
             { headers: xenditHeaders() }
@@ -145,13 +143,13 @@ router.get('/status/:externalId', auth, async (req, res) => {
 
         if (invoices?.length > 0) {
             const invoice = invoices[0];
+            const io = req.app.get('io');
             if (invoice.status === 'PAID') {
-                // Proses jika belum
                 if (consultation && !['confirmed','in_progress','completed'].includes(consultation.status)) {
-                    await handleConsultationPaid(consultation, invoice, req.app.get('io'));
+                    await handleConsultationPaid(consultation, invoice, io);
                 }
                 if (payment && payment.status !== 'paid') {
-                    await handlePaymentPaid(payment, invoice, req.app.get('io'));
+                    await handlePaymentPaid(payment, invoice, io);
                 }
                 return res.json({ success: true, status: 'paid' });
             }
@@ -160,15 +158,14 @@ router.get('/status/:externalId', auth, async (req, res) => {
 
         res.json({ success: true, status: consultation?.status || payment?.status || 'pending' });
     } catch (err) {
-        console.error('[Xendit] status check error:', err.response?.data || err.message);
+        console.error('[Xendit] status check:', err.response?.data || err.message);
         res.status(500).json({ error: 'Gagal cek status: ' + err.message });
     }
 });
 
-// ── POST /webhook ────────────────────────────────────────────────────────────
+// ── POST /webhook ─────────────────────────────────────────────────────────────
 router.post('/webhook', async (req, res) => {
     try {
-        // Verifikasi callback token
         const token = req.headers['x-callback-token'];
         if (XENDIT_CALLBACK_TOKEN && token !== XENDIT_CALLBACK_TOKEN) {
             console.warn('[Xendit] Invalid callback token');
@@ -182,13 +179,11 @@ router.post('/webhook', async (req, res) => {
             const externalId = event.external_id;
             const io = req.app.get('io');
 
-            // Cek consultation
             const consultation = await Consultation.findOne({ xenditExternalId: externalId });
             if (consultation && consultation.status === 'pending_payment') {
                 await handleConsultationPaid(consultation, event, io);
             }
 
-            // Cek payment record (medicine / appointment)
             const payment = await Payment.findOne({ transactionId: externalId });
             if (payment && payment.status !== 'paid') {
                 await handlePaymentPaid(payment, event, io);
@@ -202,62 +197,146 @@ router.post('/webhook', async (req, res) => {
     }
 });
 
-// ── POST /refund/:consultationId ─────────────────────────────────────────────
-// Placeholder refund — dipanggil otomatis oleh cron doctor_no_show
-// Saat Xendit Refund API sudah aktif, ganti bagian "PLACEHOLDER" dengan API call nyata
+// ── POST /refund/:consultationId ──────────────────────────────────────────────
+/**
+ * Proses refund 100% otomatis.
+ * - paidAt < 7 hari → Xendit Refund API
+ * - paidAt >= 7 hari → Xendit Disbursement API (butuh bankCode + accountNumber + accountName)
+ * Dipanggil dari:
+ *   - PUT /api/consultations/:id/cancel (user cancel confirmed)
+ *   - Cron doctor_no_show / cancelled_by_doctor
+ *   - Admin cancel
+ */
 router.post('/refund/:consultationId', auth, async (req, res) => {
     try {
-        // Hanya admin atau sistem internal (cron memanggil via internal function)
-        if (req.userRole !== 'admin') {
-            return res.status(403).json({ error: 'Hanya admin yang bisa trigger refund' });
+        if (!['admin', 'system'].includes(req.userRole) && req.userId !== req.body._callerId) {
+            return res.status(403).json({ error: 'Akses ditolak' });
         }
 
-        const consultation = await Consultation.findById(req.params.consultationId);
+        const consultation = await Consultation.findById(req.params.consultationId)
+            .populate('doctorId', 'consultationFee name');
         if (!consultation) return res.status(404).json({ error: 'Konsultasi tidak ditemukan' });
 
-        if (consultation.status !== 'doctor_no_show') {
-            return res.status(400).json({ error: 'Refund hanya bisa untuk status doctor_no_show' });
+        const refundableStatuses = ['refund_requested', 'cancelled_by_user', 'cancelled_by_doctor', 'cancelled_by_admin', 'doctor_no_show'];
+        if (!refundableStatuses.includes(consultation.status)) {
+            return res.status(400).json({ error: `Status ${consultation.status} tidak bisa direfund` });
         }
 
-        // ── PLACEHOLDER: Ganti blok ini dengan Xendit Refund API saat sudah aktif ──
-        // const refundRes = await axios.post(
-        //     `https://api.xendit.co/refunds`,
-        //     { invoice_id: consultation.xenditInvoiceId, reason: 'OTHERS', amount: consultation.amount },
-        //     { headers: xenditHeaders() }
-        // );
-        // consultation.xenditRefundId = refundRes.data.id;
-        // ─────────────────────────────────────────────────────────────────────────
+        const amount = consultation.amount || consultation.doctorId?.consultationFee;
+        if (!amount) return res.status(400).json({ error: 'Nominal refund tidak diketahui' });
 
-        // Set status refunded (manual/placeholder)
-        consultation.status        = 'refunded';
-        consultation.cancelledAt   = new Date();
-        consultation.cancelReason  = 'Dokter tidak hadir — refund otomatis';
+        const paidAt     = consultation.paidAt ? new Date(consultation.paidAt) : null;
+        const isWithin7d = paidAt && (Date.now() - paidAt.getTime()) < REFUND_WINDOW_MS;
+
+        let refundMethod, refundResult;
+
+        if (isWithin7d && consultation.xenditInvoiceId) {
+            // ── Xendit Refund API (invoice masih dalam window 7 hari) ──────────
+            try {
+                const refundRes = await axios.post(
+                    'https://api.xendit.co/refunds',
+                    {
+                        invoice_id       : consultation.xenditInvoiceId,
+                        reason           : 'CANCELLATION',
+                        amount,
+                        metadata         : { consultationId: consultation._id.toString() },
+                    },
+                    {
+                        headers: {
+                            ...xenditHeaders(),
+                            'idempotency-key': `REFUND-${consultation._id}-${Date.now()}`,
+                        },
+                    }
+                );
+                refundMethod = 'xendit_refund';
+                refundResult = refundRes.data;
+                consultation.xenditRefundId = refundResult.id;
+                console.log(`[Xendit] Refund API success: ${refundResult.id} for consultation ${consultation._id}`);
+            } catch (refundErr) {
+                // Jika Xendit Refund gagal → fallback ke disbursement
+                console.warn('[Xendit] Refund API failed, falling back to disbursement:', refundErr.response?.data?.message);
+                refundMethod = 'xendit_disbursement';
+            }
+        } else {
+            refundMethod = 'xendit_disbursement';
+        }
+
+        if (refundMethod === 'xendit_disbursement') {
+            const { bankCode, accountNumber, accountName } = req.body;
+            if (!bankCode || !accountNumber || !accountName) {
+                return res.status(400).json({
+                    error           : 'Data rekening diperlukan untuk refund',
+                    needsBankInfo   : true,
+                    message         : 'Pembayaran lebih dari 7 hari lalu. Silakan masukkan data rekening untuk menerima refund.',
+                });
+            }
+
+            const disbursementRes = await axios.post(
+                'https://api.xendit.co/disbursements',
+                {
+                    external_id   : `DISB-${consultation._id}-${Date.now()}`,
+                    bank_code     : bankCode,
+                    account_holder_name : accountName,
+                    account_number : accountNumber,
+                    description   : `Refund konsultasi ${consultation._id}`,
+                    amount,
+                },
+                {
+                    headers: {
+                        ...xenditHeaders(),
+                        'X-IDEMPOTENCY-KEY': `DISB-${consultation._id}-${Date.now()}`,
+                    },
+                }
+            );
+            refundResult = disbursementRes.data;
+            consultation.refund = {
+                ...consultation.refund?.toObject?.() || {},
+                bankCode, accountNumber, accountName,
+                xenditDisbursementId : refundResult.id,
+                method               : 'xendit_disbursement',
+                requestedAt          : consultation.refund?.requestedAt || new Date(),
+                processedAt          : new Date(),
+            };
+            console.log(`[Xendit] Disbursement success: ${refundResult.id} for consultation ${consultation._id}`);
+        }
+
+        if (refundMethod === 'xendit_refund') {
+            consultation.refund = {
+                ...consultation.refund?.toObject?.() || {},
+                xenditRefundId : consultation.xenditRefundId,
+                method         : 'xendit_refund',
+                requestedAt    : consultation.refund?.requestedAt || new Date(),
+                processedAt    : new Date(),
+            };
+        }
+
+        consultation.status = 'refunded';
         await consultation.save();
+
+        const eta = refundMethod === 'xendit_refund'
+            ? 'dalam beberapa menit hingga 1 hari kerja'
+            : 'dalam 1x24 jam';
 
         await createNotification({
             userId : consultation.userId,
-            type   : 'payment_verified',
-            title  : 'Refund Diproses 💰',
-            message: `Konsultasi Anda dibatalkan karena dokter tidak hadir. Refund sedang diproses oleh admin dan akan masuk ke rekening Anda dalam 3-5 hari kerja.`,
+            type   : 'refund_processed',
+            title  : '💰 Refund Berhasil Diproses',
+            message: `Refund Rp ${amount.toLocaleString('id-ID')} sedang diproses dan akan masuk ke rekening Anda ${eta}.`,
             data   : { consultationId: consultation._id },
             io     : req.app.get('io'),
         });
 
-        res.json({ success: true, message: 'Status refund berhasil diupdate', consultation });
+        res.json({ success: true, method: refundMethod, amount, consultation });
     } catch (err) {
-        console.error('[Xendit] refund error:', err);
-        res.status(500).json({ error: 'Gagal proses refund: ' + err.message });
+        console.error('[Xendit] refund error:', err.response?.data || err.message);
+        res.status(500).json({ error: 'Gagal proses refund: ' + (err.response?.data?.message || err.message) });
     }
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// INTERNAL HELPERS (juga di-export untuk cron)
+// INTERNAL HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Proses consultation menjadi confirmed setelah Xendit konfirmasi bayar.
- * Dipanggil dari webhook dan status-check endpoint.
- */
 const handleConsultationPaid = async (consultation, xenditEvent, io) => {
     try {
         consultation.status              = 'confirmed';
@@ -267,7 +346,6 @@ const handleConsultationPaid = async (consultation, xenditEvent, io) => {
         consultation.xenditPaymentMethod = xenditEvent.payment_method || xenditEvent.payment_channel || '';
         await consultation.save();
 
-        // Notif ke pasien
         await createNotification({
             userId : consultation.userId,
             type   : 'payment_verified',
@@ -277,7 +355,6 @@ const handleConsultationPaid = async (consultation, xenditEvent, io) => {
             io,
         });
 
-        // Notif ke dokter
         const doctor = await Doctor.findById(consultation.doctorId);
         if (doctor) {
             const doctorUser = await User.findById(doctor.userId);
@@ -286,30 +363,25 @@ const handleConsultationPaid = async (consultation, xenditEvent, io) => {
                     userId : doctorUser._id,
                     type   : 'consultation_request',
                     title  : 'Booking Konsultasi Baru 📅',
-                    message: `Pasien telah melakukan pembayaran. Jadwal konsultasi: ${_fmtDate(consultation.scheduledAt)}`,
+                    message: `Pasien telah melakukan pembayaran. Jadwal: ${_fmtDate(consultation.scheduledAt)}`,
                     data   : { consultationId: consultation._id },
                     io,
                 });
             }
         }
 
-        // Emit socket update ke user
         if (io) {
             io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
                 consultationId: consultation._id.toString(),
                 status        : 'confirmed',
             });
         }
-
         console.log(`[Xendit] Consultation ${consultation._id} → confirmed`);
     } catch (err) {
-        console.error('[Xendit] handleConsultationPaid error:', err.message);
+        console.error('[Xendit] handleConsultationPaid:', err.message);
     }
 };
 
-/**
- * Proses payment (medicine/appointment) setelah Xendit konfirmasi bayar.
- */
 const handlePaymentPaid = async (payment, xenditEvent, io) => {
     try {
         payment.status        = 'paid';
@@ -317,21 +389,16 @@ const handlePaymentPaid = async (payment, xenditEvent, io) => {
         payment.paidAt        = new Date(xenditEvent.paid_at || Date.now());
         await payment.save();
 
-        // Update order farmasi
         if (payment.paymentType === 'medicine') {
             const order = await Order.findById(payment.referenceId);
             if (order && order.status === 'pending') {
-                // Kurangi stok permanen, release lock
                 for (const item of order.items) {
                     await Medicine.findByIdAndUpdate(item.medicineId, {
                         $inc: { stock: -item.quantity, lockedStock: -item.quantity },
                     });
                 }
-                order.status    = 'paid';
-                order.updatedAt = new Date();
+                order.status = 'paid'; order.updatedAt = new Date();
                 await order.save();
-
-                // Notif spesifik order
                 await createNotification({
                     userId : order.userId,
                     type   : 'payment_verified',
@@ -340,9 +407,7 @@ const handlePaymentPaid = async (payment, xenditEvent, io) => {
                     data   : { orderId: order._id },
                     io,
                 });
-                if (io) io.to(`user-${order.userId}`).emit('order-status-update', {
-                    orderId: order._id.toString(), status: 'paid',
-                });
+                if (io) io.to(`user-${order.userId}`).emit('order-status-update', { orderId: order._id.toString(), status: 'paid' });
             }
         }
 
@@ -354,14 +419,12 @@ const handlePaymentPaid = async (payment, xenditEvent, io) => {
             data   : { paymentId: payment._id },
             io,
         });
-
         console.log(`[Xendit] Payment ${payment._id} → paid`);
     } catch (err) {
-        console.error('[Xendit] handlePaymentPaid error:', err.message);
+        console.error('[Xendit] handlePaymentPaid:', err.message);
     }
 };
 
-// Helper format date WIB
 const _fmtDate = (d) => {
     if (!d) return '-';
     return new Date(d).toLocaleString('id-ID', {
@@ -372,3 +435,4 @@ const _fmtDate = (d) => {
 
 module.exports = router;
 module.exports.handleConsultationPaid = handleConsultationPaid;
+module.exports.XENDIT_BANKS = XENDIT_BANKS;

@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
 
@@ -50,11 +50,13 @@ const S = {
     subtitle : { fontSize: 13, color: '#6b7280', marginBottom: 20 },
     label    : { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6, display: 'block' },
     input    : { width: '100%', border: '1px solid #d1d5db', borderRadius: 8, padding: '10px 12px', fontSize: 14, outline: 'none', resize: 'vertical' },
-    slot     : (available, selected) => ({
-        padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: available ? 'pointer' : 'not-allowed',
+    slot     : (available, selected, isPast) => ({
+        padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+        cursor: available ? 'pointer' : 'not-allowed',
         border: selected ? '2px solid #2563eb' : '1px solid #d1d5db',
-        background: selected ? '#eff6ff' : available ? '#fff' : '#f3f4f6',
-        color: selected ? '#2563eb' : available ? '#374151' : '#9ca3af',
+        background: selected ? '#eff6ff' : available ? '#fff' : isPast ? '#fafafa' : '#f3f4f6',
+        color: selected ? '#2563eb' : available ? '#374151' : isPast ? '#d1d5db' : '#9ca3af',
+        textDecoration: isPast ? 'line-through' : 'none',
         transition: 'all .15s',
     }),
     btnPrimary: (disabled) => ({
@@ -73,6 +75,10 @@ const S = {
 const BookingSlot = () => {
     const { doctorId }  = useParams();
     const navigate      = useNavigate();
+    const location      = useLocation();
+
+    // Jika ada rescheduleId di query string → mode reschedule (bukan booking baru)
+    const rescheduleId  = new URLSearchParams(location.search).get('rescheduleId') || null;
 
     const [doctor, setDoctor]         = useState(null);
     const [slots, setSlots]           = useState([]);
@@ -86,6 +92,7 @@ const BookingSlot = () => {
     const [loading, setLoading]       = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [noAvailability, setNoAvailability] = useState(false);
+    const [notReleasedMsg, setNotReleasedMsg] = useState('');
     const fileInputRef = React.useRef(null);
 
     // Fetch doctor & slots
@@ -99,9 +106,14 @@ const BookingSlot = () => {
             setDoctor(docRes.data);
 
             const allSlots = slotRes.data.slots || [];
-            if (allSlots.length === 0) {
+            if (slotRes.data.notReleased) {
+                setNotReleasedMsg(slotRes.data.message || 'Dokter belum merilis jadwal untuk minggu ini. Silakan cek kembali beberapa saat lagi.');
+                setNoAvailability(true);
+            } else if (allSlots.length === 0) {
+                setNotReleasedMsg('');
                 setNoAvailability(true);
             } else {
+                setNotReleasedMsg('');
                 setSlots(allSlots);
                 const g = groupByDate(allSlots);
                 setGrouped(g);
@@ -143,11 +155,23 @@ const BookingSlot = () => {
 
     const handleSubmit = async () => {
         if (!selectedSlot) return toast.error('Pilih slot waktu terlebih dahulu');
-        if (!symptoms.trim()) return toast.error('Keluhan wajib diisi');
+        if (!rescheduleId && !symptoms.trim()) return toast.error('Keluhan wajib diisi');
 
         setSubmitting(true);
         try {
-            // Step 1: Buat konsultasi (lock slot) — pakai FormData untuk support lampiran
+            if (rescheduleId) {
+                // ── Mode Reschedule ────────────────────────────────────────────
+                await api.put(`/api/consultations/${rescheduleId}/reschedule`, {
+                    scheduledAt  : selectedSlot.startUtc,
+                    scheduledEnd : selectedSlot.endUtc,
+                });
+                toast.success('Jadwal konsultasi berhasil diubah ✅');
+                navigate('/consultations');
+                return;
+            }
+
+            // ── Mode Booking Baru ──────────────────────────────────────────────
+            // Step 1: Buat konsultasi (lock slot)
             const fd = new FormData();
             fd.append('doctorId', doctorId);
             fd.append('consultationType', consultType);
@@ -224,17 +248,32 @@ const BookingSlot = () => {
 
                 {noAvailability ? (
                     <div style={{ ...S.card, textAlign: 'center', padding: 40 }}>
-                        <div style={{ fontSize: 48, marginBottom: 12 }}>📅</div>
-                        <div style={{ fontWeight: 700, fontSize: 16, color: '#374151', marginBottom: 8 }}>Jadwal Belum Tersedia</div>
-                        <div style={{ color: '#6b7280', fontSize: 14 }}>Dokter belum mengatur jadwal praktik atau tidak ada slot tersedia dalam 7 hari ke depan.</div>
+                        <div style={{ fontSize: 48, marginBottom: 12 }}>{notReleasedMsg ? '📋' : '📅'}</div>
+                        <div style={{ fontWeight: 700, fontSize: 16, color: '#374151', marginBottom: 8 }}>
+                            {notReleasedMsg ? 'Jadwal Belum Dirilis' : 'Jadwal Belum Tersedia'}
+                        </div>
+                        <div style={{ color: '#6b7280', fontSize: 14 }}>
+                            {notReleasedMsg || 'Dokter belum mengatur jadwal praktik atau tidak ada slot tersedia.'}
+                        </div>
                         <button onClick={() => navigate(-1)} style={{ marginTop: 20, padding: '10px 24px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>
                             Kembali
                         </button>
                     </div>
                 ) : (
                     <>
-                        {/* Tipe konsultasi */}
-                        <div style={S.card}>
+                        {/* Banner mode reschedule */}
+                        {rescheduleId && (
+                            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 16px', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 22 }}>🔄</span>
+                                <div>
+                                    <div style={{ fontWeight: 700, fontSize: 14, color: '#1d4ed8' }}>Mode Reschedule</div>
+                                    <div style={{ fontSize: 13, color: '#3b82f6' }}>Pilih jadwal baru di bawah. Tidak ada biaya tambahan — konsultasi sebelumnya sudah lunas.</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tipe konsultasi — hanya untuk booking baru */}
+                        {!rescheduleId && <div style={S.card}>
                             <div style={S.title}>Tipe Konsultasi</div>
                             <div style={{ display: 'flex', gap: 10 }}>
                                 {[{v:'chat', l:'💬 Chat'}, {v:'video_call', l:'📹 Video Call'}].map(t => (
@@ -244,7 +283,7 @@ const BookingSlot = () => {
                                     </button>
                                 ))}
                             </div>
-                        </div>
+                        </div>}
 
                         {/* Pilih Slot */}
                         <div style={S.card}>
@@ -268,11 +307,12 @@ const BookingSlot = () => {
                                     const isSel = selectedSlot?.startUtc === slot.startUtc;
                                     return (
                                         <button key={slot.startUtc}
-                                            style={S.slot(slot.available, isSel)}
+                                            style={S.slot(slot.available, isSel, slot.isPast)}
                                             disabled={!slot.available}
                                             onClick={() => slot.available && setSelectedSlot(slot)}>
                                             {slot.startTime}
-                                            {!slot.available && <span style={{ fontSize: 10, display: 'block', fontWeight: 400 }}>Penuh</span>}
+                                            {slot.isPast   && <span style={{ fontSize: 10, display: 'block', fontWeight: 400 }}>Lewat</span>}
+                                            {slot.isBooked && !slot.isPast && <span style={{ fontSize: 10, display: 'block', fontWeight: 400 }}>Penuh</span>}
                                         </button>
                                     );
                                 })}
@@ -285,8 +325,8 @@ const BookingSlot = () => {
                             )}
                         </div>
 
-                        {/* Keluhan */}
-                        <div style={S.card}>
+                        {/* Keluhan — hanya untuk booking baru */}
+                        {!rescheduleId && <div style={S.card}>
                             <div style={S.title}>Keluhan & Riwayat</div>
                             <div style={{ marginBottom: 14 }}>
                                 <label style={S.label}>Keluhan Utama <span style={{ color: '#ef4444' }}>*</span></label>
@@ -351,38 +391,53 @@ const BookingSlot = () => {
                                     </>
                                 )}
                             </div>
-                        </div>
+                        </div>}
 
                         {/* Ringkasan & Bayar */}
                         <div style={S.card}>
-                            <div style={S.title}>Ringkasan Booking</div>
+                            <div style={S.title}>{rescheduleId ? 'Ringkasan Reschedule' : 'Ringkasan Booking'}</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14, color: '#374151', marginBottom: 16 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <span>Dokter</span><strong>dr. {doctor?.name}</strong>
                                 </div>
+                                {!rescheduleId && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span>Tipe</span><strong>{consultType === 'chat' ? 'Chat' : 'Video Call'}</strong>
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>Tipe</span><strong>{consultType === 'chat' ? 'Chat' : 'Video Call'}</strong>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>Jadwal</span>
+                                    <span>Jadwal Baru</span>
                                     <strong>{selectedSlot ? `${fmtDateLabel(activeDate)}, ${selectedSlot.startTime} WIB` : '—'}</strong>
                                 </div>
-                                <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16, color: '#059669' }}>
-                                    <span>Total</span><span>{fmtRupiah(doctor?.consultationFee)}</span>
-                                </div>
+                                {!rescheduleId && (
+                                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16, color: '#059669' }}>
+                                        <span>Total</span><span>{fmtRupiah(doctor?.consultationFee)}</span>
+                                    </div>
+                                )}
+                                {rescheduleId && (
+                                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 15, color: '#2563eb' }}>
+                                        <span>Biaya Tambahan</span><span>Gratis</span>
+                                    </div>
+                                )}
                             </div>
 
-                            <div style={{ background: '#fefce8', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#92400e', marginBottom: 16 }}>
-                                ⏱ Slot akan dikunci selama <strong>15 menit</strong> setelah klik bayar. Selesaikan pembayaran sebelum waktu habis.
-                            </div>
+                            {rescheduleId ? (
+                                <div style={{ background: '#eff6ff', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#1d4ed8', marginBottom: 16 }}>
+                                    🔄 Mode Reschedule — Tidak ada biaya tambahan. Konsultasi sebelumnya tetap aktif.
+                                </div>
+                            ) : (
+                                <div style={{ background: '#fefce8', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#92400e', marginBottom: 16 }}>
+                                    ⏱ Slot akan dikunci selama <strong>15 menit</strong> setelah klik bayar. Selesaikan pembayaran sebelum waktu habis.
+                                </div>
+                            )}
 
                             <button
-                                style={S.btnPrimary(!selectedSlot || !symptoms.trim() || submitting)}
-                                disabled={!selectedSlot || !symptoms.trim() || submitting}
+                                style={S.btnPrimary(!selectedSlot || (!rescheduleId && !symptoms.trim()) || submitting)}
+                                disabled={!selectedSlot || (!rescheduleId && !symptoms.trim()) || submitting}
                                 onClick={handleSubmit}>
                                 {submitting
                                     ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,.4)', borderTop: '2px solid #fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} /> Memproses...</>
-                                    : '🔒 Kunci Slot & Bayar via Xendit'}
+                                    : rescheduleId ? '🔄 Konfirmasi Jadwal Baru' : '🔒 Kunci Slot & Bayar via Xendit'}
                             </button>
                             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                         </div>

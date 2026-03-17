@@ -861,17 +861,18 @@ const ConsultationChat = () => {
   const isLive      = ['in_progress', 'ongoing'].includes(consultation?.status);
   const isConfirmed = consultation?.status === 'confirmed';
   const isCompleted = ['completed', 'no_show'].includes(consultation?.status);
+  // Status yang memungkinkan user beri rating (feedback)
+  const isRatable   = ['completed', 'no_show', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(consultation?.status);
 
   // Dokter: bisa akses room kecuali saat pending_payment/expired
-  // User: bisa akses room saat confirmed/live/completed — terlepas dari waktu
-  //       (jika belum waktunya → tampilkan UI locked, bukan redirect)
-  const DOCTOR_BLOCKED = ['pending_payment', 'expired', 'cancelled', 'cancelled_by_doctor'];
+  // User: bisa akses room saat confirmed/live/completed/cancelled — untuk lihat history
+  const DOCTOR_BLOCKED = ['pending_payment', 'expired', 'cancelled'];
   const timeHasArrived = consultation?.scheduledAt
     ? msUntil(consultation.scheduledAt) <= 0
     : true;
   const canAccessRoom = isDoctor
     ? !DOCTOR_BLOCKED.includes(consultation?.status)
-    : (isConfirmed || isLive || isCompleted); // ← BUGFIX: hapus syarat timeHasArrived di sini
+    : (isConfirmed || isLive || isCompleted || isRatable);
 
   // Bisa chat hanya saat live: dokter kapan saja, user perlu waktu sudah tiba
   const canChat = isLive && (isDoctor || timeHasArrived);
@@ -1403,18 +1404,25 @@ const ConsultationChat = () => {
                   {consultation.medicalRecord?.isCompleted && (
                     <button onClick={downloadMedicalRecordPDF} style={s.actionBtn('#0e7490')}>⬇ Unduh Rekam Medis PDF</button>
                   )}
+                  {consultation.medicalRecord && !consultation.medicalRecord.isCompleted && (
+                    <div style={{ background: '#161b22', border: '1px solid #f0883e40', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#f0883e' }}>
+                      ⏳ Rekam medis sedang menunggu dilengkapi oleh dokter.
+                    </div>
+                  )}
                   {sickLetter?.status === 'issued' && (
                     <button onClick={downloadSickLetterPDF} style={s.actionBtn('#854d0e')}>⬇ Unduh Surat Sakit PDF</button>
                   )}
-                  {!consultation.rating && (
-                    <button onClick={() => setShowRating(true)} style={s.actionBtn('#ca8a04')}>⭐ Beri Rating</button>
-                  )}
-                  {consultation.rating && (
-                    <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#8b949e' }}>
-                      Rating Anda: {'⭐'.repeat(consultation.rating)}
-                    </div>
-                  )}
                 </>
+              )}
+
+              {/* Rating — tersedia untuk completed, no_show, cancelled_by_doctor/admin (feedback) */}
+              {isRatable && !consultation.rating && (
+                <button onClick={() => setShowRating(true)} style={s.actionBtn('#ca8a04')}>⭐ Beri Rating</button>
+              )}
+              {isRatable && consultation.rating && (
+                <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#8b949e' }}>
+                  Rating Anda: {'⭐'.repeat(consultation.rating)}
+                </div>
               )}
 
               {/* Saat live tapi belum ada dokumen */}

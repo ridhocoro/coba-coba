@@ -537,18 +537,46 @@ const NewConsultationWizard = ({ onCreated }) => {
   );
 };
 
+// ── Helper: deadline batal/reschedule (scheduledAt − 24 jam) ──────
+const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
+
+function canCancelConsultation(cons) {
+    if (!['confirmed'].includes(cons.status)) return false;
+    if (!cons.scheduledAt) return false;
+    return new Date(cons.scheduledAt).getTime() - Date.now() > CANCEL_DEADLINE_MS;
+}
+
+function fmtCancelDeadline(scheduledAt) {
+    const dl = new Date(new Date(scheduledAt).getTime() - CANCEL_DEADLINE_MS);
+    return dl.toLocaleString('id-ID', {
+        weekday: 'long', day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta',
+    }) + ' WIB';
+}
+
 // ── History Card ──────────────────────────────────────────────────
-const ConsultationCard = ({ cons, onPay, onChat, onDownload, onDownloadPrescription, onDownloadMedRecord, onRate, onRefund }) => {
+const ConsultationCard = ({ cons, onPay, onChat, onDownload, onDownloadPrescription, onDownloadMedRecord, onRate, onRefund, onCancel, onPostCancel, onReschedule }) => {
   const [expanded, setExpanded] = useState(false);
   const needsPay = cons.status === 'pending_payment';
   const canChat = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(cons.status);
   const isCompleted = cons.status === 'completed';
+  // Rating juga bisa diberikan untuk no_show/cancelled (sebagai feedback)
+  const canRate = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(cons.status) && !cons.rating;
   const hasSickLetter = cons.sickLetter?.status === 'issued';
   const hasPrescription = !!(cons.prescriptionData?.prescriptionNumber || cons.prescription);
   const hasMedRecord = !!cons.medicalRecord?.isCompleted;
   const canRefund = ['cancelled_by_doctor', 'doctor_no_show'].includes(cons.status);
   const isRefundPending = cons.status === 'refund_requested';
   const isRefundFailed = cons.status === 'refund_failed';
+  const showCancelBtn = canCancelConsultation(cons);
+  const isConfirmedPast = cons.status === 'confirmed' && cons.scheduledAt &&
+      (new Date(cons.scheduledAt).getTime() - Date.now() <= CANCEL_DEADLINE_MS);
+  // Reschedule tersedia jika confirmed dan masih dalam batas h-24
+  const canRescheduleConsultation = cons.status === 'confirmed' && showCancelBtn;
+
+  // Perlu tindakan pasca-pembatalan oleh dokter/admin/no-show
+  const needsPostCancelAction = ['doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(cons.status)
+      && !cons.postCancelChoice && cons.paidAt;
 
   return (
     <div style={{
@@ -590,6 +618,21 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onDownloadPrescript
           </div>
         )}
 
+        {/* Deadline batalkan/reschedule — tampilkan untuk confirmed */}
+        {cons.status === 'confirmed' && cons.scheduledAt && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 12,
+            background: showCancelBtn ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${showCancelBtn ? '#bbf7d0' : '#fecaca'}`,
+            color: showCancelBtn ? '#166534' : '#b91c1c',
+          }}>
+            {showCancelBtn
+              ? <>⏰ Anda dapat mengubah atau membatalkan jadwal ini hingga: <strong>{fmtCancelDeadline(cons.scheduledAt)}</strong></>
+              : <>🔒 Batas pembatalan telah lewat ({fmtCancelDeadline(cons.scheduledAt)})</>
+            }
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           {needsPay && (
             <button onClick={onPay}
@@ -603,7 +646,25 @@ const ConsultationCard = ({ cons, onPay, onChat, onDownload, onDownloadPrescript
               💬 {cons.status === 'ongoing' ? 'Lanjutkan Chat' : 'Buka Room'}
             </button>
           )}
-          {isCompleted && !cons.rating && (
+          {showCancelBtn && onCancel && (
+            <button onClick={onCancel}
+              style={{ background: '#fff', color: '#ef4444', border: '1px solid #fecaca', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              ❌ Batalkan & Refund
+            </button>
+          )}
+          {canRescheduleConsultation && onReschedule && (
+            <button onClick={onReschedule}
+              style={{ background: '#fff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              🔄 Reschedule
+            </button>
+          )}
+          {needsPostCancelAction && onPostCancel && (
+            <button onClick={onPostCancel}
+              style={{ background: 'linear-gradient(135deg,#1d4ed8,#2563eb)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              🔄 Pilih Refund / Reschedule
+            </button>
+          )}
+          {canRate && (
             <button onClick={onRate}
               style={{ background: 'linear-gradient(135deg,#854d0e,#ca8a04)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
               ⭐ Beri Rating
@@ -850,7 +911,29 @@ const Consultations = () => {
   const [loading, setLoading] = useState(true);
   const [payModal, setPayModal] = useState(null);
   const [ratingModal, setRatingModal] = useState(null);
-  const [refundModal, setRefundModal] = useState(null); // consultation object
+  const [refundModal, setRefundModal] = useState(null);
+  const [cancelModal, setCancelModal] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  // Bank info untuk disbursement (paidAt > 7 hari)
+  const [needsBankInfo, setNeedsBankInfo]   = useState(false);
+  const [bankCode, setBankCode]             = useState('');
+  const [accountNumber, setAccountNumber]   = useState('');
+  const [accountName, setAccountName]       = useState('');
+  const [bankList, setBankList]             = useState([]);
+
+  // Post-cancel choice (reschedule atau refund setelah doctor_no_show/cancelled_by_doctor/admin)
+  const [postCancelModal, setPostCancelModal] = useState(null); // consultation object
+  const [postCancelChoice, setPostCancelChoice] = useState(null); // 'refund'|'reschedule'
+  const [postCancelBankCode, setPostCancelBankCode] = useState('');
+  const [postCancelAccount, setPostCancelAccount] = useState('');
+  const [postCancelAccountName, setPostCancelAccountName] = useState('');
+  const [postCancelProcessing, setPostCancelProcessing] = useState(false);
+
+  // Fetch daftar bank Xendit
+  useEffect(() => {
+    api.get('/api/xendit/banks').then(r => setBankList(r.data.banks || [])).catch(() => {});
+  }, []);
 
   const fetchConsultations = useCallback(async () => {
     setLoading(true);
@@ -860,6 +943,56 @@ const Consultations = () => {
     } catch { toast.error('Gagal memuat konsultasi'); }
     finally { setLoading(false); }
   }, []);
+
+  const handleCancelConsultation = async () => {
+    if (!cancelModal) return;
+    setCancelling(true);
+    try {
+      const payload = { reason: 'Dibatalkan oleh pasien' };
+      if (needsBankInfo) {
+        if (!bankCode || !accountNumber || !accountName) {
+          toast.error('Data rekening wajib diisi untuk menerima refund');
+          setCancelling(false); return;
+        }
+        payload.bankCode = bankCode;
+        payload.accountNumber = accountNumber;
+        payload.accountName = accountName;
+      }
+      const r = await api.put(`/api/consultations/${cancelModal._id}/cancel`, payload);
+      if (r.data.needsBankInfo) {
+        setNeedsBankInfo(true);
+        setCancelling(false); return;
+      }
+      toast.success('Konsultasi dibatalkan. Refund akan diproses dalam 1x24 jam.');
+      setCancelModal(null); setNeedsBankInfo(false);
+      setBankCode(''); setAccountNumber(''); setAccountName('');
+      fetchConsultations();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Gagal membatalkan konsultasi');
+    } finally { setCancelling(false); }
+  };
+
+  const handlePostCancelChoice = async () => {
+    if (!postCancelModal || !postCancelChoice) return;
+    setPostCancelProcessing(true);
+    try {
+      if (postCancelChoice === 'refund') {
+        const payload = {};
+        if (postCancelBankCode) {
+          payload.bankCode = postCancelBankCode;
+          payload.accountNumber = postCancelAccount;
+          payload.accountName = postCancelAccountName;
+        }
+        await api.post(`/api/xendit/refund/${postCancelModal._id}`, payload);
+        toast.success('Refund sedang diproses. Dana akan masuk dalam 1x24 jam.');
+        setPostCancelModal(null); fetchConsultations();
+      } else if (postCancelChoice === 'reschedule') {
+        navigate(`/consultations/book/${postCancelModal.doctorId?._id || postCancelModal.doctorId}?rescheduleId=${postCancelModal._id}`);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memproses pilihan');
+    } finally { setPostCancelProcessing(false); }
+  };
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
@@ -940,8 +1073,8 @@ const Consultations = () => {
   };
 
   const active = consultations.filter(c => ['pending_payment', 'waiting_verification', 'confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(c.status));
-  const needsAction = consultations.filter(c => ['cancelled_by_doctor', 'doctor_no_show', 'refund_requested', 'refund_failed'].includes(c.status));
-  const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show', 'refunded'].includes(c.status));
+  const needsAction = consultations.filter(c => ['cancelled_by_doctor', 'cancelled_by_admin', 'cancelled_by_user', 'doctor_no_show', 'refund_requested', 'refund_failed'].includes(c.status));
+  const history = consultations.filter(c => ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show', 'refunded', 'cancelled_by_user', 'cancelled_by_admin', 'cancelled_by_doctor'].includes(c.status) && !needsAction.find(n => n._id === c._id));
 
   const s = { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" };
 
@@ -984,6 +1117,8 @@ const Consultations = () => {
                     onDownloadMedRecord={() => handleDownloadMedRecord(cons)}
                     onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
                     onRefund={() => setRefundModal(cons)}
+                    onCancel={() => setCancelModal(cons)}
+                    onReschedule={() => navigate(`/consultations/book/${cons.doctorId?._id || cons.doctorId}?rescheduleId=${cons._id}`)}
                   />
                 ))}
               </div>
@@ -1002,6 +1137,7 @@ const Consultations = () => {
                     onDownloadMedRecord={() => handleDownloadMedRecord(cons)}
                     onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
                     onRefund={() => setRefundModal(cons)}
+                    onPostCancel={() => { setPostCancelModal(cons); setPostCancelChoice(null); setPostCancelBankCode(''); setPostCancelAccount(''); setPostCancelAccountName(''); }}
                   />
                 ))}
               </div>
@@ -1069,6 +1205,134 @@ const Consultations = () => {
           onClose={() => setRefundModal(null)}
           onSuccess={fetchConsultations}
         />
+      )}
+
+      {/* Modal Konfirmasi Batalkan Konsultasi */}
+      {cancelModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <span style={{ fontWeight: 700, fontSize: 16, color: '#111827' }}>❌ Batalkan Konsultasi</span>
+              <button onClick={() => { setCancelModal(null); setNeedsBankInfo(false); setBankCode(''); setAccountNumber(''); setAccountName(''); }} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#6b7280' }}>×</button>
+            </div>
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#b91c1c', marginBottom: 16 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠️ Perhatian</div>
+              <div>Pembatalan akan memicu <strong>refund otomatis</strong> ke rekening Anda dalam <strong>1x24 jam</strong>.</div>
+              <div style={{ marginTop: 4, color: '#991b1b' }}>Catatan: biaya layanan payment gateway tidak termasuk dalam refund.</div>
+            </div>
+            <div style={{ fontSize: 13, color: '#374151', marginBottom: 16, lineHeight: 1.7 }}>
+              <div>👨‍⚕️ <strong>Dokter:</strong> dr. {cancelModal.doctorId?.name}</div>
+              <div>📅 <strong>Jadwal:</strong> {cancelModal.scheduledAt ? new Date(cancelModal.scheduledAt).toLocaleString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB' : '—'}</div>
+            </div>
+
+            {needsBankInfo && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#92400e', marginBottom: 4 }}>
+                  💳 Masukkan data rekening untuk menerima refund
+                </div>
+                <div style={{ fontSize: 12, color: '#b45309', marginBottom: 10 }}>
+                  Metode pembayaran yang digunakan tidak mendukung refund otomatis. Dana akan dikirim langsung ke rekening Anda dalam 1x24 jam.
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Bank <span style={{ color: '#ef4444' }}>*</span></label>
+                    <select value={bankCode} onChange={e => setBankCode(e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13 }}>
+                      <option value="">— Pilih Bank —</option>
+                      {bankList.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Nomor Rekening <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} placeholder="mis. 1234567890" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Nama Pemilik Rekening <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input value={accountName} onChange={e => setAccountName(e.target.value)} placeholder="Sesuai nama di buku tabungan" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => { setCancelModal(null); setNeedsBankInfo(false); setBankCode(''); setAccountNumber(''); setAccountName(''); }}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', fontWeight: 600, cursor: 'pointer' }}>
+                Kembali
+              </button>
+              <button onClick={handleCancelConsultation} disabled={cancelling}
+                style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: cancelling ? 0.6 : 1 }}>
+                {cancelling ? 'Memproses...' : needsBankInfo ? 'Konfirmasi & Refund' : 'Ya, Batalkan & Refund'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Post-Cancel: Pilih Refund atau Reschedule (doctor_no_show / cancelled_by_doctor / cancelled_by_admin) */}
+      {postCancelModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontWeight: 700, fontSize: 16, color: '#111827' }}>
+                {postCancelModal.status === 'doctor_no_show' ? '😔 Dokter Tidak Hadir' : '🚫 Konsultasi Dibatalkan'}
+              </span>
+              <button onClick={() => setPostCancelModal(null)} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#6b7280' }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 18 }}>
+              Konsultasi Anda dengan <strong>dr. {postCancelModal.doctorId?.name}</strong> tidak dapat dilanjutkan. Pilih tindakan selanjutnya:
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
+              <label style={{ border: `2px solid ${postCancelChoice === 'reschedule' ? '#2563eb' : '#e5e7eb'}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', background: postCancelChoice === 'reschedule' ? '#eff6ff' : '#fff' }}>
+                <input type="radio" value="reschedule" checked={postCancelChoice === 'reschedule'} onChange={() => setPostCancelChoice('reschedule')} style={{ marginRight: 8 }} />
+                <strong style={{ color: '#111827' }}>🔄 Reschedule</strong>
+                <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0 20px' }}>Pilih jadwal baru dengan dokter yang sama. Tidak dikenakan biaya tambahan.</p>
+              </label>
+              <label style={{ border: `2px solid ${postCancelChoice === 'refund' ? '#2563eb' : '#e5e7eb'}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', background: postCancelChoice === 'refund' ? '#eff6ff' : '#fff' }}>
+                <input type="radio" value="refund" checked={postCancelChoice === 'refund'} onChange={() => setPostCancelChoice('refund')} style={{ marginRight: 8 }} />
+                <strong style={{ color: '#111827' }}>💰 Refund 100%</strong>
+                <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0 20px' }}>Dana dikembalikan dalam 1x24 jam. Catatan: biaya payment gateway tidak termasuk dalam refund.</p>
+              </label>
+            </div>
+
+            {postCancelChoice === 'refund' && (() => {
+              const REFUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+              const paidAt = postCancelModal.paidAt;
+              const needsBank = !paidAt || (Date.now() - new Date(paidAt).getTime()) >= REFUND_WINDOW_MS;
+              return needsBank ? (
+              <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#92400e', marginBottom: 10 }}>💳 Masukkan data rekening untuk refund</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Bank <span style={{ color: '#ef4444' }}>*</span></label>
+                    <select value={postCancelBankCode} onChange={e => setPostCancelBankCode(e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13 }}>
+                      <option value="">— Pilih Bank —</option>
+                      {bankList.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Nomor Rekening <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input value={postCancelAccount} onChange={e => setPostCancelAccount(e.target.value)} placeholder="mis. 1234567890" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Nama Pemilik Rekening <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input value={postCancelAccountName} onChange={e => setPostCancelAccountName(e.target.value)} placeholder="Sesuai nama di buku tabungan" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+              </div>
+              ) : null;
+            })()}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setPostCancelModal(null)} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', fontWeight: 600, cursor: 'pointer' }}>
+                Nanti
+              </button>
+              <button onClick={handlePostCancelChoice} disabled={!postCancelChoice || postCancelProcessing}
+                style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: !postCancelChoice ? '#9ca3af' : '#2563eb', color: '#fff', fontWeight: 700, cursor: !postCancelChoice ? 'not-allowed' : 'pointer', opacity: postCancelProcessing ? 0.6 : 1 }}>
+                {postCancelProcessing ? 'Memproses...' : postCancelChoice === 'reschedule' ? 'Pilih Jadwal Baru →' : postCancelChoice === 'refund' ? 'Konfirmasi Refund' : 'Pilih Tindakan'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Rating Modal */}

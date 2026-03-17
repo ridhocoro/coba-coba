@@ -91,6 +91,7 @@ router.get('/my/profile', auth, doctorAuth, async (req, res) => {
                 bio:              doctor.bio,
                 experience:       doctor.experience,
                 photo:            doctor.photo,
+                signatureUrl:     doctor.signatureUrl || '',
                 consultationFee:  doctor.consultationFee,
                 isActive:         doctor.isActive,
                 isOnline:         doctor.isOnline,
@@ -111,11 +112,12 @@ router.get('/my/profile', auth, doctorAuth, async (req, res) => {
 
 /**
  * PUT /my/profile
- * Update profil dokter sendiri.
+ * Update profil dokter sendiri — consultationFee TIDAK bisa diubah dokter, hanya admin.
  */
 router.put('/my/profile', auth, doctorAuth, async (req, res) => {
     try {
-        const { name, specialization, qualification, gender, bio, experience, consultationFee } = req.body;
+        const { name, specialization, qualification, gender, bio, experience } = req.body;
+        // consultationFee sengaja tidak diambil dari req.body
 
         if (!name?.trim())           return res.status(400).json({ success: false, message: 'Nama wajib diisi' });
         if (!specialization?.trim()) return res.status(400).json({ success: false, message: 'Spesialisasi wajib diisi' });
@@ -124,13 +126,13 @@ router.put('/my/profile', auth, doctorAuth, async (req, res) => {
             { userId: req.userId },
             {
                 $set: {
-                    name:            name.trim(),
-                    specialization:  specialization.trim(),
-                    qualification:   qualification?.trim()   || '',
-                    gender:          gender                  || '',
-                    bio:             bio?.trim()             || '',
-                    experience:      experience     ? Number(experience)     : 0,
-                    consultationFee: consultationFee ? Number(consultationFee) : 0,
+                    name:           name.trim(),
+                    specialization: specialization.trim(),
+                    qualification:  qualification?.trim()   || '',
+                    gender:         gender                  || '',
+                    bio:            bio?.trim()             || '',
+                    experience:     experience ? Number(experience) : 0,
+                    // consultationFee TIDAK diupdate di sini
                 },
             },
             { new: true }
@@ -176,6 +178,44 @@ router.post('/my/photo', auth, doctorAuth, photoUpload.single('photo'), async (r
         res.json({ success: true, message: 'Foto berhasil diupload', photoUrl, doctor });
     } catch (error) {
         console.error('POST /my/photo error:', error);
+        if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ success: false, message: 'Ukuran file maksimal 5MB' });
+        }
+        res.status(500).json({ success: false, message: error.message || 'Terjadi kesalahan server' });
+    }
+});
+
+/**
+ * POST /my/signature
+ * Upload tanda tangan dokter (dipakai di surat sakit PDF).
+ * Field: "signature" (gambar JPG/PNG/WEBP, maks 5 MB).
+ * Disarankan: gambar tanda tangan dengan background putih/transparan.
+ */
+router.post('/my/signature', auth, doctorAuth, photoUpload.single('signature'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: 'File tanda tangan tidak ditemukan' });
+
+        const signatureUrl = `/uploads/doctors/${req.file.filename}`;
+
+        // Hapus tanda tangan lama
+        const existing = await Doctor.findOne({ userId: req.userId }).select('signatureUrl');
+        if (existing?.signatureUrl?.includes('/uploads/doctors/')) {
+            const oldFilename = existing.signatureUrl.split('/uploads/doctors/').pop();
+            const oldPath = path.join(uploadDir, oldFilename);
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        }
+
+        const doctor = await Doctor.findOneAndUpdate(
+            { userId: req.userId },
+            { $set: { signatureUrl } },
+            { new: true }
+        );
+
+        if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
+
+        res.json({ success: true, message: 'Tanda tangan berhasil diupload', signatureUrl, doctor });
+    } catch (error) {
+        console.error('POST /my/signature error:', error);
         if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({ success: false, message: 'Ukuran file maksimal 5MB' });
         }

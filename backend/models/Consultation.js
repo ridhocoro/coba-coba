@@ -11,15 +11,20 @@ const messageSchema = new mongoose.Schema({
 });
 
 const refundSchema = new mongoose.Schema({
-    bankName:      { type: String },
-    accountNumber: { type: String },
-    accountName:   { type: String },
-    proofUrl:      { type: String },
-    requestedAt:   { type: Date },
-    processedAt:   { type: Date },
-    failReason:    { type: String },
-    adminId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    notes:         { type: String }
+    bankName:       { type: String },
+    bankCode:       { type: String },   // kode bank Xendit, mis. 'BCA', 'BNI'
+    accountNumber:  { type: String },
+    accountName:    { type: String },
+    proofUrl:       { type: String },
+    requestedAt:    { type: Date },
+    processedAt:    { type: Date },
+    failReason:     { type: String },
+    adminId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    notes:          { type: String },
+    // Xendit refund / disbursement
+    xenditRefundId:        { type: String },  // untuk invoice <7 hari (Refund API)
+    xenditDisbursementId:  { type: String },  // untuk invoice >7 hari (Disbursement API)
+    method:         { type: String, enum: ['xendit_refund','xendit_disbursement','manual'], default: 'manual' },
 });
 
 // Obat dalam resep
@@ -80,8 +85,8 @@ const consultationSchema = new mongoose.Schema({
         enum: [
             'pending_payment', 'waiting_verification', 'confirmed',
             'in_progress', 'completed', 'no_show', 'doctor_no_show',
-            'cancelled_by_doctor', 'expired', 'refund_requested',
-            'refunded', 'refund_failed',
+            'cancelled_by_doctor', 'cancelled_by_user', 'cancelled_by_admin',
+            'expired', 'refund_requested', 'refunded', 'refund_failed',
             // legacy
             'draft', 'paid', 'scheduled', 'ongoing', 'cancelled', 'rejected_payment'
         ],
@@ -125,12 +130,16 @@ const consultationSchema = new mongoose.Schema({
     xenditRefundId:      { type: String },
     xenditPaymentMethod: { type: String },
     paidAt:              { type: Date },
+    amount:              { type: Number },  // biaya konsultasi saat booking (snapshot)
 
     refund: refundSchema,
 
     cancelledAt:  Date,
     cancelledBy:  { type: String, enum: ['user', 'doctor', 'admin', 'system'] },
     cancelReason: String,
+
+    // Pilihan user setelah doctor_no_show / cancelled_by_doctor / cancelled_by_admin
+    postCancelChoice: { type: String, enum: ['refund', 'reschedule', null], default: null },
 
     // ── Reschedule history ────────────────────────────────────────
     rescheduleHistory : [{

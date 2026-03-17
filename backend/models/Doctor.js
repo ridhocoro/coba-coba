@@ -5,7 +5,7 @@ const doctorSchema = new mongoose.Schema({
     name:           { type: String, required: true },
     specialization: { type: String, required: true },
     qualification:  String,
-    gender:         { type: String, default: '' },   // ← ditambahkan
+    gender:         { type: String, default: '' },
     experience:     Number,
     consultationFee:{ type: Number, required: true },
     availableDays: [{
@@ -20,8 +20,9 @@ const doctorSchema = new mongoose.Schema({
     totalReviews: { type: Number, default: 0 },
     isActive:     { type: Boolean, default: true },
     isOnline:     { type: Boolean, default: false },
-    bio:   String,
-    photo: String,
+    bio:          String,
+    photo:        String,
+    signatureUrl: { type: String, default: '' }, // tanda tangan dokter untuk surat sakit
     consultationSettings: {
         allowChat:      { type: Boolean, default: true },
         allowVideoCall: { type: Boolean, default: true },

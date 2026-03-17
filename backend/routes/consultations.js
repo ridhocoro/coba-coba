@@ -71,9 +71,18 @@ router.get('/my-consultations', auth, async (req, res) => {
             .populate('doctorId', 'name specialization consultationFee rating photo isOnline')
             .populate('paymentId')
             .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate issuedAt patientAge patientGender' })
-            // medicalRecord & prescriptionData adalah embedded subdocument, tidak di-populate
             .sort('-createdAt');
-        res.json(consultations);
+
+        const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
+        const withDeadline = consultations.map(c => {
+            const obj = c.toObject();
+            if (c.scheduledAt) {
+                obj.cancelDeadline = new Date(new Date(c.scheduledAt).getTime() - CANCEL_DEADLINE_MS).toISOString();
+            }
+            return obj;
+        });
+
+        res.json(withDeadline);
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
     }
@@ -168,14 +177,9 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         const slotEnd   = new Date(scheduledEnd);
         const now = new Date();
 
-        if (slotStart <= now) {
-            return res.status(400).json({ message: 'Tidak bisa memesan slot yang sudah lewat' });
-        }
-
-        // Batas 7 hari ke depan
-        const maxDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        if (slotStart > maxDate) {
-            return res.status(400).json({ message: 'Pemesanan hanya tersedia hingga 7 hari ke depan' });
+        const CONS_CUTOFF_MS = 20 * 60 * 1000; // 20 menit sebelum slot
+        if (slotStart.getTime() - now.getTime() < CONS_CUTOFF_MS) {
+            return res.status(400).json({ message: 'Pemesanan harus dilakukan minimal 20 menit sebelum jadwal' });
         }
 
         // ── Race condition check: slot locked ──────────────────────────────────
@@ -195,14 +199,24 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         if (!avail || !avail.isActive) {
             return res.status(400).json({ message: 'Dokter belum mengatur jadwal praktik atau sedang tidak menerima konsultasi' });
         }
+        if (!avail.isWeekActive()) {
+            return res.status(400).json({ message: 'Dokter belum merilis jadwal untuk minggu ini. Silakan cek kembali beberapa saat lagi.' });
+        }
+
+        // Validasi slot dalam rentang weekStart–weekEnd
+        if (slotStart < avail.weekStart || slotStart > avail.weekEnd) {
+            return res.status(400).json({ message: 'Slot di luar rentang jadwal minggu ini.' });
+        }
 
         // Konversi scheduledAt (UTC dari DB/frontend) → WIB untuk validasi
         const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
         const slotWIB = new Date(slotStart.getTime() + WIB_OFFSET_MS);
 
-        // Cek hari praktik — gunakan schedule Map (key '1'–'5', Senin=1 ... Jumat=5)
-        // slotWIB.getUTCDay() → 0=Minggu,1=Sen,...,6=Sab
-        const dayOfWeek = slotWIB.getUTCDay(); // 1–5 untuk hari kerja
+        // Cek hari praktik — key '1'–'6' (Senin–Sabtu). Minggu (0) tidak diizinkan.
+        const dayOfWeek = slotWIB.getUTCDay();
+        if (dayOfWeek === 0) {
+            return res.status(400).json({ message: 'Konsultasi tidak tersedia hari Minggu.' });
+        }
         const slotsForDay = avail.getSlotsForDay(dayOfWeek);
         if (!slotsForDay || slotsForDay.length === 0) {
             return res.status(400).json({ message: 'Dokter tidak praktik pada hari tersebut' });
@@ -222,7 +236,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         const slotEndWIB  = new Date(slotEnd.getTime() + WIB_OFFSET_MS);
         const slotEndHHMM = `${String(slotEndWIB.getUTCHours()).padStart(2,'0')}:${String(slotEndWIB.getUTCMinutes()).padStart(2,'0')}`;
         const toMin = (hhmm) => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
-        const SESSION_DURATION = 60; // menit
+        const SESSION_DURATION = 30; // menit — durasi satu sesi konsultasi
         const expectedEndMin = toMin(slotHHMM) + SESSION_DURATION;
         if (toMin(slotEndHHMM) !== expectedEndMin) {
             return res.status(400).json({ message: 'Waktu selesai slot tidak sesuai' });
@@ -244,6 +258,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
             symptoms,
             medicalHistory,
             attachmentUrls,
+            amount: doctor.consultationFee, // snapshot biaya saat booking
             status: 'pending_payment',
             paymentDeadline
         });
@@ -480,6 +495,15 @@ router.put('/:id/end', auth, async (req, res) => {
             return res.status(400).json({ message: `Status harus in_progress, saat ini: ${consultation.status}` });
         }
 
+        // ── Rekam medis wajib: Assessment (A) dan Plan (P) ────────────────────
+        const { assessment, plan, objectiveFindings, doctorNotes } = req.body;
+        if (!assessment?.trim()) {
+            return res.status(400).json({ message: 'Diagnosis (Assessment) wajib diisi sebelum mengakhiri sesi' });
+        }
+        if (!plan?.trim()) {
+            return res.status(400).json({ message: 'Rencana Terapi (Plan) wajib diisi sebelum mengakhiri sesi' });
+        }
+
         // Tentukan no_show: jika tidak ada satu pesan pun dari user
         const userMessages = consultation.messages.filter(
             m => m.senderId?.toString() === consultation.userId?.toString()
@@ -487,10 +511,24 @@ router.put('/:id/end', auth, async (req, res) => {
         const finalStatus = userMessages.length === 0 ? 'no_show' : 'completed';
         const now = new Date();
 
-        // ── Atomic update ──────────────────────────────────────────────────────
+        // ── Atomic update — simpan rekam medis sekaligus ──────────────────────
         const updated = await Consultation.findOneAndUpdate(
             { _id: req.params.id, status: 'in_progress' },
-            { $set: { status: finalStatus, endTime: now } },
+            {
+                $set: {
+                    status: finalStatus,
+                    endTime: now,
+                    diagnosis: assessment.trim(),
+                    medicalRecord: {
+                        objectiveFindings: objectiveFindings?.trim() || '',
+                        assessment:        assessment.trim(),
+                        plan:              plan.trim(),
+                        doctorNotes:       doctorNotes?.trim() || '',
+                        isCompleted:       true,
+                        completedAt:       now,
+                    },
+                },
+            },
             { new: true }
         );
 
@@ -504,7 +542,7 @@ router.put('/:id/end', auth, async (req, res) => {
             title: finalStatus === 'no_show' ? 'Sesi Berakhir — Tidak Hadir' : 'Konsultasi Selesai ✅',
             message: finalStatus === 'no_show'
                 ? 'Dokter telah mengakhiri sesi namun Anda tidak mengirim pesan. Status: Tidak Hadir.'
-                : 'Konsultasi Anda telah selesai. Silakan beri rating.',
+                : 'Konsultasi Anda telah selesai. Rekam medis tersedia. Silakan beri rating.',
             data: { consultationId: updated._id },
             io: req.app.get('io')
         });
@@ -515,7 +553,9 @@ router.put('/:id/end', auth, async (req, res) => {
                 consultationId: updated._id.toString(),
                 status        : finalStatus,
             });
-            // Emit event khusus agar frontend tampilkan rating modal
+            io.to(`consultation-${updated._id}`).emit('medical-record-update', {
+                medicalRecord: updated.medicalRecord,
+            });
             if (finalStatus === 'completed') {
                 io.to(`user-${updated.userId}`).emit('show-rating-modal', {
                     consultationId: updated._id.toString(),
@@ -644,32 +684,309 @@ router.put('/:id/no-show', auth, async (req, res) => {
 
 router.put('/:id/cancel', auth, async (req, res) => {
     try {
-        const consultation = await Consultation.findById(req.params.id);
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('doctorId', 'name userId consultationFee');
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        if (req.userRole === 'user') {
-            if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
-            if (consultation.status !== 'pending_payment') {
-                return res.status(400).json({ message: 'Hanya bisa dibatalkan saat menunggu pembayaran' });
+        const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
+        const io = req.app.get('io');
+
+        if (req.userRole === 'user' || req.userRole === 'mahasiswa') {
+            if (consultation.userId.toString() !== req.userId)
+                return res.status(403).json({ message: 'Akses ditolak' });
+
+            if (consultation.status === 'pending_payment') {
+                consultation.status      = 'expired';
+                consultation.cancelledBy = 'user';
+                consultation.cancelledAt = new Date();
+                await consultation.save();
+                await createNotification({ userId: consultation.userId, type: 'consultation_cancelled',
+                    title: 'Konsultasi Dibatalkan', message: 'Konsultasi Anda telah dibatalkan.',
+                    data: { consultationId: consultation._id }, io });
+                return res.json({ success: true, consultation });
+
+            } else if (consultation.status === 'confirmed' || consultation.status === 'cancelled_by_user') {
+                // cancelled_by_user: sudah dibatalkan tapi refund belum berhasil (perlu bank info)
+                if (consultation.status === 'confirmed') {
+                if (!consultation.scheduledAt)
+                    return res.status(400).json({ message: 'Data jadwal tidak ditemukan' });
+                const msUntil = new Date(consultation.scheduledAt).getTime() - Date.now();
+                if (msUntil < CANCEL_DEADLINE_MS) {
+                    const dl = new Date(new Date(consultation.scheduledAt).getTime() - CANCEL_DEADLINE_MS);
+                    return res.status(400).json({
+                        message: `Batas pembatalan sudah lewat. Hanya bisa dibatalkan sebelum ${dl.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB.`,
+                    });
+                }
+                }
+
+                // Tandai cancelled (skip jika sudah cancelled_by_user)
+                if (consultation.status === 'confirmed') {
+                    consultation.status      = 'cancelled_by_user';
+                    consultation.cancelledBy = 'user';
+                    consultation.cancelledAt = new Date();
+                    consultation.cancelReason = req.body.reason || 'Dibatalkan oleh pasien';
+                    consultation.refund = { requestedAt: new Date(), notes: 'Pembatalan oleh pasien' };
+                    await consultation.save();
+                }
+
+                // Cek apakah perlu bank info (paidAt >= 7 hari ATAU paidAt tidak tersimpan)
+                const REFUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+                const paidAt   = consultation.paidAt ? new Date(consultation.paidAt) : null;
+                const within7d = paidAt && (Date.now() - paidAt.getTime()) < REFUND_WINDOW_MS;
+                const hasBankInfo = req.body.bankCode && req.body.accountNumber && req.body.accountName;
+
+                // Jika paidAt tidak ada atau lebih dari 7 hari, dan belum ada bank info → minta ke frontend
+                if (!within7d && !hasBankInfo) {
+                    return res.status(200).json({
+                        success: true, needsBankInfo: true, consultation,
+                        message: 'Masukkan data rekening untuk menerima refund.',
+                    });
+                }
+
+                // Proses refund
+                try {
+                    const refundPayload = {
+                        bankCode: req.body.bankCode,
+                        accountNumber: req.body.accountNumber,
+                        accountName: req.body.accountName,
+                    };
+                    await processRefundInternal(consultation._id.toString(), refundPayload, io);
+                } catch (refundErr) {
+                    if (refundErr.message === 'NEED_BANK_INFO') {
+                        // Edge case: paidAt ada tapi Xendit refund API gagal karena alasan lain
+                        return res.status(200).json({
+                            success: true, needsBankInfo: true, consultation,
+                            message: 'Masukkan data rekening untuk menerima refund.',
+                        });
+                    }
+                    console.error('[cancel] refund failed:', refundErr.message);
+                    // Refund gagal karena error lain — set refund_requested agar admin proses manual
+                    await Consultation.findByIdAndUpdate(consultation._id, { status: 'refund_requested' });
+                }
+
+                await createNotification({ userId: consultation.userId, type: 'consultation_cancelled',
+                    title: 'Konsultasi Dibatalkan',
+                    message: 'Konsultasi Anda dibatalkan. Catatan: biaya layanan payment gateway tidak termasuk dalam refund. Refund akan diproses dalam 1x24 jam.',
+                    data: { consultationId: consultation._id }, io });
+                return res.json({ success: true, consultation: await Consultation.findById(consultation._id) });
+
+            } else {
+                return res.status(400).json({ message: `Tidak bisa membatalkan konsultasi dengan status: ${consultation.status}` });
             }
-            consultation.status = 'expired';
-            consultation.cancelledBy = 'user';
-            consultation.cancelledAt = new Date();
+
         } else if (req.userRole === 'admin') {
-            consultation.status = 'cancelled_by_doctor';
+            const cancellable = ['confirmed', 'waiting_verification', 'pending_payment'];
+            if (!cancellable.includes(consultation.status))
+                return res.status(400).json({ message: `Tidak bisa batalkan dari status ${consultation.status}` });
+
+            const wasPaid = consultation.status === 'confirmed' && consultation.paidAt;
+            consultation.status      = 'cancelled_by_admin';
             consultation.cancelledBy = 'admin';
             consultation.cancelledAt = new Date();
             consultation.cancelReason = req.body.reason || '';
+            consultation.refund = { requestedAt: new Date(), notes: 'Dibatalkan oleh admin' };
+            await consultation.save();
+
+            if (wasPaid) {
+                try { await processRefundInternal(consultation._id.toString(), {}, io); }
+                catch (e) { console.error('[admin cancel] refund failed:', e.message); }
+            }
+
+            await createNotification({ userId: consultation.userId, type: 'consultation_cancelled',
+                title: 'Konsultasi Dibatalkan oleh Admin',
+                message: wasPaid ? 'Konsultasi Anda dibatalkan. Refund akan diproses dalam 1x24 jam.' : 'Konsultasi Anda telah dibatalkan.',
+                data: { consultationId: consultation._id }, io });
+            return res.json({ success: true, consultation });
+
         } else {
             return res.status(403).json({ message: 'Akses ditolak' });
         }
+    } catch (err) {
+        console.error('[cancel route] ERROR:', err.message);
+        console.error('[cancel route] STACK:', err.stack);
+        res.status(500).json({ message: 'Server error', error: err.message, stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined });
+    }
+});
+// Berlaku untuk: confirmed (user reschedule biasa) ATAU
+//   doctor_no_show / cancelled_by_doctor / cancelled_by_admin (pilihan reschedule)
+router.put('/:id/reschedule', auth, async (req, res) => {
+    try {
+        const { scheduledAt, scheduledEnd } = req.body;
+        if (!scheduledAt || !scheduledEnd)
+            return res.status(400).json({ message: 'scheduledAt dan scheduledEnd wajib diisi' });
 
-        await consultation.save();
-        res.json({ success: true, consultation });
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('doctorId', 'name userId');
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.userId.toString() !== req.userId)
+            return res.status(403).json({ message: 'Akses ditolak' });
+
+        const reschedulableFromUser = ['confirmed'];
+        const reschedulableAfterCancel = ['doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'];
+        const allReschedulable = [...reschedulableFromUser, ...reschedulableAfterCancel];
+
+        if (!allReschedulable.includes(consultation.status))
+            return res.status(400).json({ message: `Tidak bisa reschedule dari status: ${consultation.status}` });
+
+        // Batas 1x reschedule mandiri (dari confirmed).
+        // Reschedule pasca-pembatalan (dari doctor_no_show/cancelled_by_doctor/admin) tidak dihitung.
+        if (reschedulableFromUser.includes(consultation.status)) {
+            if ((consultation.rescheduleHistory || []).length >= 1) {
+                return res.status(400).json({ message: 'Reschedule hanya bisa dilakukan 1 kali.' });
+            }
+        }
+
+        const newSlot    = new Date(scheduledAt);
+        const newSlotEnd = new Date(scheduledEnd);
+        const now        = new Date();
+
+        // h-24 hanya berlaku untuk reschedule dari confirmed (bukan setelah cancel)
+        if (reschedulableFromUser.includes(consultation.status)) {
+            const msUntil = new Date(consultation.scheduledAt).getTime() - now.getTime();
+            if (msUntil < 24 * 60 * 60 * 1000) {
+                return res.status(400).json({ message: 'Reschedule hanya bisa dilakukan minimal 24 jam sebelum jadwal.' });
+            }
+        }
+
+        // Validasi slot baru: minimal 20 menit dari sekarang
+        if (newSlot.getTime() - now.getTime() < 20 * 60 * 1000)
+            return res.status(400).json({ message: 'Slot baru harus minimal 20 menit dari sekarang.' });
+
+        // Validasi dokter yang sama + availability aktif
+        const DoctorAvailability = require('../models/DoctorAvailability');
+        const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+        const avail = await DoctorAvailability.findOne({ doctorId: consultation.doctorId._id });
+        if (!avail || !avail.isWeekActive())
+            return res.status(400).json({ message: 'Dokter belum merilis jadwal untuk minggu ini.' });
+
+        if (newSlot < avail.weekStart || newSlot > avail.weekEnd)
+            return res.status(400).json({ message: 'Slot baru di luar rentang jadwal minggu ini.' });
+
+        const slotWIB  = new Date(newSlot.getTime() + WIB_OFFSET_MS);
+        const dow      = slotWIB.getUTCDay();
+        const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2,'0')}:${String(slotWIB.getUTCMinutes()).padStart(2,'0')}`;
+        if (dow === 0) return res.status(400).json({ message: 'Konsultasi tidak tersedia hari Minggu.' });
+        if (!avail.isSlotActive(dow, slotHHMM))
+            return res.status(400).json({ message: 'Slot tidak tersedia pada hari tersebut.' });
+
+        // Race condition check
+        const slotConflict = await Consultation.findOne({
+            doctorId   : consultation.doctorId._id,
+            scheduledAt: newSlot,
+            status     : { $in: ['pending_payment','waiting_verification','confirmed','in_progress'] },
+            _id        : { $ne: consultation._id },
+        });
+        if (slotConflict) return res.status(409).json({ message: 'Slot ini baru saja diambil orang lain. Pilih slot lain.' });
+
+        // Simpan reschedule history
+        const io = req.app.get('io');
+        const updated = await Consultation.findOneAndUpdate(
+            { _id: consultation._id },
+            {
+                $set  : { status: 'confirmed', scheduledAt: newSlot, scheduledEnd: newSlotEnd, postCancelChoice: 'reschedule' },
+                $push : { rescheduleHistory: { from: { scheduledAt: consultation.scheduledAt, scheduledEnd: consultation.scheduledEnd }, to: { scheduledAt: newSlot, scheduledEnd: newSlotEnd } } },
+            },
+            { new: true }
+        );
+
+        await createNotification({ userId: consultation.userId, type: 'appointment_reminder',
+            title: '🔄 Jadwal Konsultasi Diubah',
+            message: `Konsultasi Anda dengan dr. ${consultation.doctorId?.name} dijadwalkan ulang ke ${_fmtWIB(newSlot)}.`,
+            data: { consultationId: consultation._id }, io });
+        if (consultation.doctorId?.userId) {
+            await createNotification({ userId: consultation.doctorId.userId, type: 'appointment_reminder',
+                title: '🔄 Pasien Reschedule', message: `Pasien mengubah jadwal konsultasi ke ${_fmtWIB(newSlot)}.`,
+                data: { consultationId: consultation._id }, io });
+        }
+        if (io) io.to(`user-${consultation.userId}`).emit('consultation-status-update', { consultationId: consultation._id.toString(), status: 'confirmed' });
+
+        res.json({ success: true, consultation: updated });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
+
+// ── Helper: format WIB ────────────────────────────────────────────────────────
+function _fmtWIB(d) {
+    return new Date(d).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB';
+}
+
+// ── Internal: proses refund via Xendit (dipanggil dari cancel & cron) ─────────
+async function processRefundInternal(consultationId, bankInfo = {}, io = null) {
+    const axios = require('axios');
+    const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;
+    const headers = { Authorization: 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'), 'Content-Type': 'application/json' };
+    const REFUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+    console.log(`[processRefundInternal] consultationId=${consultationId}, bankInfo keys=${Object.keys(bankInfo)}`);
+
+    const consultation = await Consultation.findById(consultationId).populate('doctorId', 'consultationFee');
+    if (!consultation) throw new Error('Konsultasi tidak ditemukan');
+
+    const amount = consultation.amount || consultation.doctorId?.consultationFee;
+    console.log(`[processRefundInternal] amount=${amount}, paidAt=${consultation.paidAt}, xenditInvoiceId=${consultation.xenditInvoiceId}`);
+
+    if (!amount) throw new Error('Nominal refund tidak diketahui');
+
+    const paidAt     = consultation.paidAt ? new Date(consultation.paidAt) : null;
+    // Jika paidAt null (data lama), anggap dalam window 7 hari jika xenditInvoiceId ada
+    const isWithin7d = consultation.xenditInvoiceId && (!paidAt || (Date.now() - paidAt.getTime()) < REFUND_WINDOW_MS);
+    console.log(`[processRefundInternal] isWithin7d=${isWithin7d}`);
+
+    if (isWithin7d && consultation.xenditInvoiceId) {
+        console.log(`[processRefundInternal] Calling Xendit Refund API, invoice_id=${consultation.xenditInvoiceId}, amount=${amount}`);
+        try {
+            const r = await axios.post('https://api.xendit.co/refunds',
+                { invoice_id: consultation.xenditInvoiceId, reason: 'CANCELLATION', amount },
+                { headers: { ...headers, 'idempotency-key': `REFUND-${consultation._id}-${Date.now()}` } }
+            );
+            console.log(`[processRefundInternal] Xendit Refund success:`, r.data);
+            await Consultation.findByIdAndUpdate(consultationId, {
+                status: 'refunded', 'refund.xenditRefundId': r.data.id, 'refund.method': 'xendit_refund', 'refund.processedAt': new Date(),
+            });
+        } catch (xenditErr) {
+            const errCode = xenditErr.response?.data?.error_code;
+            console.error(`[processRefundInternal] Xendit Refund API error:`, xenditErr.response?.data || xenditErr.message);
+
+            // Metode pembayaran tidak support refund (e-wallet, QRIS, dll) → fallback ke disbursement
+            if (errCode === 'REFUND_NOT_SUPPORTED' || errCode === 'CHANNEL_NOT_SUPPORTED') {
+                console.log(`[processRefundInternal] Refund not supported, falling back to disbursement`);
+                if (bankInfo.bankCode && bankInfo.accountNumber && bankInfo.accountName) {
+                    const r2 = await axios.post('https://api.xendit.co/disbursements',
+                        { external_id: `DISB-${consultation._id}-${Date.now()}`, bank_code: bankInfo.bankCode, account_holder_name: bankInfo.accountName, account_number: bankInfo.accountNumber, description: `Refund konsultasi`, amount },
+                        { headers: { ...headers, 'X-IDEMPOTENCY-KEY': `DISB-${consultation._id}-${Date.now()}` } }
+                    );
+                    await Consultation.findByIdAndUpdate(consultationId, {
+                        status: 'refunded', 'refund.xenditDisbursementId': r2.data.id, 'refund.method': 'xendit_disbursement',
+                        'refund.bankCode': bankInfo.bankCode, 'refund.accountNumber': bankInfo.accountNumber, 'refund.accountName': bankInfo.accountName, 'refund.processedAt': new Date(),
+                    });
+                    console.log(`[processRefundInternal] Disbursement fallback success`);
+                } else {
+                    // Tidak ada bank info → minta ke user
+                    throw new Error('NEED_BANK_INFO');
+                }
+            } else {
+                throw new Error(`Xendit Refund failed: ${JSON.stringify(xenditErr.response?.data || xenditErr.message)}`);
+            }
+        }
+    } else if (bankInfo.bankCode && bankInfo.accountNumber && bankInfo.accountName) {
+        const r = await axios.post('https://api.xendit.co/disbursements',
+            { external_id: `DISB-${consultation._id}-${Date.now()}`, bank_code: bankInfo.bankCode, account_holder_name: bankInfo.accountName, account_number: bankInfo.accountNumber, description: `Refund konsultasi`, amount },
+            { headers: { ...headers, 'X-IDEMPOTENCY-KEY': `DISB-${consultation._id}-${Date.now()}` } }
+        );
+        await Consultation.findByIdAndUpdate(consultationId, {
+            status: 'refunded', 'refund.xenditDisbursementId': r.data.id, 'refund.method': 'xendit_disbursement',
+            'refund.bankCode': bankInfo.bankCode, 'refund.accountNumber': bankInfo.accountNumber, 'refund.accountName': bankInfo.accountName, 'refund.processedAt': new Date(),
+        });
+    } else {
+        throw new Error('NEED_BANK_INFO');
+    }
+
+    if (io) io.to(`user-${consultation.userId}`).emit('consultation-status-update', { consultationId: consultation._id.toString(), status: 'refunded' });
+    await createNotification({ userId: consultation.userId, type: 'refund_processed', title: '💰 Refund Diproses',
+        message: `Refund Rp ${amount.toLocaleString('id-ID')} sedang diproses dan akan masuk ke rekening Anda dalam 1x24 jam.`,
+        data: { consultationId: consultation._id }, io });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 4. CHAT & UPLOAD FOTO
@@ -1071,7 +1388,11 @@ router.post('/:id/rating', auth, async (req, res) => {
             .populate('doctorId', 'name specialization consultationFee userId');
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
         if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Bukan konsultasi Anda' });
-        if (consultation.status !== 'completed') return res.status(400).json({ message: 'Konsultasi belum selesai' });
+
+        // Rating diizinkan untuk: completed, doctor_no_show, cancelled_by_doctor, cancelled_by_admin
+        const ratableStatuses = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'];
+        if (!ratableStatuses.includes(consultation.status))
+            return res.status(400).json({ message: 'Rating hanya bisa diberikan setelah konsultasi selesai atau dibatalkan.' });
         if (consultation.rating) return res.status(400).json({ message: 'Sudah pernah memberi rating' });
 
         consultation.rating = rating;
@@ -1079,14 +1400,16 @@ router.post('/:id/rating', auth, async (req, res) => {
         consultation.ratedAt = new Date();
         await consultation.save();
 
-        // Update rating dokter (fetch fresh Doctor agar bisa save)
-        const doctor = await Doctor.findById(consultation.doctorId._id || consultation.doctorId);
-        if (doctor) {
-            const prevTotal = doctor.totalReviews || 0;
-            const prevRating = doctor.rating || 0;
-            doctor.totalReviews = prevTotal + 1;
-            doctor.rating = Math.round(((prevRating * prevTotal) + rating) / doctor.totalReviews * 10) / 10;
-            await doctor.save();
+        // Update rating dokter hanya untuk konsultasi completed (bukan no_show/cancelled — itu feedback saja)
+        if (consultation.status === 'completed') {
+            const doctor = await Doctor.findById(consultation.doctorId._id || consultation.doctorId);
+            if (doctor) {
+                const prevTotal  = doctor.totalReviews || 0;
+                const prevRating = doctor.rating || 0;
+                doctor.totalReviews = prevTotal + 1;
+                doctor.rating = Math.round(((prevRating * prevTotal) + rating) / doctor.totalReviews * 10) / 10;
+                await doctor.save();
+            }
         }
 
         res.json({ success: true, message: 'Rating berhasil dikirim' });
@@ -1195,18 +1518,29 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id)
             .populate('userId', 'name')
-            .populate('doctorId', 'name specialization userId')
+            .populate('doctorId', 'name specialization userId signatureUrl')
             .populate('sickLetter');
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        // Hanya user/dokter terkait atau admin
         if (!canAccess(consultation, req.userId, req.userRole)) {
             return res.status(403).json({ message: 'Akses ditolak' });
         }
 
         const sickLetter = consultation.sickLetter;
         if (!sickLetter) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
+
+        // Ambil pengaturan klinik (logo/stempel)
+        const ClinicSettings = require('../models/ClinicSettings');
+        const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
+        const clinicName    = clinicSettings.clinicName    || 'Klinik Pratama IPB';
+        const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+        const stampPath     = clinicSettings.stampUrl
+            ? require('path').join(__dirname, '..', clinicSettings.stampUrl.replace(/^\//, ''))
+            : null;
+        const signaturePath = consultation.doctorId?.signatureUrl
+            ? require('path').join(__dirname, '..', consultation.doctorId.signatureUrl.replace(/^\//, ''))
+            : null;
 
         const doc = new PDFDocument({ margin: 70, size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
@@ -1219,12 +1553,13 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
 
         const days = Math.ceil((new Date(sickLetter.endDate) - new Date(sickLetter.startDate)) / (1000 * 60 * 60 * 24)) + 1;
         const daysWord = ['nol','satu','dua','tiga','empat','lima','enam','tujuh','delapan','sembilan','sepuluh'][days] || days.toString();
-        const tglMulai = new Date(sickLetter.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        const tglSelesai = new Date(sickLetter.endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglMulai   = new Date(sickLetter.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglSelesai = new Date(sickLetter.endDate).toLocaleDateString('id-ID',   { day: 'numeric', month: 'long', year: 'numeric' });
 
-        // ── Header ────────────────────────────────────────────────────────────────
+        // ── Header ───────────────────────────────────────────────────────────────
         doc.fontSize(16).font('Helvetica-Bold').text('SURAT KETERANGAN SAKIT', { align: 'center' });
-        doc.fontSize(11).font('Helvetica').text('Klinik Pratama IPB', { align: 'center' });
+        doc.fontSize(11).font('Helvetica').text(clinicName, { align: 'center' });
+        if (clinicAddress) doc.fontSize(9).text(clinicAddress, { align: 'center' });
         doc.moveDown(0.3);
         doc.fontSize(10).text(`Nomor : ${sickLetter.letterNumber || 'DRAFT'}`, { align: 'center' });
         doc.moveDown(0.8);
@@ -1236,13 +1571,11 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         doc.text('Yang bertanda tangan di bawah ini menerangkan bahwa:');
         doc.moveDown(0.8);
 
-        // Identitas pasien (format tabel sederhana)
-        const rowH = 18;
         const col1 = 70, col2 = 170;
         const rows = [
             ['Nama Pasien', `: ${consultation.userId.name}`],
-            ...(sickLetter.patientAge ? [['Umur', `: ${sickLetter.patientAge}`]] : []),
-            ...(sickLetter.patientGender ? [['Jenis Kelamin', `: ${sickLetter.patientGender}`]] : []),
+            ...(sickLetter.patientAge    ? [['Umur',          `: ${sickLetter.patientAge}`]]    : []),
+            ...(sickLetter.patientGender ? [['Jenis Kelamin',  `: ${sickLetter.patientGender}`]] : []),
         ];
         rows.forEach(([k, v]) => {
             doc.text(k, col1, doc.y, { continued: true, width: col2 - col1 });
@@ -1257,7 +1590,7 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         doc.text(`: ${tglPemeriksaan}`);
         doc.moveDown(0.8);
 
-        doc.text(`Berdasarkan hasil pemeriksaan, yang bersangkutan didiagnosis mengalami:`);
+        doc.text('Berdasarkan hasil pemeriksaan, yang bersangkutan didiagnosis mengalami:');
         doc.moveDown(0.4);
         doc.font('Helvetica-Bold').text(`       ${sickLetter.diagnosis}`);
         doc.font('Helvetica').moveDown(0.8);
@@ -1276,15 +1609,60 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         doc.text('Demikian surat keterangan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.');
         doc.moveDown(2);
 
-        // ── Tanda tangan ─────────────────────────────────────────────────────────
-        doc.text(`Bogor, ${tglBogor}`, { align: 'right' });
-        doc.moveDown(0.4);
-        doc.text('Dokter', { align: 'right' });
-        doc.moveDown(3);
-        doc.font('Helvetica-Bold').text(`dr. ${consultation.doctorId.name}`, { align: 'right' });
-        if (consultation.doctorId.specialization) {
-            doc.font('Helvetica').fontSize(9).text(consultation.doctorId.specialization, { align: 'right' });
+        // ── Tanda tangan area ────────────────────────────────────────────────────
+        // Kiri: stempel klinik  |  Kanan: tanda tangan dokter
+        const signY = doc.y;
+        const pageW  = doc.page.width;   // A4 = 595.28
+        const margin = 70;
+        const colW   = (pageW - margin * 2) / 2 - 10; // lebar tiap kolom ~207px
+        const leftX  = margin;
+        const rightX = margin + colW + 20;
+        const imgSize = 80;
+
+        // Kolom kiri — stempel klinik
+        doc.fontSize(10).font('Helvetica').text('Stempel Klinik', leftX, signY, { width: colW, align: 'center' });
+        const stampLabelY = signY + 14;
+
+        const fs = require('fs');
+        const stampLoaded = stampPath && fs.existsSync(stampPath);
+        if (stampLoaded) {
+            const stampImgX = leftX + (colW - imgSize) / 2;
+            doc.image(stampPath, stampImgX, stampLabelY + 4, { width: imgSize, height: imgSize });
+        } else {
+            // Placeholder kotak jika belum ada stempel
+            doc.rect(leftX + (colW - imgSize) / 2, stampLabelY + 4, imgSize, imgSize)
+               .strokeColor('#cccccc').stroke();
+            doc.fontSize(8).fillColor('#aaaaaa')
+               .text('(stempel)', leftX, stampLabelY + imgSize / 2 - 4, { width: colW, align: 'center' });
+            doc.fillColor('#000000');
         }
+
+        // Kolom kanan — tanda tangan dokter
+        const sigLoaded = signaturePath && fs.existsSync(signaturePath);
+        doc.fontSize(10).font('Helvetica')
+           .text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglBogor}`, rightX, signY, { width: colW, align: 'center' });
+        doc.text('Dokter yang memeriksa,', rightX, signY + 14, { width: colW, align: 'center' });
+
+        if (sigLoaded) {
+            const sigImgX = rightX + (colW - imgSize) / 2;
+            doc.image(signaturePath, sigImgX, signY + 28, { width: imgSize, height: imgSize });
+        } else {
+            doc.moveDown(3.5);
+        }
+
+        // Nama dan spesialisasi dokter — setelah gambar
+        const nameY = signY + 28 + imgSize + 6;
+        doc.fontSize(10).font('Helvetica-Bold')
+           .text(`dr. ${consultation.doctorId.name}`, rightX, nameY, { width: colW, align: 'center' });
+        if (consultation.doctorId.specialization) {
+            doc.fontSize(9).font('Helvetica')
+               .text(consultation.doctorId.specialization, rightX, nameY + 14, { width: colW, align: 'center' });
+        }
+
+        doc.moveDown(1);
+        doc.fontSize(8).fillColor('#666')
+           .text('*Surat keterangan ini dibuat berdasarkan hasil pemeriksaan dan berlaku sesuai tanggal yang tertera.',
+               { align: 'center' });
 
         doc.end();
     } catch (err) {
@@ -1346,3 +1724,4 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.processRefundInternal = processRefundInternal;

@@ -12,6 +12,14 @@ const auth      = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const User      = require('../models/User');
 const { createNotification } = require('../utils/notificationHelper');
+const { createCloudinaryUpload } = require('../config/cloudinary');
+
+// Upload video refund via Cloudinary (max 50MB, video/image)
+const uploadRefundVideo = createCloudinaryUpload(
+    'klinik-refund-pharmacy',
+    ['mp4', 'mov', 'avi', 'mkv', 'webm', 'jpg', 'jpeg', 'png'],
+    50
+);
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
 const KLINIK_LAT        = -6.5530;
@@ -680,6 +688,309 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
     } catch (err) {
         console.error('[pharmacy] update status:', err);
         res.status(500).json({ message:'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REFUND FARMASI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+/**
+ * POST /pharmacy/orders/:id/refund-request
+ *
+ * DUA SKENARIO:
+ * 1. Status 'paid' & belum 1 jam → refund langsung otomatis via Xendit, tanpa video
+ * 2. Status 'terkirim' atau 'selesai' → upload video bukti, review admin dulu
+ */
+router.post('/orders/:id/refund-request',
+    auth,
+    (req, res, next) => {
+        // Hanya proses upload video jika bukan refund langsung
+        // Kita cek status order dulu sebelum memutuskan apakah perlu multer
+        uploadRefundVideo.single('video')(req, res, (err) => {
+            if (err && err.code !== 'LIMIT_UNEXPECTED_FILE') return next(err);
+            next();
+        });
+    },
+    async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) return res.status(404).json({ message: 'Pesanan tidak ditemukan' });
+        if (order.userId.toString() !== req.userId)
+            return res.status(403).json({ message: 'Akses ditolak' });
+
+        const { reason } = req.body;
+
+        // ── SKENARIO 1: paid & belum 1 jam → refund langsung, tanpa video ──
+        if (order.status === 'paid') {
+            const paidAt  = order.updatedAt || order.createdAt;
+            const elapsed = Date.now() - new Date(paidAt).getTime();
+            if (elapsed > 60 * 60 * 1000) {
+                return res.status(400).json({ message: 'Batas refund langsung adalah 1 jam setelah pembayaran. Untuk refund barang yang sudah diterima, pilih opsi refund dengan video bukti.' });
+            }
+
+            // Proses refund otomatis via Xendit
+            const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;
+            const headers = {
+                Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
+                'Content-Type': 'application/json',
+            };
+            const amount = order.totalAmount;
+            let refunded = false;
+            let refundMethod = null;
+
+            // Cari xendit invoice id
+            let xenditInvoiceId = null;
+            if (order.xenditExternalId) {
+                try {
+                    const invRes = await axios.get(
+                        `https://api.xendit.co/v2/invoices?external_id=${order.xenditExternalId}`,
+                        { headers }
+                    );
+                    xenditInvoiceId = invRes.data?.[0]?.id;
+                } catch (e) { /* ignore */ }
+            }
+
+            if (xenditInvoiceId) {
+                try {
+                    const r = await axios.post('https://api.xendit.co/refunds',
+                        { invoice_id: xenditInvoiceId, reason: 'CANCELLATION', amount },
+                        { headers: { ...headers, 'idempotency-key': `REFUND-ORDER-${order._id}-${Date.now()}` } }
+                    );
+                    order.refund = { xenditRefundId: r.data.id, method: 'xendit_refund', processedAt: new Date(), reason: reason?.trim() || 'Dibatalkan oleh pasien' };
+                    refundMethod = 'xendit_refund';
+                    refunded = true;
+                } catch (xenditErr) {
+                    const errCode = xenditErr.response?.data?.error_code;
+                    if (!['REFUND_NOT_SUPPORTED', 'CHANNEL_NOT_SUPPORTED'].includes(errCode)) {
+                        console.error('[pharmacy refund instant] Xendit error:', xenditErr.response?.data);
+                    }
+                }
+            }
+
+            if (!refunded) {
+                // Tidak bisa refund otomatis (e-wallet/QRIS) → perlu data rekening
+                const { bankCode, accountNumber, accountName } = req.body;
+                if (!bankCode || !accountNumber || !accountName) {
+                    return res.status(200).json({
+                        success: true, needsBankInfo: true,
+                        message: 'Metode pembayaran tidak mendukung refund otomatis. Masukkan data rekening bank untuk menerima refund.',
+                    });
+                }
+                const r = await axios.post('https://api.xendit.co/disbursements',
+                    { external_id: `DISB-ORDER-${order._id}-${Date.now()}`, bank_code: bankCode, account_holder_name: accountName, account_number: accountNumber, description: `Refund pesanan ${order.orderNumber}`, amount },
+                    { headers: { ...headers, 'X-IDEMPOTENCY-KEY': `DISB-ORDER-${order._id}-${Date.now()}` } }
+                );
+                order.refund = { xenditDisbursementId: r.data.id, method: 'xendit_disbursement', bankCode, accountNumber, accountName, processedAt: new Date(), reason: reason?.trim() || 'Dibatalkan oleh pasien' };
+                refundMethod = 'xendit_disbursement';
+            }
+
+            order.status = 'refunded';
+            await order.save();
+
+            const eta = refundMethod === 'xendit_refund' ? 'beberapa menit' : '1x24 jam';
+            await createNotification({
+                userId  : order.userId,
+                type    : 'refund_processed',
+                title   : '💰 Refund Berhasil',
+                message : `Refund pesanan ${order.orderNumber} sebesar Rp ${amount.toLocaleString('id-ID')} sedang diproses dan akan masuk dalam ${eta}. Catatan: biaya payment gateway tidak termasuk.`,
+                data    : { orderId: order._id },
+                io      : req.app.get('io'),
+            });
+
+            return res.json({ success: true, message: `Refund berhasil diproses. Dana akan masuk dalam ${eta}.`, method: refundMethod, order });
+        }
+
+        // ── SKENARIO 2: terkirim / selesai → upload video, review admin ──
+        if (!['terkirim', 'selesai'].includes(order.status)) {
+            return res.status(400).json({ message: `Refund dengan video hanya bisa untuk pesanan yang sudah diterima (terkirim/selesai). Status saat ini: ${order.status}` });
+        }
+
+        // Batas 1 hari setelah terkirim/selesai
+        const arrivedAt = order.terkirimAt || order.completedAt || order.updatedAt;
+        if (Date.now() - new Date(arrivedAt).getTime() > 24 * 60 * 60 * 1000) {
+            return res.status(400).json({ message: 'Batas pengajuan refund adalah 1 hari setelah pesanan diterima.' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ message: 'Video bukti wajib diunggah untuk refund barang yang sudah diterima.' });
+        }
+        if (!reason?.trim()) {
+            return res.status(400).json({ message: 'Alasan refund wajib diisi.' });
+        }
+
+        order.status = 'refund_requested';
+        order.refund = {
+            videoUrl      : req.file.path,
+            videoPublicId : req.file.filename,
+            reason        : reason.trim(),
+            requestedAt   : new Date(),
+        };
+        await order.save();
+
+        const admins = await User.find({ role: 'admin' }).select('_id');
+        for (const admin of admins) {
+            await createNotification({
+                userId  : admin._id,
+                type    : 'refund_requested',
+                title   : '🎥 Refund Farmasi — Perlu Review',
+                message : `Pesanan ${order.orderNumber} mengajukan refund barang tidak sesuai. Tinjau video bukti.`,
+                data    : { orderId: order._id },
+                io      : req.app.get('io'),
+            });
+        }
+
+        return res.json({ success: true, message: 'Pengajuan refund berhasil dikirim. Admin akan meninjau dalam 1×24 jam.', order });
+    } catch (err) {
+        console.error('[pharmacy refund-request]', err.response?.data || err.message);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+/**
+ * PUT /pharmacy/admin/orders/:id/refund-review
+ * Admin approve atau reject pengajuan refund.
+ * Body: { action: 'approve'|'reject', rejectReason?, bankCode?, accountNumber?, accountName? }
+ */
+router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id).populate('userId', 'name');
+        if (!order) return res.status(404).json({ message: 'Pesanan tidak ditemukan' });
+        if (order.status !== 'refund_requested')
+            return res.status(400).json({ message: 'Status harus refund_requested' });
+
+        const { action, rejectReason, bankCode, accountNumber, accountName } = req.body;
+        if (!['approve', 'reject'].includes(action))
+            return res.status(400).json({ message: 'action harus approve atau reject' });
+
+        if (action === 'reject') {
+            order.status = 'refund_rejected';
+            order.refund.reviewedAt = new Date();
+            order.refund.reviewedBy = req.userId;
+            order.refund.rejectReason = rejectReason || 'Tidak memenuhi syarat refund';
+            await order.save();
+
+            await createNotification({
+                userId  : order.userId._id,
+                type    : 'refund_processed',
+                title   : '❌ Refund Ditolak',
+                message : `Refund pesanan ${order.orderNumber} ditolak. Alasan: ${order.refund.rejectReason}`,
+                data    : { orderId: order._id },
+                io      : req.app.get('io'),
+            });
+            return res.json({ success: true, message: 'Refund ditolak', order });
+        }
+
+        // ── APPROVE → proses refund via Xendit ───────────────────────────────
+        // Cek metode pembayaran: cari Payment record
+        const Payment = require('../models/Payment');
+        const payment = await Payment.findOne({ referenceId: order._id });
+        const xenditExternalId = order.xenditExternalId;
+
+        const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;
+        const headers = {
+            Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
+            'Content-Type': 'application/json',
+        };
+        const amount = order.totalAmount;
+
+        // Cek apakah bisa Xendit Refund API (invoice < 7 hari)
+        let refunded = false;
+        let refundMethod = null;
+
+        // Cari xendit invoice id
+        let xenditInvoiceId = null;
+        if (xenditExternalId) {
+            try {
+                const invRes = await axios.get(
+                    `https://api.xendit.co/v2/invoices?external_id=${xenditExternalId}`,
+                    { headers }
+                );
+                xenditInvoiceId = invRes.data?.[0]?.id;
+            } catch (e) { /* ignore */ }
+        }
+
+        if (xenditInvoiceId) {
+            try {
+                const r = await axios.post('https://api.xendit.co/refunds',
+                    { invoice_id: xenditInvoiceId, reason: 'CANCELLATION', amount },
+                    { headers: { ...headers, 'idempotency-key': `REFUND-ORDER-${order._id}-${Date.now()}` } }
+                );
+                order.refund.xenditRefundId = r.data.id;
+                refundMethod = 'xendit_refund';
+                refunded = true;
+            } catch (xenditErr) {
+                const errCode = xenditErr.response?.data?.error_code;
+                // REFUND_NOT_SUPPORTED → fallback disbursement
+                if (!['REFUND_NOT_SUPPORTED', 'CHANNEL_NOT_SUPPORTED'].includes(errCode)) {
+                    console.error('[pharmacy refund] Xendit Refund error:', xenditErr.response?.data);
+                }
+            }
+        }
+
+        // Fallback: Xendit Disbursement (e-wallet / channel tidak support refund)
+        if (!refunded) {
+            if (!bankCode || !accountNumber || !accountName) {
+                return res.status(400).json({
+                    needsBankInfo: true,
+                    message: 'Metode pembayaran tidak mendukung refund otomatis. Masukkan data rekening untuk disbursement.',
+                });
+            }
+            const r = await axios.post('https://api.xendit.co/disbursements',
+                {
+                    external_id          : `DISB-ORDER-${order._id}-${Date.now()}`,
+                    bank_code            : bankCode,
+                    account_holder_name  : accountName,
+                    account_number       : accountNumber,
+                    description          : `Refund pesanan ${order.orderNumber}`,
+                    amount,
+                },
+                { headers: { ...headers, 'X-IDEMPOTENCY-KEY': `DISB-ORDER-${order._id}-${Date.now()}` } }
+            );
+            order.refund.xenditDisbursementId = r.data.id;
+            order.refund.bankCode      = bankCode;
+            order.refund.accountNumber = accountNumber;
+            order.refund.accountName   = accountName;
+            refundMethod = 'xendit_disbursement';
+        }
+
+        order.status = 'refunded';
+        order.refund.method      = refundMethod;
+        order.refund.reviewedAt  = new Date();
+        order.refund.reviewedBy  = req.userId;
+        order.refund.processedAt = new Date();
+        await order.save();
+
+        const eta = refundMethod === 'xendit_refund' ? 'beberapa menit' : '1x24 jam';
+        await createNotification({
+            userId  : order.userId._id,
+            type    : 'refund_processed',
+            title   : '💰 Refund Disetujui',
+            message : `Refund pesanan ${order.orderNumber} sebesar Rp ${amount.toLocaleString('id-ID')} sedang diproses dan akan masuk dalam ${eta}. Catatan: biaya payment gateway tidak termasuk dalam refund.`,
+            data    : { orderId: order._id },
+            io      : req.app.get('io'),
+        });
+
+        res.json({ success: true, method: refundMethod, amount, order });
+    } catch (err) {
+        console.error('[pharmacy refund-review]', err.response?.data || err.message);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+/**
+ * GET /pharmacy/admin/orders/refund-requests
+ * Admin lihat semua pesanan yang sedang menunggu review refund.
+ */
+router.get('/admin/orders/refund-requests', auth, adminAuth, async (req, res) => {
+    try {
+        const orders = await Order.find({ status: 'refund_requested' })
+            .populate('userId', 'name email phone')
+            .sort('-refund.requestedAt');
+        res.json({ success: true, orders });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
     }
 });
 

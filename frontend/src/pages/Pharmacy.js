@@ -42,6 +42,9 @@ const STATUS_CFG = {
     selesai              : { bg:'#dcfce7', color:'#166534', icon:FaCheckCircle,        label:'Selesai'                   },
     expired              : { bg:'#fee2e2', color:'#b91c1c', icon:FaExclamationTriangle,label:'Kedaluwarsa'               },
     cancelled            : { bg:'#f1f5f9', color:'#475569', icon:FaBan,                label:'Dibatalkan'                },
+    refund_requested     : { bg:'#fef3c7', color:'#92400e', icon:FaClock,              label:'Menunggu Review Refund'    },
+    refund_rejected      : { bg:'#fee2e2', color:'#991b1b', icon:FaTimesCircle,        label:'Refund Ditolak'            },
+    refunded             : { bg:'#dcfce7', color:'#166534', icon:FaCheckCircle,        label:'Refund Berhasil'           },
 };
 
 // ─── Map Picker ───────────────────────────────────────────────────────────────
@@ -376,6 +379,71 @@ const Pharmacy = () => {
         } catch (err) { toast.error(err.response?.data?.message || 'Gagal membatalkan'); }
     };
 
+    // ── Refund farmasi ────────────────────────────────────────────────────────
+    const [refundModal, setRefundModal]   = useState(null); // { order, type: 'instant'|'video' }
+    const [refundVideo, setRefundVideo]   = useState(null);
+    const [refundReason, setRefundReason] = useState('');
+    const [submittingRefund, setSubmittingRefund] = useState(false);
+    const [needsBankInfo, setNeedsBankInfo]       = useState(false);
+    const [bankCode, setBankCode]                 = useState('');
+    const [accountNumber, setAccountNumber]       = useState('');
+    const [accountName, setAccountName]           = useState('');
+    const [bankList, setBankList]                 = useState([]);
+    const refundVideoRef = useRef(null);
+
+    useEffect(() => {
+        api.get('/api/xendit/banks').then(r => setBankList(r.data.banks || [])).catch(() => {});
+    }, []);
+
+    const handleRefundSubmit = async () => {
+        if (!refundModal) return;
+        const isInstant = refundModal.type === 'instant';
+
+        if (!isInstant && !refundVideo) { toast.error('Video bukti wajib diunggah'); return; }
+        if (!refundReason.trim()) { toast.error('Alasan refund wajib diisi'); return; }
+        if (!isInstant && refundVideo?.size > 50 * 1024 * 1024) { toast.error('Ukuran video maksimal 50MB'); return; }
+
+        setSubmittingRefund(true);
+        try {
+            const fd = new FormData();
+            fd.append('reason', refundReason);
+            if (!isInstant && refundVideo) fd.append('video', refundVideo);
+            if (needsBankInfo) {
+                if (!bankCode || !accountNumber || !accountName) {
+                    toast.error('Data rekening wajib diisi'); setSubmittingRefund(false); return;
+                }
+                fd.append('bankCode', bankCode);
+                fd.append('accountNumber', accountNumber);
+                fd.append('accountName', accountName);
+            }
+            const r = await api.post(`/api/pharmacy/orders/${refundModal.order._id}/refund-request`, fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            if (r.data.needsBankInfo) {
+                setNeedsBankInfo(true); setSubmittingRefund(false); return;
+            }
+            toast.success(isInstant ? 'Refund berhasil diproses! Dana akan masuk dalam 1x24 jam.' : 'Pengajuan refund dikirim. Admin akan meninjau dalam 1×24 jam.');
+            setRefundModal(null); setRefundVideo(null); setRefundReason('');
+            setNeedsBankInfo(false); setBankCode(''); setAccountNumber(''); setAccountName('');
+            fetchOrders();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Gagal mengajukan refund');
+        } finally { setSubmittingRefund(false); }
+    };
+
+    // paid & belum 1 jam → refund langsung
+    const canRefundInstant = (order) => {
+        if (order.status !== 'paid') return false;
+        const paidAt = order.updatedAt || order.createdAt;
+        return Date.now() - new Date(paidAt).getTime() < 60 * 60 * 1000;
+    };
+    // terkirim / selesai → refund dengan video, maksimal 1 hari setelah tiba
+    const canRefundWithVideo = (order) => {
+        if (!['terkirim', 'selesai'].includes(order.status)) return false;
+        const arrivedAt = order.terkirimAt || order.completedAt || order.updatedAt;
+        return Date.now() - new Date(arrivedAt).getTime() < 24 * 60 * 60 * 1000;
+    };
+
     const selesaikanOrder = async (id) => {
         if (!window.confirm('Konfirmasi pesanan sudah diterima?')) return;
         try {
@@ -679,12 +747,150 @@ const Pharmacy = () => {
                                                         <FaCheckCircle size={11}/> Pesanan Sudah Diterima
                                                     </button>
                                                 )}
+
+                                                {/* Refund langsung — paid belum 1 jam */}
+                                                {canRefundInstant(order)&&(
+                                                    <button
+                                                        style={{padding:'7px 14px',background:'#fff',color:'#dc2626',border:'1px solid #fca5a5',borderRadius:8,fontSize:12,fontWeight:600,cursor:'pointer'}}
+                                                        onClick={()=>{setRefundModal({order,type:'instant'});setRefundVideo(null);setRefundReason('');setNeedsBankInfo(false);setBankCode('');setAccountNumber('');setAccountName('');}}>
+                                                        ↩️ Refund Pesanan
+                                                    </button>
+                                                )}
+
+                                                {/* Refund dengan video — barang tidak sesuai */}
+                                                {canRefundWithVideo(order)&&(
+                                                    <button
+                                                        style={{padding:'7px 14px',background:'#fff',color:'#dc2626',border:'1px solid #fca5a5',borderRadius:8,fontSize:12,fontWeight:600,cursor:'pointer'}}
+                                                        onClick={()=>{setRefundModal({order,type:'video'});setRefundVideo(null);setRefundReason('');setNeedsBankInfo(false);setBankCode('');setAccountNumber('');setAccountName('');}}>
+                                                        🎥 Refund (Tidak Sesuai)
+                                                    </button>
+                                                )}
+
+                                                {/* Refund status info */}
+                                                {order.status==='refund_requested'&&(
+                                                    <div style={{background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#92400e',textAlign:'left'}}>
+                                                        ⏳ Permintaan refund sedang ditinjau admin.
+                                                    </div>
+                                                )}
+                                                {order.status==='refund_rejected'&&(
+                                                    <div style={{background:'#fee2e2',border:'1px solid #fca5a5',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#991b1b',textAlign:'left'}}>
+                                                        ❌ Refund ditolak: {order.refund?.rejectReason || '-'}
+                                                    </div>
+                                                )}
+                                                {order.status==='refunded'&&(
+                                                    <div style={{background:'#dcfce7',border:'1px solid #6ee7b7',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#166534',textAlign:'left'}}>
+                                                        ✅ Refund berhasil diproses.
+                                                    </div>
+                                                )}
                                             </div>
                                         </Col>
                                     </Row>
                                 </div>
                             ))
                         }
+                    </div>
+                )}
+
+                {/* ─── REFUND MODAL ─────────────────────────────────────── */}
+                {refundModal&&(
+                    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+                        <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto',padding:24}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                                <span style={{fontWeight:700,fontSize:16,color:'#111827'}}>
+                                    {refundModal.type==='instant' ? '↩️ Refund Pesanan' : '🎥 Refund Barang Tidak Sesuai'}
+                                </span>
+                                <button onClick={()=>setRefundModal(null)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#6b7280'}}>×</button>
+                            </div>
+
+                            {/* Info box berbeda per skenario */}
+                            {refundModal.type==='instant' ? (
+                                <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#1e40af',marginBottom:16}}>
+                                    <div style={{fontWeight:600,marginBottom:4}}>ℹ️ Refund Langsung</div>
+                                    <div>Pesanan belum diproses. Dana akan dikembalikan secara otomatis.</div>
+                                    <div style={{marginTop:4,color:'#1d4ed8'}}>Catatan: biaya layanan payment gateway tidak termasuk dalam refund.</div>
+                                </div>
+                            ) : (
+                                <div style={{background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#92400e',marginBottom:16}}>
+                                    <div style={{fontWeight:600,marginBottom:4}}>⚠️ Refund Barang Tidak Sesuai</div>
+                                    <ul style={{margin:0,paddingLeft:16,lineHeight:1.8}}>
+                                        <li>Wajib menyertakan <strong>video bukti</strong> (maks. 50MB)</li>
+                                        <li>Admin akan meninjau dan memverifikasi video Anda</li>
+                                        <li>Catatan: biaya payment gateway tidak termasuk dalam refund</li>
+                                    </ul>
+                                </div>
+                            )}
+
+                            <div style={{fontSize:13,color:'#374151',marginBottom:16}}>
+                                <strong>Pesanan:</strong> {refundModal.order.orderNumber} — Rp {(refundModal.order.totalAmount||0).toLocaleString('id-ID')}
+                            </div>
+
+                            {/* Upload video — hanya untuk skenario video */}
+                            {refundModal.type==='video'&&(
+                                <div style={{marginBottom:14}}>
+                                    <label style={{fontSize:12,fontWeight:600,color:'#374151',display:'block',marginBottom:6}}>
+                                        Video Bukti <span style={{color:'#ef4444'}}>*</span>
+                                        <span style={{fontWeight:400,color:'#6b7280'}}> (MP4/MOV/AVI/MKV, maks 50MB)</span>
+                                    </label>
+                                    <input ref={refundVideoRef} type="file" accept="video/*"
+                                        style={{display:'none'}}
+                                        onChange={e=>setRefundVideo(e.target.files?.[0]||null)} />
+                                    <button onClick={()=>refundVideoRef.current?.click()}
+                                        style={{padding:'8px 16px',border:'2px dashed #d1d5db',borderRadius:8,background:'#f9fafb',color:'#374151',fontSize:13,cursor:'pointer',width:'100%'}}>
+                                        {refundVideo ? `✅ ${refundVideo.name} (${(refundVideo.size/1024/1024).toFixed(1)}MB)` : '📁 Pilih Video Bukti'}
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Bank info jika needsBankInfo */}
+                            {needsBankInfo&&(
+                                <div style={{background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:8,padding:'12px 14px',marginBottom:16}}>
+                                    <div style={{fontWeight:600,fontSize:13,color:'#92400e',marginBottom:10}}>
+                                        💳 Masukkan rekening untuk menerima refund
+                                    </div>
+                                    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                                        <div>
+                                            <label style={{fontSize:12,fontWeight:600,display:'block',marginBottom:4}}>Bank <span style={{color:'#ef4444'}}>*</span></label>
+                                            <select value={bankCode} onChange={e=>setBankCode(e.target.value)} style={{width:'100%',padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:8,fontSize:13}}>
+                                                <option value="">— Pilih Bank —</option>
+                                                {bankList.map(b=><option key={b.code} value={b.code}>{b.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={{fontSize:12,fontWeight:600,display:'block',marginBottom:4}}>Nomor Rekening <span style={{color:'#ef4444'}}>*</span></label>
+                                            <input value={accountNumber} onChange={e=>setAccountNumber(e.target.value)} placeholder="mis. 1234567890" style={{width:'100%',padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:8,fontSize:13,boxSizing:'border-box'}} />
+                                        </div>
+                                        <div>
+                                            <label style={{fontSize:12,fontWeight:600,display:'block',marginBottom:4}}>Nama Pemilik <span style={{color:'#ef4444'}}>*</span></label>
+                                            <input value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Sesuai nama di buku tabungan" style={{width:'100%',padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:8,fontSize:13,boxSizing:'border-box'}} />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Alasan */}
+                            <div style={{marginBottom:18}}>
+                                <label style={{fontSize:12,fontWeight:600,color:'#374151',display:'block',marginBottom:6}}>
+                                    Alasan <span style={{color:'#ef4444'}}>*</span>
+                                </label>
+                                <textarea value={refundReason} onChange={e=>setRefundReason(e.target.value)} rows={3}
+                                    placeholder={refundModal.type==='instant' ? 'Jelaskan mengapa Anda membatalkan pesanan...' : 'Jelaskan ketidaksesuaian barang yang diterima...'}
+                                    style={{width:'100%',padding:'8px 12px',border:'1px solid #d1d5db',borderRadius:8,fontSize:13,fontFamily:'inherit',resize:'vertical',boxSizing:'border-box'}} />
+                            </div>
+
+                            <div style={{display:'flex',gap:10}}>
+                                <button onClick={()=>setRefundModal(null)}
+                                    style={{flex:1,padding:'10px',borderRadius:8,border:'1px solid #d1d5db',background:'#fff',color:'#6b7280',fontWeight:600,cursor:'pointer'}}>
+                                    Batal
+                                </button>
+                                <button onClick={handleRefundSubmit}
+                                    disabled={submittingRefund||(refundModal.type==='video'&&!refundVideo)||!refundReason.trim()}
+                                    style={{flex:2,padding:'10px',borderRadius:8,border:'none',
+                                        background:(refundModal.type==='video'&&!refundVideo)||!refundReason.trim()?'#9ca3af':'#dc2626',
+                                        color:'#fff',fontWeight:700,cursor:'pointer',opacity:submittingRefund?.6:1}}>
+                                    {submittingRefund ? 'Memproses...' : refundModal.type==='instant' ? '↩️ Konfirmasi Refund' : '📤 Kirim Pengajuan Refund'}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
 

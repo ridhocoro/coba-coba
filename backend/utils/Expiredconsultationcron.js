@@ -141,74 +141,71 @@ const checkDoctorNoShow = async () => {
     const candidates = await Consultation.find({
         status      : 'confirmed',
         scheduledEnd: { $lt: grace },
-    }).select('_id userId');
+    }).populate('doctorId', 'name');
 
     for (const c of candidates) {
-        // Step 1: atomic → doctor_no_show
-        const step1 = await Consultation.findOneAndUpdate(
+        // Atomic → doctor_no_show
+        const updated = await Consultation.findOneAndUpdate(
             { _id: c._id, status: 'confirmed' },
             { $set: {
                 status       : 'doctor_no_show',
                 cancelledAt  : now,
                 cancelledBy  : 'system',
                 cancelReason : 'Dokter tidak memulai sesi dalam waktu yang ditentukan',
+                refund       : { requestedAt: now, notes: 'Auto-refund: dokter tidak hadir' },
             }},
             { new: true }
         );
-        if (!step1) continue;
+        if (!updated) continue;
 
-        // Step 2: atomic → refund_requested
-        const step2 = await Consultation.findOneAndUpdate(
-            { _id: step1._id, status: 'doctor_no_show' },
-            { $set: {
-                status : 'refund_requested',
-                refund : {
-                    bankName      : 'Proses Admin',
-                    accountNumber : '-',
-                    accountName   : '-',
-                    requestedAt   : now,
-                    notes         : 'Auto-refund: dokter tidak hadir pada jadwal konsultasi',
-                },
-            }},
-            { new: true }
-        );
-        if (!step2) continue;
-
-        // Notif user
-        await createNotification({
-            userId  : step2.userId,
-            type    : 'doctor_no_show',
-            title   : 'Dokter Tidak Hadir — Refund Otomatis 💰',
-            message : 'Dokter tidak hadir pada jadwal konsultasi Anda. Refund akan diproses admin dalam 3-5 hari kerja.',
-            data    : { consultationId: step2._id },
-            io      : _io,
-        });
-
-        // Notif semua admin
+        // Cek apakah jadwal tersedia minggu ini untuk reschedule
+        let hasAvailableSlots = false;
         try {
-            const admins = await User.find({ role: 'admin' }).select('_id');
-            for (const admin of admins) {
+            const DoctorAvailability = require('../models/DoctorAvailability');
+            const avail = await DoctorAvailability.findOne({ doctorId: updated.doctorId._id || updated.doctorId });
+            hasAvailableSlots = !!(avail && avail.isWeekActive());
+        } catch (e) { /* ignore */ }
+
+        // Coba refund otomatis via Xendit
+        try {
+            const { processRefundInternal } = require('../routes/consultations');
+            await processRefundInternal(updated._id.toString(), {}, _io);
+            console.log(`[CRON] ${updated._id} → doctor_no_show → refunded (auto)`);
+        } catch (refundErr) {
+            if (refundErr.message === 'NEED_BANK_INFO') {
+                // PaidAt > 7 hari — perlu info rekening, notif user untuk input
+                await Consultation.findByIdAndUpdate(updated._id, { status: 'doctor_no_show' }); // keep status
                 await createNotification({
-                    userId  : admin._id,
-                    type    : 'refund_requested',
-                    title   : 'Refund Otomatis: Dokter Tidak Hadir',
-                    message : 'Ada konsultasi yang perlu diproses refundnya (dokter tidak hadir).',
-                    data    : { consultationId: step2._id },
+                    userId  : updated.userId,
+                    type    : 'doctor_no_show',
+                    title   : 'Dokter Tidak Hadir — Tindakan Diperlukan',
+                    message : hasAvailableSlots
+                        ? 'Dokter tidak hadir. Pilih: reschedule ke jadwal lain atau refund (masukkan data rekening untuk refund).'
+                        : 'Dokter tidak hadir. Tidak ada jadwal tersedia. Masukkan data rekening untuk menerima refund.',
+                    data    : { consultationId: updated._id, hasAvailableSlots },
+                    io      : _io,
+                });
+            } else {
+                console.error(`[CRON] Refund gagal ${updated._id}:`, refundErr.message);
+                await Consultation.findByIdAndUpdate(updated._id, { status: 'refund_requested' });
+                await createNotification({
+                    userId  : updated.userId,
+                    type    : 'doctor_no_show',
+                    title   : 'Dokter Tidak Hadir — Refund Diproses Admin',
+                    message : 'Dokter tidak hadir. Refund gagal diproses otomatis dan akan diselesaikan admin dalam 1-3 hari.',
+                    data    : { consultationId: updated._id },
                     io      : _io,
                 });
             }
-        } catch (e) {
-            console.error(`[CRON] Gagal notif admin refund ${step2._id}:`, e.message);
         }
 
         if (_io) {
-            _io.to(`user-${step2.userId}`).emit('consultation-status-update', {
-                consultationId: step2._id.toString(),
-                status        : 'refund_requested',
+            _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                consultationId: updated._id.toString(),
+                status        : updated.status,
+                hasAvailableSlots,
             });
         }
-
-        console.log(`[CRON] ${step2._id} → doctor_no_show → refund_requested (${fmtWIB(now)})`);
     }
 };
 
@@ -228,9 +225,28 @@ const checkUserNoShow = async () => {
         );
         const finalStatus = userMessages.length === 0 ? 'no_show' : 'completed';
 
+        // Rekam medis placeholder — dokter tidak sempat mengisi secara manual.
+        // isCompleted: false agar dokter masih bisa melengkapi via PUT /:id/medical-record.
+        const medicalRecordPlaceholder = finalStatus === 'completed' ? {
+            objectiveFindings : '',
+            assessment        : '',
+            plan              : '',
+            doctorNotes       : 'Sesi berakhir otomatis — rekam medis belum diisi dokter.',
+            isCompleted       : false,
+            completedAt       : null,
+        } : undefined;
+
+        const updateFields = {
+            status  : finalStatus,
+            endTime : c.scheduledEnd,
+        };
+        if (medicalRecordPlaceholder) {
+            updateFields.medicalRecord = medicalRecordPlaceholder;
+        }
+
         const updated = await Consultation.findOneAndUpdate(
             { _id: c._id, status: 'in_progress' },
-            { $set: { status: finalStatus, endTime: c.scheduledEnd } },
+            { $set: updateFields },
             { new: true }
         );
         if (!updated) continue;
@@ -241,7 +257,7 @@ const checkUserNoShow = async () => {
             title   : finalStatus === 'no_show' ? 'Sesi Berakhir — Tidak Hadir' : 'Konsultasi Selesai ✅',
             message : finalStatus === 'no_show'
                 ? 'Sesi konsultasi telah berakhir. Anda tercatat tidak hadir.'
-                : 'Sesi konsultasi telah selesai secara otomatis. Silakan beri rating.',
+                : 'Sesi konsultasi telah selesai secara otomatis. Rekam medis akan dilengkapi dokter. Silakan beri rating.',
             data    : { consultationId: updated._id },
             io      : _io,
         });

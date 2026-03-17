@@ -47,6 +47,7 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/manual-payment', require('./routes/manualpayment'));
 app.use('/api/xendit', require('./routes/xendit'));
+app.use('/api/clinic-settings', require('./routes/clinicSettings'));
 
 // 🔔 Notifikasi
 app.use('/api/notifications', require('./routes/notifications'));
@@ -63,6 +64,7 @@ require('./utils/ExpiredOrderCron').startCron(io);
 // ── Cron: appointment — auto no-show & reminder H-24 ─────────────────────────
 require('./utils/AppointmentCron').startCron(io);
 require('./utils/CleanupUnverifiedUsersCron').startCron(); // hapus user unverified > 24 jam
+require('./utils/WeeklyScheduleReminderCron').startCron(io); // reminder jadwal mingguan
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
