@@ -16,7 +16,10 @@
  */
 
 const Appointment = require('../models/Appointment');
+const User        = require('../models/User');
+const Doctor      = require('../models/Doctor');
 const { createNotification } = require('./notificationHelper');
+const { waReminderJanjiTemu } = require('./fonnte');
 
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
 const fmtWIB = (d) =>
@@ -85,17 +88,17 @@ async function runAutoNoShow() {
 
 // ── 2. Reminder H-24 ──────────────────────────────────────────────────────
 async function runReminder() {
-    const now       = new Date();
-    const in23h     = new Date(now.getTime() + 23 * 60 * 60 * 1000);
-    const in25h     = new Date(now.getTime() + 25 * 60 * 60 * 1000);
+    const now   = new Date();
+    const in23h = new Date(now.getTime() + 23 * 60 * 60 * 1000);
+    const in25h = new Date(now.getTime() + 25 * 60 * 60 * 1000);
 
     try {
         const upcoming = await Appointment.find({
-            status        : 'scheduled',
-            reminderSent  : false,
-            scheduledAt   : { $gte: in23h, $lte: in25h },
+            status       : 'scheduled',
+            reminderSent : false,
+            scheduledAt  : { $gte: in23h, $lte: in25h },
         })
-        .populate('userId',   'name')
+        .populate('userId',   'name phone')
         .populate('doctorId', 'name');
 
         for (const appt of upcoming) {
@@ -106,14 +109,24 @@ async function runReminder() {
             );
             if (!marked) continue;
 
+            // Notifikasi in-app
             await createNotification({
                 userId  : appt.userId._id,
                 type    : 'appointment_reminder',
                 title   : '⏰ Pengingat Janji Temu',
-                message : `Ingat! Anda memiliki janji temu dengan dr. ${appt.doctorId?.name || '-'} besok, ${fmtTgl(appt.scheduledAt)} pukul ${appt.appointmentTime} WIB. Harap datang tepat waktu.`,
+                message : `Ingat! Anda memiliki janji temu dengan dr. ${appt.doctorId?.name || '-'} besok pukul ${appt.appointmentTime} WIB. Harap datang tepat waktu.`,
                 data    : { appointmentId: appt._id },
                 io      : _io,
             });
+
+            // WhatsApp reminder
+            try {
+                if (appt.userId?.phone) {
+                    await waReminderJanjiTemu(appt.userId, appt.doctorId, appt);
+                }
+            } catch (waErr) {
+                console.error('[AppointmentCron] WA reminder error:', waErr.message);
+            }
 
             console.log(`[AppointmentCron] Reminder sent: ${appt._id} | ${appt.userId?.name}`);
         }

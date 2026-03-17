@@ -39,6 +39,7 @@ const User                    = require('../models/User');
 const auth                    = require('../middleware/auth');
 const doctorAuth              = require('../middleware/doctorAuth');
 const { createNotification }  = require('../utils/notificationHelper');
+const { waKonfirmasiJanjiTemu } = require('../utils/fonnte');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
@@ -466,6 +467,16 @@ router.post('/book', auth, async (req, res) => {
                 data    : { appointmentId: appointment._id },
                 io      : req.app.get('io'),
             });
+        }
+
+        // WhatsApp konfirmasi ke pasien
+        try {
+            const userForWa = await User.findById(req.userId).select('name phone');
+            if (userForWa?.phone) {
+                await waKonfirmasiJanjiTemu(userForWa, doctor, appointment);
+            }
+        } catch (waErr) {
+            console.error('[appointments] WA konfirmasi error:', waErr.message);
         }
 
         const populated = await Appointment.findById(appointment._id)

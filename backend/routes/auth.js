@@ -86,6 +86,58 @@ async function sendOtpEmail(email, name, otp) {
  */
 const ipResendMap = new Map(); // key: IP, value: { count, windowStart, lastSent }
 
+// ── Rate limit: OTP verify (brute force protection) ───────────────────────────
+// Max 5 percobaan per email per 15 menit
+const otpVerifyMap = new Map(); // key: email, value: { count, windowStart }
+const OTP_VERIFY_MAX    = 5;
+const OTP_VERIFY_WINDOW = 15 * 60 * 1000; // 15 menit
+
+function checkOtpVerifyLimit(email) {
+    const now = Date.now();
+    const rec = otpVerifyMap.get(email) || { count: 0, windowStart: now };
+    if (now - rec.windowStart > OTP_VERIFY_WINDOW) {
+        otpVerifyMap.set(email, { count: 1, windowStart: now });
+        return { allowed: true, remaining: OTP_VERIFY_MAX - 1 };
+    }
+    if (rec.count >= OTP_VERIFY_MAX) {
+        const waitMin = Math.ceil((OTP_VERIFY_WINDOW - (now - rec.windowStart)) / 60000);
+        return { allowed: false, waitMin };
+    }
+    rec.count++;
+    otpVerifyMap.set(email, rec);
+    return { allowed: true, remaining: OTP_VERIFY_MAX - rec.count };
+}
+
+function resetOtpVerifyLimit(email) {
+    otpVerifyMap.delete(email);
+}
+
+// ── Rate limit: Login (brute force protection) ────────────────────────────────
+// Max 10 percobaan per IP per 15 menit
+const loginLimitMap = new Map(); // key: IP, value: { count, windowStart }
+const LOGIN_MAX    = 10;
+const LOGIN_WINDOW = 15 * 60 * 1000; // 15 menit
+
+function checkLoginLimit(ip) {
+    const now = Date.now();
+    const rec = loginLimitMap.get(ip) || { count: 0, windowStart: now };
+    if (now - rec.windowStart > LOGIN_WINDOW) {
+        loginLimitMap.set(ip, { count: 1, windowStart: now });
+        return { allowed: true };
+    }
+    if (rec.count >= LOGIN_MAX) {
+        const waitMin = Math.ceil((LOGIN_WINDOW - (now - rec.windowStart)) / 60000);
+        return { allowed: false, waitMin };
+    }
+    rec.count++;
+    loginLimitMap.set(ip, rec);
+    return { allowed: true };
+}
+
+function resetLoginLimit(ip) {
+    loginLimitMap.delete(ip);
+}
+
 function checkIpResend(ip) {
     const now = Date.now();
     const rec = ipResendMap.get(ip) || { count: 0, windowStart: now, lastSent: 0 };
@@ -207,6 +259,16 @@ router.post('/verify-otp', [
         if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
 
         const { email, otp } = req.body;
+
+        // ── Rate limit: max 5 percobaan per email per 15 menit ────────────────
+        const rl = checkOtpVerifyLimit(email);
+        if (!rl.allowed) {
+            return res.status(429).json({
+                message  : `Terlalu banyak percobaan. Coba lagi dalam ${rl.waitMin} menit.`,
+                rateLimit: true,
+            });
+        }
+
         const user = await User.findOne({ email });
 
         if (!user || user.isVerified)
@@ -225,10 +287,17 @@ router.post('/verify-otp', [
         }
 
         // Cek kode
-        if (user.emailOtp !== otp)
-            return res.status(400).json({ message: 'Kode OTP salah, silakan coba lagi' });
+        if (user.emailOtp !== otp) {
+            const remaining = rl.remaining;
+            return res.status(400).json({
+                message: remaining > 0
+                    ? `Kode OTP salah. Sisa percobaan: ${remaining}`
+                    : 'Kode OTP salah.',
+            });
+        }
 
-        // Verifikasi berhasil
+        // Verifikasi berhasil — reset rate limit
+        resetOtpVerifyLimit(email);
         user.isVerified          = true;
         user.emailOtp            = undefined;
         user.emailOtpExpires     = undefined;
@@ -331,6 +400,17 @@ router.post('/login', [
     body('password').notEmpty(),
 ], async (req, res) => {
     try {
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+
+        // ── Rate limit: max 10 percobaan login per IP per 15 menit ───────────
+        const rl = checkLoginLimit(ip);
+        if (!rl.allowed) {
+            return res.status(429).json({
+                message  : `Terlalu banyak percobaan login. Coba lagi dalam ${rl.waitMin} menit.`,
+                rateLimit: true,
+            });
+        }
+
         const { email, password } = req.body;
         const user = await User.findOne({ email });
 
@@ -344,6 +424,9 @@ router.post('/login', [
 
         const isMatch = await user.comparePassword(password);
         if (!isMatch) return res.status(400).json({ message: 'Email atau password salah' });
+
+        // Login berhasil — reset rate limit
+        resetLoginLimit(ip);
 
         const token = jwt.sign(
             { userId: user._id, role: user.role },
