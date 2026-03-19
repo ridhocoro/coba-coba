@@ -331,6 +331,21 @@ router.post('/orders/:orderId/prescription',
             const io = req.app.get('io');
             if (io) io.emit('prescription-uploaded', { orderId:order._id, orderNumber:order.orderNumber });
 
+            // Notifikasi ke semua admin
+            try {
+                const admins = await User.find({ role: 'admin' }).select('_id');
+                for (const admin of admins) {
+                    await createNotification({
+                        userId : admin._id,
+                        type   : 'order_shipped',
+                        title  : '📋 Resep Baru Menunggu Verifikasi',
+                        message: `Pesanan ${order.orderNumber} mengunggah resep. Silakan verifikasi.`,
+                        data   : { orderId: order._id },
+                        io,
+                    });
+                }
+            } catch (e) { console.error('[pharmacy] rx admin notif:', e.message); }
+
             res.json({ success:true, message:'Resep diupload. Menunggu verifikasi admin.', order });
         } catch (err) {
             if (req.file) fs.unlink(req.file.path,()=>{});
@@ -636,11 +651,11 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
 
         const isPickup = order.deliveryMethod==='pickup';
         const validTransitions = {
-            'paid'         : ['diproses','cancelled'],
-            'diproses'     : isPickup ? ['cancelled'] : ['dikirim','cancelled'],
+            'paid'         : ['diproses'],
+            'diproses'     : isPickup ? ['siap_diambil'] : ['dikirim'],
             'dikirim'      : ['terkirim'],
             'terkirim'     : ['selesai'],
-            'siap_diambil' : ['selesai','cancelled'],
+            'siap_diambil' : ['selesai'],
         };
 
         const allowed = validTransitions[order.status];
@@ -686,8 +701,8 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
 
         res.json({ success:true, message:'Status diperbarui', order });
     } catch (err) {
-        console.error('[pharmacy] update status:', err);
-        res.status(500).json({ message:'Server error' });
+        console.error('[pharmacy] update status:', err.message, err.stack);
+        res.status(500).json({ message: err.message || 'Server error' });
     }
 });
 

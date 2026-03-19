@@ -39,7 +39,6 @@ const User                    = require('../models/User');
 const auth                    = require('../middleware/auth');
 const doctorAuth              = require('../middleware/doctorAuth');
 const { createNotification }  = require('../utils/notificationHelper');
-const { waKonfirmasiJanjiTemu } = require('../utils/fonnte');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
@@ -308,6 +307,13 @@ router.get('/slots/:doctorId', auth, async (req, res) => {
             return res.json({ success: true, slots: [], notReleased: true, message: 'Dokter belum merilis jadwal untuk minggu ini.' });
         }
 
+        // Cek override admin (blokir hari cuti)
+        const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
+        const override = await DoctorScheduleOverride.findOne({ doctorId: doctor._id, date });
+        if (override) {
+            return res.json({ success: true, slots: [], isBlocked: true, blockReason: override.reason || 'Dokter tidak hadir', message: `Dokter tidak hadir pada tanggal ini. ${override.reason || ''}`.trim() });
+        }
+
         const weekStartStr = new Date(avail.weekStart.getTime() + WIB_OFFSET).toISOString().slice(0, 10);
         const weekEndStr   = new Date(avail.weekEnd.getTime()   + WIB_OFFSET).toISOString().slice(0, 10);
         if (date < weekStartStr || date > weekEndStr) {
@@ -386,6 +392,13 @@ router.post('/book', auth, async (req, res) => {
         // Cek availability dokter
         const doctor = await Doctor.findById(doctorId);
         if (!doctor || !doctor.isActive) return res.status(404).json({ message: 'Dokter tidak ditemukan atau tidak aktif' });
+
+        // Cek blokiran jadwal dari admin
+        const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
+        const override = await DoctorScheduleOverride.findOne({ doctorId: doctor._id, date });
+        if (override) {
+            return res.status(400).json({ message: `Dokter tidak hadir pada tanggal ini. ${override.reason || ''}`.trim() });
+        }
 
         const avail = await AppointmentAvailability.findOne({ doctorId: doctor._id, isActive: true });
         if (!avail || !avail.isWeekActive()) {
@@ -467,16 +480,6 @@ router.post('/book', auth, async (req, res) => {
                 data    : { appointmentId: appointment._id },
                 io      : req.app.get('io'),
             });
-        }
-
-        // WhatsApp konfirmasi ke pasien
-        try {
-            const userForWa = await User.findById(req.userId).select('name phone');
-            if (userForWa?.phone) {
-                await waKonfirmasiJanjiTemu(userForWa, doctor, appointment);
-            }
-        } catch (waErr) {
-            console.error('[appointments] WA konfirmasi error:', waErr.message);
         }
 
         const populated = await Appointment.findById(appointment._id)

@@ -34,6 +34,10 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/klinik-ip
   .then(() => console.log('✅ MongoDB Connected'))
   .catch(err => console.log('❌ MongoDB Connection Error:', err));
 
+// Ensure new models are registered
+require('./models/AdminChat');
+require('./models/DoctorScheduleOverride');
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));

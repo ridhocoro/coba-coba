@@ -1,662 +1,297 @@
-import React, { useState, useEffect, useRef } from 'react';
-import api, { API_URL } from '../../utils/api';
-import {
-    Container, Row, Col, Card, Table, Badge, Button,
-    Modal, Form, Spinner, Alert, InputGroup
-} from 'react-bootstrap';
+import React, { useState, useEffect, useCallback } from 'react';
+import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
-import { Link } from 'react-router-dom';
-import {
-    FaUserMd, FaPlus, FaEdit, FaToggleOn, FaToggleOff,
-    FaArrowLeft, FaExclamationTriangle, FaLink,
-    FaSearch, FaSync, FaTrash, FaCamera, FaUpload
-} from 'react-icons/fa';
-
-const defaultForm = {
-    name: '', specialization: '', consultationFee: '', qualification: '',
-    experience: '', bio: '', email: '', password: '', phone: ''
-};
-
-const defaultSettings = {
-};
 
 const ManageDoctors = () => {
-    const [doctors, setDoctors] = useState([]);
-    const [users, setUsers] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
-    const [processing, setProcessing] = useState(false);
+  const [doctors, setDoctors]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState('');
+  const [spec, setSpec]           = useState('');
+  const [selected, setSelected]   = useState(null); // detail modal
+  const [editMode, setEditMode]   = useState(false);
+  const [editForm, setEditForm]   = useState({});
+  const [saving, setSaving]       = useState(false);
+  const [overrideModal, setOverrideModal] = useState(null);
+  const [overrideDates, setOverrideDates] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overrides, setOverrides] = useState([]);
 
-    const [showDoctorModal, setShowDoctorModal] = useState(false);
-    const [editingDoctor, setEditingDoctor] = useState(null);
-    const [form, setForm] = useState(defaultForm);
-    const [settings, setSettings] = useState(defaultSettings); // consultation settings
+  const fetchDoctors = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api.get(`/api/admin/doctors${spec ? `?specialization=${spec}` : ''}`);
+      setDoctors(r.data.doctors || []);
+    } catch { toast.error('Gagal memuat dokter'); }
+    finally { setLoading(false); }
+  }, [spec]);
 
-    // State upload foto
-    const [photoFile, setPhotoFile] = useState(null);
-    const [photoPreview, setPhotoPreview] = useState(null);
-    const [uploadingPhoto, setUploadingPhoto] = useState(false);
-    const photoInputRef = useRef();
+  useEffect(() => { fetchDoctors(); }, [fetchDoctors]);
 
-    // State modal khusus ganti foto (untuk dokter yang sudah ada)
-    const [showPhotoModal, setShowPhotoModal] = useState(false);
-    const [photoDoctor, setPhotoDoctor] = useState(null);
-    const [photoFileModal, setPhotoFileModal] = useState(null);
-    const [photoPreviewModal, setPhotoPreviewModal] = useState(null);
-    const photoInputModalRef = useRef();
+  const openDetail = async (doc) => {
+    try {
+      const r = await api.get(`/api/admin/doctors/${doc._id}`);
+      setSelected(r.data);
+      setEditForm({
+        name: r.data.doctor.name,
+        specialization: r.data.doctor.specialization,
+        consultationFee: r.data.doctor.consultationFee,
+        bio: r.data.doctor.bio || '',
+      });
+      setEditMode(false);
+    } catch { toast.error('Gagal memuat detail dokter'); }
+  };
 
-    const [showLinkModal, setShowLinkModal] = useState(false);
-    const [linkDoctor, setLinkDoctor] = useState(null);
-    const [linkUserId, setLinkUserId] = useState('');
+  const handleSave = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await api.put(`/api/admin/doctors/${selected.doctor._id}`, editForm);
+      toast.success('Profil dokter diperbarui');
+      setEditMode(false);
+      fetchDoctors();
+      openDetail(selected.doctor);
+    } catch { toast.error('Gagal menyimpan'); }
+    finally { setSaving(false); }
+  };
 
-    useEffect(() => { fetchData(); }, []);
+  const handleToggle = async (doc) => {
+    try {
+      await api.put(`/api/admin/doctors/${doc._id}/toggle-status`);
+      toast.success(doc.isActive ? 'Dokter dinonaktifkan' : 'Dokter diaktifkan');
+      fetchDoctors();
+      if (selected?.doctor?._id === doc._id) openDetail(doc);
+    } catch { toast.error('Gagal mengubah status'); }
+  };
 
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const [doctorRes, userRes] = await Promise.allSettled([
-                api.get('/api/admin/doctors'),
-                api.get('/api/admin/users')
-            ]);
-            if (doctorRes.status === 'fulfilled') {
-                setDoctors(doctorRes.value.data.doctors || doctorRes.value.data || []);
-            }
-            if (userRes.status === 'fulfilled') {
-                const allUsers = userRes.value.data || [];
-                setUsers(allUsers.filter(u => u.role === 'doctor'));
-            }
-        } catch {
-            toast.error('Gagal memuat data');
-        } finally {
-            setLoading(false);
-        }
-    };
+  const openOverride = async (doc) => {
+    setOverrideModal(doc);
+    setOverrideDates('');
+    setOverrideReason('');
+    try {
+      const r = await api.get(`/api/admin/doctors/${doc._id}/schedule`);
+      setOverrides(r.data.overrides || []);
+    } catch {}
+  };
 
-    // Pilih foto di modal tambah/edit
-    const handlePhotoChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (file.size > 3 * 1024 * 1024) { toast.error('Ukuran foto maksimal 3MB'); return; }
-        setPhotoFile(file);
-        setPhotoPreview(URL.createObjectURL(file));
-    };
+  const handleAddOverride = async () => {
+    const dates = overrideDates.split(',').map(s => s.trim()).filter(Boolean);
+    if (!dates.length) { toast.error('Masukkan minimal 1 tanggal'); return; }
+    try {
+      const r = await api.put(`/api/admin/doctors/${overrideModal._id}/schedule/override`, { dates, reason: overrideReason });
+      toast.success(`${r.data.blockedDates.length} tanggal diblokir. ${r.data.cancelledAppointments || 0} janji dibatalkan.`);
+      const r2 = await api.get(`/api/admin/doctors/${overrideModal._id}/schedule`);
+      setOverrides(r2.data.overrides || []);
+      setOverrideDates(''); setOverrideReason('');
+    } catch (err) { toast.error(err.response?.data?.message || 'Gagal memblokir jadwal'); }
+  };
 
-    // Pilih foto di modal upload foto terpisah
-    const handlePhotoModalChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (file.size > 3 * 1024 * 1024) { toast.error('Ukuran foto maksimal 3MB'); return; }
-        setPhotoFileModal(file);
-        setPhotoPreviewModal(URL.createObjectURL(file));
-    };
+  const handleDeleteOverride = async (date) => {
+    try {
+      await api.delete(`/api/admin/doctors/${overrideModal._id}/schedule/override/${date}`);
+      setOverrides(prev => prev.filter(o => o.date !== date));
+      toast.success('Blokiran dihapus');
+    } catch { toast.error('Gagal menghapus blokiran'); }
+  };
 
-    // Upload foto ke server (dipanggil setelah doctor tersimpan, atau dari modal foto)
-    const uploadPhoto = async (doctorId, file) => {
-        const formData = new FormData();
-        formData.append('photo', file);
-        const res = await api.post(`/api/admin/doctors/${doctorId}/photo`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        return res.data.photo;
-    };
+  const filtered = doctors.filter(d =>
+    !search || d.name?.toLowerCase().includes(search.toLowerCase()) || d.specialization?.toLowerCase().includes(search.toLowerCase())
+  );
 
-    const handleSave = async (e) => {
-        e.preventDefault();
-        setProcessing(true);
-        try {
-            let savedDoctorId = editingDoctor?._id;
+  const specs = [...new Set(doctors.map(d => d.specialization).filter(Boolean))];
 
-            if (editingDoctor) {
-                await api.put(`/api/admin/doctors/${editingDoctor._id}`, form);
-                // Simpan consultation settings via route baru
-                await api.put(`/api/doctors/${editingDoctor._id}/settings`, settings);
-                toast.success('Data dokter diperbarui');
-            } else {
-                const res = await api.post('/api/admin/doctors', form);
-                savedDoctorId = res.data.doctor?._id;
-                // Settings default sudah ditetapkan di model, update jika berbeda
-                if (savedDoctorId) await api.put(`/api/doctors/${savedDoctorId}/settings`, settings);
-                toast.success('Dokter berhasil ditambahkan');
-            }
+  const S = {
+    toolbar: { display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' },
+    input: { padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, flex: 1, minWidth: 200 },
+    select: { padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13 },
+    table: { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', fontSize: 13 },
+    th: { padding: '10px 14px', background: '#f8fafc', color: '#64748b', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: .5, textAlign: 'left' },
+    td: { padding: '10px 14px', borderBottom: '1px solid #f1f5f9', color: '#0f172a' },
+    btn: (c) => ({ padding: '5px 12px', borderRadius: 6, border: 'none', background: c, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }),
+    btnOutline: (c) => ({ padding: '5px 12px', borderRadius: 6, border: `1px solid ${c}`, background: '#fff', color: c, fontSize: 12, fontWeight: 600, cursor: 'pointer' }),
+    overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
+    modal: { background: '#fff', borderRadius: 16, width: '100%', maxWidth: 620, maxHeight: '90vh', overflowY: 'auto', padding: 24 },
+    label: { fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 },
+    field: { width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' },
+  };
 
-            // Upload foto jika ada
-            if (photoFile && savedDoctorId) {
-                setUploadingPhoto(true);
-                try {
-                    await uploadPhoto(savedDoctorId, photoFile);
-                    toast.success('Foto dokter berhasil diupload');
-                } catch {
-                    toast.error('Data tersimpan, tapi gagal upload foto. Coba upload ulang lewat tombol kamera.');
-                } finally {
-                    setUploadingPhoto(false);
-                }
-            }
+  return (
+    <div>
+      <div style={S.toolbar}>
+        <input style={S.input} placeholder="🔍 Cari nama / spesialisasi..." value={search} onChange={e => setSearch(e.target.value)} />
+        <select style={S.select} value={spec} onChange={e => setSpec(e.target.value)}>
+          <option value="">Semua Spesialisasi</option>
+          {specs.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <button style={S.btn('#2563eb')} onClick={fetchDoctors}>🔄 Refresh</button>
+      </div>
 
-            setShowDoctorModal(false);
-            setPhotoFile(null);
-            setPhotoPreview(null);
-            fetchData();
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Gagal menyimpan');
-        } finally {
-            setProcessing(false);
-        }
-    };
+      {loading ? <p style={{ color: '#64748b' }}>Memuat...</p> : (
+        <table style={S.table}>
+          <thead>
+            <tr>{['Dokter','Spesialisasi','Fee','Rating','Status','Aksi'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {filtered.map(doc => (
+              <tr key={doc._id}>
+                <td style={S.td}>
+                  <div style={{ fontWeight: 600 }}>dr. {doc.name}</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{doc.userId?.email}</div>
+                </td>
+                <td style={S.td}>{doc.specialization}</td>
+                <td style={S.td}>Rp {(doc.consultationFee||0).toLocaleString('id-ID')}</td>
+                <td style={S.td}>{doc.rating || 0} ⭐ ({doc.totalReviews || 0})</td>
+                <td style={S.td}>
+                  <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: doc.isActive ? '#dcfce7' : '#fee2e2', color: doc.isActive ? '#166534' : '#991b1b' }}>
+                    {doc.isActive ? 'Aktif' : 'Nonaktif'}
+                  </span>
+                </td>
+                <td style={{ ...S.td, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button style={S.btn('#2563eb')} onClick={() => openDetail(doc)}>Detail</button>
+                  <button style={S.btnOutline('#f59e0b')} onClick={() => openOverride(doc)}>📅 Override</button>
+                  <button style={S.btnOutline(doc.isActive ? '#ef4444' : '#16a34a')} onClick={() => handleToggle(doc)}>
+                    {doc.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && <tr><td colSpan={6} style={{ ...S.td, textAlign: 'center', color: '#94a3b8' }}>Tidak ada dokter</td></tr>}
+          </tbody>
+        </table>
+      )}
 
-    // Simpan foto dari modal terpisah
-    const handleSavePhoto = async () => {
-        if (!photoFileModal || !photoDoctor) return;
-        setUploadingPhoto(true);
-        try {
-            await uploadPhoto(photoDoctor._id, photoFileModal);
-            toast.success('Foto berhasil diperbarui');
-            setShowPhotoModal(false);
-            setPhotoFileModal(null);
-            setPhotoPreviewModal(null);
-            fetchData();
-        } catch {
-            toast.error('Gagal upload foto');
-        } finally {
-            setUploadingPhoto(false);
-        }
-    };
+      {/* ── Detail / Edit Modal ── */}
+      {selected && (
+        <div style={S.overlay}>
+          <div style={S.modal}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+                {editMode ? '✏️ Edit Dokter' : `👨‍⚕️ dr. ${selected.doctor.name}`}
+              </h3>
+              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer' }}>×</button>
+            </div>
 
-    const openPhotoModal = (doctor) => {
-        setPhotoDoctor(doctor);
-        setPhotoFileModal(null);
-        setPhotoPreviewModal(doctor.photo ? `${API_URL}${doctor.photo}` : null);
-        setShowPhotoModal(true);
-    };
-
-    const handleToggleOnline = async (doctor) => {
-        try {
-            await api.put(`/api/doctors/${doctor._id}/online-status`, { isOnline: !doctor.isOnline });
-            toast.success(`Status dokter: ${!doctor.isOnline ? 'Online' : 'Offline'}`);
-            fetchData();
-        } catch {
-            toast.error('Gagal mengubah status online');
-        }
-    };
-
-    const handleToggle = async (doctor) => {
-        try {
-            await api.put(`/api/admin/doctors/${doctor._id}/toggle-status`);
-            toast.success(`Dokter ${doctor.isActive ? 'dinonaktifkan' : 'diaktifkan'}`);
-            fetchData();
-        } catch {
-            toast.error('Gagal mengubah status');
-        }
-    };
-
-    const handleDelete = async (doctor) => {
-        if (!window.confirm(`Hapus dokter ${doctor.name}? Data tidak dapat dikembalikan.`)) return;
-        try {
-            await api.delete(`/api/admin/doctors/${doctor._id}`);
-            toast.success('Dokter dihapus');
-            fetchData();
-        } catch {
-            toast.error('Gagal menghapus dokter');
-        }
-    };
-
-    const handleLinkUser = async () => {
-        if (!linkUserId) { toast.error('Pilih user terlebih dahulu'); return; }
-        setProcessing(true);
-        try {
-            await api.post('/api/doctors/admin/link-user', { doctorId: linkDoctor._id, userId: linkUserId });
-            toast.success('Dokter berhasil dihubungkan ke user!');
-            setShowLinkModal(false);
-            setLinkUserId('');
-            fetchData();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Gagal menghubungkan');
-        } finally {
-            setProcessing(false);
-        }
-    };
-
-    const openEdit = (doctor) => {
-        setEditingDoctor(doctor);
-        setPhotoFile(null);
-        setPhotoPreview(doctor.photo ? `${API_URL}${doctor.photo}` : null);
-        setSettings({
-            allowChat:      doctor.consultationSettings?.allowChat      !== false,
-            allowVideoCall: doctor.consultationSettings?.allowVideoCall !== false,
-        });
-        setForm({
-            name: doctor.name || '',
-            specialization: doctor.specialization || '',
-            consultationFee: doctor.consultationFee || '',
-            qualification: doctor.qualification || '',
-            experience: doctor.experience || '',
-            bio: doctor.bio || '',
-            email: '', password: '', phone: ''
-        });
-        setShowDoctorModal(true);
-    };
-
-    const openAdd = () => {
-        setEditingDoctor(null);
-        setPhotoFile(null);
-        setPhotoPreview(null);
-        setSettings(defaultSettings);
-        setForm(defaultForm);
-        setShowDoctorModal(true);
-    };
-
-    const filtered = doctors.filter(d =>
-        !search ||
-        d.name?.toLowerCase().includes(search.toLowerCase()) ||
-        d.specialization?.toLowerCase().includes(search.toLowerCase())
-    );
-
-    const unlinkedDoctors = doctors.filter(d => !d.userId);
-
-    if (loading) return (
-        <Container className="py-5 text-center">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2 text-muted">Memuat data dokter...</p>
-        </Container>
-    );
-
-    return (
-        <Container fluid className="py-4">
-            <Row className="mb-4 align-items-center">
-                <Col>
-                    <Button as={Link} to="/admin" variant="link" className="p-0 text-muted mb-1">
-                        <FaArrowLeft className="me-1" /> Dashboard Admin
-                    </Button>
-                    <h4 className="fw-bold mb-0">
-                        <FaUserMd className="me-2 text-primary" />
-                        Kelola Dokter
-                    </h4>
-                </Col>
-                <Col xs="auto" className="d-flex gap-2">
-                    <Button variant="outline-secondary" size="sm" onClick={fetchData}>
-                        <FaSync className="me-1" /> Refresh
-                    </Button>
-                    <Button variant="primary" onClick={openAdd}>
-                        <FaPlus className="me-1" /> Tambah Dokter
-                    </Button>
-                </Col>
-            </Row>
-
-            {unlinkedDoctors.length > 0 && (
-                <Alert variant="warning" className="d-flex align-items-center gap-2 mb-3">
-                    <FaExclamationTriangle />
-                    <span>
-                        <strong>{unlinkedDoctors.length} dokter</strong> belum terhubung ke akun user.
-                        Klik tombol <strong>Hubungkan</strong> untuk memperbaiki.
-                    </span>
-                </Alert>
-            )}
-
-            <Row className="mb-3 g-2">
-                <Col md={5}>
-                    <InputGroup>
-                        <InputGroup.Text><FaSearch /></InputGroup.Text>
-                        <Form.Control
-                            placeholder="Cari nama atau spesialisasi..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-                    </InputGroup>
-                </Col>
-                <Col className="d-flex align-items-center">
-                    <span className="text-muted small">{filtered.length} dokter</span>
-                </Col>
-            </Row>
-
-            <Card className="border-0 shadow-sm">
-                <Card.Body className="p-0">
-                    <Table hover responsive className="mb-0">
-                        <thead className="bg-light">
-                            <tr>
-                                <th style={{ width: 56 }}>Foto</th>
-                                <th>Nama</th>
-                                <th>Spesialisasi</th>
-                                <th>Biaya</th>
-                                <th>Akun</th>
-                                <th>Status</th>
-                                <th>Online</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.length === 0 ? (
-                                <tr><td colSpan={8} className="text-center py-4 text-muted">Tidak ada dokter</td></tr>
-                            ) : filtered.map(d => (
-                                <tr key={d._id}>
-                                    {/* Foto dokter */}
-                                    <td className="text-center align-middle">
-                                        {d.photo ? (
-                                            <img
-                                                src={`${API_URL}${d.photo}`}
-                                                alt={d.name}
-                                                style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '2px solid #dee2e6' }}
-                                            />
-                                        ) : (
-                                            <div style={{
-                                                width: 40, height: 40, borderRadius: '50%',
-                                                background: '#e9ecef', display: 'inline-flex',
-                                                alignItems: 'center', justifyContent: 'center',
-                                                color: '#adb5bd', fontSize: 18, border: '2px solid #dee2e6'
-                                            }}>
-                                                <FaUserMd />
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td>
-                                        <div className="fw-semibold">dr. {d.name}</div>
-                                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>{d.qualification}</div>
-                                        <div style={{ fontSize: '0.7rem', marginTop: 2 }}>
-                                            {d.consultationSettings?.allowChat      !== false && <span title="Chat aktif" style={{ marginRight: 3 }}>💬</span>}
-                                            {d.consultationSettings?.allowVideoCall !== false && <span title="Video aktif">📹</span>}
-                                        </div>
-                                    </td>
-                                    <td className="small">{d.specialization}</td>
-                                    <td className="small">Rp {Number(d.consultationFee || 0).toLocaleString('id-ID')}</td>
-                                    <td>
-                                        {d.userId
-                                            ? <Badge bg="success">✓ Terhubung</Badge>
-                                            : <Badge bg="danger">✗ Belum</Badge>}
-                                    </td>
-                                    <td>
-                                        <Badge bg={d.isActive ? 'success' : 'secondary'}>
-                                            {d.isActive ? 'Aktif' : 'Nonaktif'}
-                                        </Badge>
-                                    </td>
-                                    <td>
-                                        <Button
-                                            variant={d.isOnline ? 'success' : 'outline-secondary'}
-                                            size="sm"
-                                            onClick={() => handleToggleOnline(d)}
-                                        >
-                                            {d.isOnline ? '🟢 Online' : '⚫ Offline'}
-                                        </Button>
-                                    </td>
-                                    <td>
-                                        <div className="d-flex gap-1 flex-wrap">
-                                            <Button variant="outline-primary" size="sm" title="Edit Data" onClick={() => openEdit(d)}>
-                                                <FaEdit />
-                                            </Button>
-                                            <Button variant="outline-info" size="sm" title="Ganti Foto" onClick={() => openPhotoModal(d)}>
-                                                <FaCamera />
-                                            </Button>
-                                            {!d.userId && (
-                                                <Button variant="warning" size="sm" title="Hubungkan ke User"
-                                                    onClick={() => { setLinkDoctor(d); setLinkUserId(''); setShowLinkModal(true); }}>
-                                                    <FaLink />
-                                                </Button>
-                                            )}
-                                            <Button
-                                                variant={d.isActive ? 'outline-danger' : 'outline-success'}
-                                                size="sm"
-                                                onClick={() => handleToggle(d)}>
-                                                {d.isActive ? <FaToggleOff /> : <FaToggleOn />}
-                                            </Button>
-                                            <Button variant="danger" size="sm" onClick={() => handleDelete(d)}>
-                                                <FaTrash />
-                                            </Button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                </Card.Body>
-            </Card>
-
-            {/* ═══ Modal Tambah/Edit Dokter ═══════════════════════════════════ */}
-            <Modal show={showDoctorModal} onHide={() => setShowDoctorModal(false)} size="lg">
-                <Modal.Header closeButton>
-                    <Modal.Title>
-                        <FaUserMd className="me-2 text-primary" />
-                        {editingDoctor ? `Edit dr. ${editingDoctor.name}` : 'Tambah Dokter Baru'}
-                    </Modal.Title>
-                </Modal.Header>
-                <Form onSubmit={handleSave}>
-                    <Modal.Body>
-                        <Row className="g-3">
-
-                            {/* ── Bagian Foto ── */}
-                            <Col md={12}>
-                                <Form.Label className="fw-semibold small d-block">
-                                    <FaCamera className="me-1 text-muted" /> Foto Dokter
-                                </Form.Label>
-                                <div className="d-flex align-items-center gap-3">
-                                    {/* Preview foto */}
-                                    <div style={{
-                                        width: 80, height: 80, borderRadius: '50%',
-                                        overflow: 'hidden', border: '2px dashed #dee2e6',
-                                        background: '#f8f9fa', flexShrink: 0,
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}>
-                                        {photoPreview ? (
-                                            <img src={photoPreview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        ) : (
-                                            <FaUserMd size={28} color="#adb5bd" />
-                                        )}
-                                    </div>
-                                    <div>
-                                        <input
-                                            ref={photoInputRef}
-                                            type="file"
-                                            accept="image/jpeg,image/jpg,image/png,image/webp"
-                                            style={{ display: 'none' }}
-                                            onChange={handlePhotoChange}
-                                        />
-                                        <Button
-                                            variant="outline-secondary"
-                                            size="sm"
-                                            onClick={() => photoInputRef.current.click()}
-                                        >
-                                            <FaUpload className="me-1" />
-                                            {photoPreview ? 'Ganti Foto' : 'Pilih Foto'}
-                                        </Button>
-                                        {photoFile && (
-                                            <Button variant="link" size="sm" className="text-danger ms-1 p-0"
-                                                onClick={() => { setPhotoFile(null); setPhotoPreview(editingDoctor?.photo ? `${API_URL}${editingDoctor.photo}` : null); }}>
-                                                Hapus
-                                            </Button>
-                                        )}
-                                        <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>
-                                            JPG, PNG, WebP · Maks. 3MB
-                                        </div>
-                                    </div>
-                                </div>
-                            </Col>
-
-                            <Col md={12}><hr className="my-1" /></Col>
-
-                            {/* ── Data Dokter ── */}
-                            <Col md={6}>
-                                <Form.Group>
-                                    <Form.Label className="fw-semibold small">Nama Dokter <span className="text-danger">*</span></Form.Label>
-                                    <Form.Control value={form.name} required
-                                        onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                                        placeholder="Contoh: Ahmad Fauzi" />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group>
-                                    <Form.Label className="fw-semibold small">Spesialisasi <span className="text-danger">*</span></Form.Label>
-                                    <Form.Control value={form.specialization} required
-                                        onChange={e => setForm(p => ({ ...p, specialization: e.target.value }))}
-                                        placeholder="Contoh: Umum, Anak, THT" />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group>
-                                    <Form.Label className="fw-semibold small">Biaya Konsultasi (Rp) <span className="text-danger">*</span></Form.Label>
-                                    <Form.Control type="number" min="0" value={form.consultationFee} required
-                                        onChange={e => setForm(p => ({ ...p, consultationFee: e.target.value }))} />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group>
-                                    <Form.Label className="fw-semibold small">Kualifikasi</Form.Label>
-                                    <Form.Control value={form.qualification}
-                                        onChange={e => setForm(p => ({ ...p, qualification: e.target.value }))}
-                                        placeholder="Contoh: dr., Sp.A, M.Kes" />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group>
-                                    <Form.Label className="fw-semibold small">Pengalaman (tahun)</Form.Label>
-                                    <Form.Control type="number" min="0" value={form.experience}
-                                        onChange={e => setForm(p => ({ ...p, experience: e.target.value }))} />
-                                </Form.Group>
-                            </Col>
-                            <Col md={12}>
-                                <Form.Group>
-                                    <Form.Label className="fw-semibold small">Bio / Deskripsi</Form.Label>
-                                    <Form.Control as="textarea" rows={2} value={form.bio}
-                                        onChange={e => setForm(p => ({ ...p, bio: e.target.value }))}
-                                        placeholder="Deskripsi singkat dokter..." />
-                                </Form.Group>
-                            </Col>
-
-                            {/* ── Consultation Settings ── */}
-                            <Col md={12}><hr className="my-1" /></Col>
-                            <Col md={12}>
-                                <Form.Label className="fw-semibold small d-block mb-2">
-                                    ⚙️ Fitur Konsultasi yang Tersedia
-                                </Form.Label>
-                                <div className="d-flex gap-4 flex-wrap">
-                                    {[
-                                        { key: 'allowChat',       icon: '💬', label: 'Chat' },
-                                        { key: 'allowVideoCall',  icon: '📹', label: 'Video Call' },
-                                    ].map(opt => (
-                                        <Form.Check
-                                            key={opt.key}
-                                            type="switch"
-                                            id={`setting-${opt.key}`}
-                                            label={<span>{opt.icon} {opt.label}</span>}
-                                            checked={settings[opt.key] !== false}
-                                            onChange={e => setSettings(s => ({ ...s, [opt.key]: e.target.checked }))}
-                                        />
-                                    ))}
-                                </div>
-                                {(!settings.allowChat && !settings.allowVideoCall) && (
-                                    <div className="text-danger small mt-1">⚠️ Minimal satu fitur harus diaktifkan</div>
-                                )}
-                            </Col>
-
-                            {/* Akun Login - hanya untuk tambah baru */}
-                            {!editingDoctor && (
-                                <>
-                                    <Col md={12}><hr className="my-1" /><p className="fw-semibold small text-primary mb-0">Akun Login Dokter</p></Col>
-                                    <Col md={6}>
-                                        <Form.Group>
-                                            <Form.Label className="fw-semibold small">Email <span className="text-danger">*</span></Form.Label>
-                                            <Form.Control type="email" value={form.email} required
-                                                onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                                                placeholder="email@klinik.com" />
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={6}>
-                                        <Form.Group>
-                                            <Form.Label className="fw-semibold small">Password <span className="text-danger">*</span></Form.Label>
-                                            <Form.Control type="password" value={form.password} required minLength={6}
-                                                onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                                                placeholder="Min. 6 karakter" />
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={6}>
-                                        <Form.Group>
-                                            <Form.Label className="fw-semibold small">No. Telepon</Form.Label>
-                                            <Form.Control value={form.phone}
-                                                onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                                                placeholder="08xxxxxxxxxx" />
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={12}>
-                                        <Alert variant="info" className="small py-2 mb-0">
-                                            Akun login akan dibuat otomatis. Dokter dapat login menggunakan email dan password di atas.
-                                        </Alert>
-                                    </Col>
-                                </>
-                            )}
-                        </Row>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="secondary" onClick={() => setShowDoctorModal(false)}>Batal</Button>
-                        <Button type="submit" variant="primary" disabled={processing || uploadingPhoto || (!settings.allowChat && !settings.allowVideoCall)}>
-                            {(processing || uploadingPhoto) ? <><Spinner size="sm" className="me-1" />Menyimpan...</> : editingDoctor ? 'Simpan Perubahan' : 'Tambah Dokter'}
-                        </Button>
-                    </Modal.Footer>
-                </Form>
-            </Modal>
-
-            {/* ═══ Modal Ganti Foto (dari tombol kamera di tabel) ═════════════ */}
-            <Modal show={showPhotoModal} onHide={() => setShowPhotoModal(false)} centered>
-                <Modal.Header closeButton>
-                    <Modal.Title><FaCamera className="me-2 text-info" />Foto Dokter — dr. {photoDoctor?.name}</Modal.Title>
-                </Modal.Header>
-                <Modal.Body className="text-center">
-                    {/* Preview */}
-                    <div style={{
-                        width: 120, height: 120, borderRadius: '50%', overflow: 'hidden',
-                        border: '3px solid #dee2e6', background: '#f8f9fa',
-                        margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }}>
-                        {photoPreviewModal ? (
-                            <img src={photoPreviewModal} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                            <FaUserMd size={44} color="#adb5bd" />
-                        )}
+            {!editMode ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13, marginBottom: 16 }}>
+                  {[['Spesialisasi', selected.doctor.specialization], ['Fee Konsultasi', `Rp ${(selected.doctor.consultationFee||0).toLocaleString('id-ID')}`], ['Rating', `${selected.doctor.rating||0} ⭐ (${selected.doctor.totalReviews||0} ulasan)`], ['Status', selected.doctor.isActive ? '✅ Aktif' : '❌ Nonaktif']].map(([k,v]) => (
+                    <div key={k} style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{k}</div>
+                      <div style={{ fontWeight: 600, color: '#0f172a', marginTop: 2 }}>{v}</div>
                     </div>
+                  ))}
+                </div>
 
-                    <input
-                        ref={photoInputModalRef}
-                        type="file"
-                        accept="image/jpeg,image/jpg,image/png,image/webp"
-                        style={{ display: 'none' }}
-                        onChange={handlePhotoModalChange}
-                    />
-                    <Button variant="outline-secondary" onClick={() => photoInputModalRef.current.click()}>
-                        <FaUpload className="me-1" />
-                        {photoPreviewModal ? 'Ganti Foto' : 'Pilih Foto'}
-                    </Button>
-                    <div className="text-muted mt-2" style={{ fontSize: '0.8rem' }}>JPG, PNG, WebP · Maks. 3MB</div>
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowPhotoModal(false)}>Batal</Button>
-                    <Button variant="primary" disabled={!photoFileModal || uploadingPhoto} onClick={handleSavePhoto}>
-                        {uploadingPhoto ? <><Spinner size="sm" className="me-1" />Mengupload...</> : 'Simpan Foto'}
-                    </Button>
-                </Modal.Footer>
-            </Modal>
+                {/* Rating distribution */}
+                {selected.ratingDist && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Distribusi Rating</p>
+                    {[5,4,3,2,1].map(r => {
+                      const count = selected.ratingDist[r] || 0;
+                      const total = Object.values(selected.ratingDist).reduce((a,b) => a+b, 0);
+                      const pct   = total ? Math.round(count/total*100) : 0;
+                      return (
+                        <div key={r} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, fontSize: 12 }}>
+                          <span style={{ width: 16 }}>{r}⭐</span>
+                          <div style={{ flex: 1, background: '#f1f5f9', borderRadius: 4, height: 8 }}>
+                            <div style={{ width: `${pct}%`, background: '#f59e0b', height: 8, borderRadius: 4, transition: 'width .3s' }} />
+                          </div>
+                          <span style={{ color: '#64748b', width: 32 }}>{count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-            {/* ═══ Modal Hubungkan Dokter ke User ═════════════════════════════ */}
-            <Modal show={showLinkModal} onHide={() => setShowLinkModal(false)}>
-                <Modal.Header closeButton>
-                    <Modal.Title><FaLink className="me-2 text-warning" />Hubungkan Dokter ke Akun User</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    <Alert variant="warning" className="small">
-                        Dokter <strong>dr. {linkDoctor?.name}</strong> belum memiliki akun login.
-                    </Alert>
-                    <Form.Group>
-                        <Form.Label className="fw-semibold">Pilih Akun User (role: doctor)</Form.Label>
-                        <Form.Select value={linkUserId} onChange={e => setLinkUserId(e.target.value)}>
-                            <option value="">-- Pilih User --</option>
-                            {users.map(u => (
-                                <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                            ))}
-                        </Form.Select>
-                    </Form.Group>
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowLinkModal(false)}>Batal</Button>
-                    <Button variant="warning" disabled={processing || !linkUserId} onClick={handleLinkUser}>
-                        {processing ? 'Menghubungkan...' : 'Hubungkan Sekarang'}
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-        </Container>
-    );
+                {/* Recent reviews */}
+                {selected.reviews?.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Ulasan Terbaru</p>
+                    <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {selected.reviews.map(rv => (
+                        <div key={rv._id} style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 600 }}>{rv.userId?.name || 'Anonim'}</span>
+                            <span style={{ color: '#f59e0b' }}>{'⭐'.repeat(rv.rating)}</span>
+                          </div>
+                          {rv.ratingComment && <p style={{ margin: '4px 0 0', color: '#475569' }}>{rv.ratingComment}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button style={S.btn('#2563eb')} onClick={() => setEditMode(true)}>✏️ Edit Profil & Fee</button>
+                  <button style={S.btnOutline(selected.doctor.isActive ? '#ef4444' : '#16a34a')} onClick={() => { handleToggle(selected.doctor); setSelected(null); }}>
+                    {selected.doctor.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {[['Nama', 'name', 'text'], ['Spesialisasi', 'specialization', 'text'], ['Biaya Konsultasi (Rp)', 'consultationFee', 'number']].map(([lbl, key, type]) => (
+                  <div key={key} style={{ marginBottom: 12 }}>
+                    <label style={S.label}>{lbl}</label>
+                    <input type={type} style={S.field} value={editForm[key] || ''} onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))} />
+                  </div>
+                ))}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={S.label}>Bio / Deskripsi</label>
+                  <textarea rows={3} style={{ ...S.field, resize: 'vertical' }} value={editForm.bio || ''} onChange={e => setEditForm(f => ({ ...f, bio: e.target.value }))} />
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button style={S.btnOutline('#64748b')} onClick={() => setEditMode(false)}>Batal</button>
+                  <button style={S.btn('#16a34a')} disabled={saving} onClick={handleSave}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Override Modal ── */}
+      {overrideModal && (
+        <div style={S.overlay}>
+          <div style={{ ...S.modal, maxWidth: 480 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>📅 Override Jadwal — dr. {overrideModal.name}</h3>
+              <button onClick={() => setOverrideModal(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#92400e', marginBottom: 16 }}>
+              ⚠️ Tanggal yang diblokir akan membatalkan semua janji temu yang sudah ada dan memblokir slot konsultasi online.
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={S.label}>Tanggal (pisah koma, format YYYY-MM-DD)</label>
+              <input style={S.field} placeholder="2025-04-07, 2025-04-08" value={overrideDates} onChange={e => setOverrideDates(e.target.value)} />
+              <p style={{ fontSize: 11, color: '#64748b', margin: '4px 0 0' }}>Contoh: 2025-04-07, 2025-04-08</p>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={S.label}>Alasan (opsional)</label>
+              <input style={S.field} placeholder="Cuti, sakit, acara, dll." value={overrideReason} onChange={e => setOverrideReason(e.target.value)} />
+            </div>
+            <button style={{ ...S.btn('#ef4444'), width: '100%', padding: '10px', marginBottom: 16 }} onClick={handleAddOverride}>🚫 Blokir Tanggal</button>
+
+            {overrides.length > 0 && (
+              <>
+                <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Blokiran Aktif</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {overrides.map(o => (
+                    <div key={o._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fee2e2', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+                      <div>
+                        <span style={{ fontWeight: 700, color: '#991b1b' }}>{o.date}</span>
+                        {o.reason && <span style={{ color: '#b91c1c', marginLeft: 8 }}>— {o.reason}</span>}
+                      </div>
+                      <button onClick={() => handleDeleteOverride(o.date)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default ManageDoctors;

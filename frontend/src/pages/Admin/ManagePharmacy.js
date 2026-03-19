@@ -9,7 +9,6 @@ import {
     FaToggleOn, FaToggleOff, FaMotorcycle, FaStore, FaBan,
     FaStar, FaChevronDown, FaChevronUp, FaGraduationCap, FaMapMarkerAlt, FaInfoCircle,
 } from 'react-icons/fa';
-import { Link } from 'react-router-dom';
 
 const CATEGORIES = [
     { value: 'obat_bebas',           label: 'Obat Bebas'           },
@@ -169,16 +168,38 @@ const ManagePharmacy = () => {
     };
 
     // Transisi valid per status
-    const getValidNextStatuses = (order) => {
-        const isPickup = order.deliveryMethod==='pickup';
-        const map = {
-            paid         : ['diproses','cancelled'],
-            diproses     : isPickup ? ['cancelled'] : ['dikirim','cancelled'],
-            dikirim      : ['terkirim'],
-            terkirim     : ['selesai'],
-            siap_diambil : ['selesai','cancelled'],
+    // 1x klik update status — langsung ke next status tanpa modal
+    const handleQuickStatus = async (order) => {
+        const isPickup = order.deliveryMethod === 'pickup';
+        const nextMap = {
+            paid         : 'diproses',
+            diproses     : isPickup ? 'siap_diambil' : 'dikirim',
+            dikirim      : 'terkirim',
+            terkirim     : 'selesai',
+            siap_diambil : 'selesai',
         };
-        return map[order.status] || [];
+        const next = nextMap[order.status];
+        if (!next) return;
+        try {
+            await api.put(`/api/pharmacy/admin/orders/${order._id}/status`, { status: next });
+            toast.success(`Status diperbarui: ${next}`);
+            fetchData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Gagal update status');
+        }
+    };
+
+    // Label tombol 1x klik berdasarkan status & delivery method
+    const getQuickActionLabel = (order) => {
+        const isPickup = order.deliveryMethod === 'pickup';
+        const labels = {
+            paid         : { icon: '📦', text: 'Proses' },
+            diproses     : isPickup ? { icon: '🏥', text: 'Siap Diambil' } : { icon: '🏍️', text: 'Kirim' },
+            dikirim      : { icon: '📬', text: 'Sudah Tiba' },
+            terkirim     : { icon: '✅', text: 'Selesai' },
+            siap_diambil : { icon: '✅', text: 'Selesai' },
+        };
+        return labels[order.status] || null;
     };
 
     const handleOrderAction = async () => {
@@ -197,10 +218,6 @@ const ManagePharmacy = () => {
                 await api.put(`/api/pharmacy/admin/orders/${selectedOrder._id}/adjust-items`, payload);
                 toast.success('Jumlah item diperbarui');
 
-            } else {
-                if (!newStatus) { toast.error('Pilih status baru'); setUpdatingOrder(false); return; }
-                await api.put(`/api/pharmacy/admin/orders/${selectedOrder._id}/status`, { status: newStatus });
-                toast.success('Status diperbarui');
             }
             setShowOrderModal(false);
             fetchData();
@@ -267,7 +284,6 @@ const ManagePharmacy = () => {
                 {/* Header */}
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24,flexWrap:'wrap',gap:12}}>
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
-                        <Link to="/admin" style={{color:'#64748b',fontSize:13,textDecoration:'none',display:'flex',alignItems:'center',gap:4}}>← Admin</Link>
                         <div style={{width:44,height:44,background:'#dcfce7',borderRadius:12,display:'flex',alignItems:'center',justifyContent:'center',color:'#16a34a'}}><FaPills size={22}/></div>
                         <div>
                             <h1 style={{fontSize:22,fontWeight:700,color:'#0f172a',marginBottom:2}}>Manajemen Farmasi</h1>
@@ -343,36 +359,31 @@ const ManagePharmacy = () => {
                             ):filteredOrders.map(o=>(
                                 <div key={o._id} style={{borderBottom:'1px solid #f1f5f9'}}>
                                     {/* Row utama */}
-                                    <div style={{display:'flex',alignItems:'center',padding:'14px 16px',gap:12,flexWrap:'wrap',cursor:'pointer'}} onClick={()=>toggleExpand(o._id)}>
-                                        <div style={{flex:'0 0 auto'}}>
+                                    <div style={{display:'grid',gridTemplateColumns:'28px 1fr 1fr 100px 110px 100px auto',alignItems:'center',padding:'12px 16px',gap:12,cursor:'pointer'}} onClick={()=>toggleExpand(o._id)}>
+                                        <div style={{}}>
                                             {expandedOrders.has(o._id)?<FaChevronUp size={12} style={{color:'#94a3b8'}}/>:<FaChevronDown size={12} style={{color:'#94a3b8'}}/>}
                                         </div>
-                                        <div style={{flex:'1 1 160px'}}>
+                                        <div style={{}}>
                                             <div style={{fontWeight:600,fontSize:12,color:'#0f172a'}}>{o.orderNumber}</div>
                                             <div style={{fontSize:11,color:'#64748b'}}>{fmtDate(o.createdAt)}</div>
                                         </div>
-                                        <div style={{flex:'1 1 150px'}}>
+                                        <div style={{}}>
                                             <div style={{fontWeight:500,fontSize:13}}>{o.userId?.name||'-'}</div>
                                             <div style={{fontSize:11,color:'#64748b'}}>{o.userId?.email}</div>
                                         </div>
-                                        <div style={{flex:'0 0 auto'}}>{o.deliveryMethod==='pickup'?<span style={{background:'#dcfce7',color:'#166534',padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}><FaStore size={9} style={{marginRight:3}}/>Pickup</span>:<span style={{background:'#dbeafe',color:'#1e40af',padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}><FaTruck size={9} style={{marginRight:3}}/>Diantar</span>}</div>
-                                        <div style={{flex:'0 0 auto'}}>{getStatusBadge(o.status)}</div>
-                                        <div style={{flex:'0 0 100px',textAlign:'right',fontWeight:700,color:'#2563eb',fontSize:14}}>{fmt(o.totalAmount)}</div>
+                                        <div style={{}}>{o.deliveryMethod==='pickup'?<span style={{background:'#dcfce7',color:'#166534',padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}><FaStore size={9} style={{marginRight:3}}/>Pickup</span>:<span style={{background:'#dbeafe',color:'#1e40af',padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}><FaTruck size={9} style={{marginRight:3}}/>Diantar</span>}</div>
+                                        <div style={{}}>{getStatusBadge(o.status)}</div>
+                                        <div style={{textAlign:'right',fontWeight:700,color:'#2563eb',fontSize:14}}>{fmt(o.totalAmount)}</div>
                                         {/* Aksi cepat */}
-                                        <div style={{flex:'0 0 auto',display:'flex',gap:6}} onClick={e=>e.stopPropagation()}>
+                                        <div style={{display:'flex',gap:6}} onClick={e=>e.stopPropagation()}>
                                             {o.status==='waiting_prescription'&&(
                                                 <button className="btn-y" onClick={()=>openOrderModal(o,'verify-rx')}>
                                                     <FaFileImage size={11}/> Verifikasi Resep
                                                 </button>
                                             )}
-                                            {o.status==='paid'&&(
-                                                <button className="btn-g" onClick={()=>openOrderModal(o,'status')}>
-                                                    <FaBoxOpen size={11}/> Proses
-                                                </button>
-                                            )}
-                                            {['diproses','dikirim','terkirim','siap_diambil'].includes(o.status)&&(
-                                                <button className="btn-b" onClick={()=>openOrderModal(o,'status')}>
-                                                    <FaEdit size={11}/> Update Status
+                                            {getQuickActionLabel(o) && (
+                                                <button className="btn-g" onClick={(e) => { e.stopPropagation(); handleQuickStatus(o); }}>
+                                                    {getQuickActionLabel(o).icon} {getQuickActionLabel(o).text}
                                                 </button>
                                             )}
                                         </div>
@@ -399,7 +410,7 @@ const ManagePharmacy = () => {
 
                                                     {/* Alamat */}
                                                     {o.shippingAddress?.address&&(
-                                                        <p style={{fontSize:12,color:'#64748b',margin:'0 0 8px'}}><FaMapMarkerAlt style={{marginRight:4}}/>{o.shippingAddress.address}{o.shippingAddress.detail&&` · ${o.shippingAddress.detail}`}</p>
+                                                        <p style={{fontSize:12,color:'#64748b',margin:'0 0 8px'}}><FaMapMarkerAlt style={{marginRight:4}}/>{o.shippingAddress?.address}{o.shippingAddress?.detail&&` · ${o.shippingAddress.detail}`}</p>
                                                     )}
 
                                                     {/* Resep info */}
@@ -409,7 +420,7 @@ const ManagePharmacy = () => {
                                                             {!o.prescription&&'Belum diupload'}
                                                             {o.prescription?.status==='pending'&&'⏳ Menunggu verifikasi'}
                                                             {o.prescription?.status==='approved'&&<span style={{color:'#166534'}}>✅ Disetujui</span>}
-                                                            {o.prescription?.status==='rejected'&&<span style={{color:'#b91c1c'}}>❌ Ditolak: {o.prescription.rejectedReason}</span>}
+                                                            {o.prescription?.status==='rejected'&&<span style={{color:'#b91c1c'}}>❌ Ditolak: {o.prescription?.rejectedReason}</span>}
                                                             {o.prescription?.imageUrl&&(
                                                                 <button style={{background:'none',border:'none',color:'#2563eb',fontSize:11,cursor:'pointer',marginLeft:8}} onClick={()=>{ setSelectedOrder(o); setRxPreview(true); setShowOrderModal(true); setOrderAction('rx-preview'); }}>
                                                                     <FaEye size={10} style={{marginRight:3}}/>Lihat Foto
@@ -440,9 +451,9 @@ const ManagePharmacy = () => {
                                                             </>
                                                         )}
                                                         {/* Update status */}
-                                                        {getValidNextStatuses(o).length>0&&o.status!=='waiting_prescription'&&(
-                                                            <button className="btn-g" style={{justifyContent:'center'}} onClick={()=>openOrderModal(o,'status')}>
-                                                                <FaEdit size={11}/> Update Status
+                                                        {getQuickActionLabel(o) && (
+                                                            <button className="btn-g" style={{justifyContent:'center'}} onClick={(e) => { e.stopPropagation(); handleQuickStatus(o); }}>
+                                                                {getQuickActionLabel(o).icon} {getQuickActionLabel(o).text}
                                                             </button>
                                                         )}
                                                     </div>
@@ -783,7 +794,7 @@ const ManagePharmacy = () => {
                                             toast.error(err.response?.data?.message||'Gagal memproses refund');
                                         } finally { setProcessingRefund(false); }
                                     }}
-                                    style={{flex:2,padding:'10px',background:refundAction==='approve'?'#16a34a':'#dc2626',color:'#fff',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer',opacity:processingRefund?.6:1}}>
+                                    style={{flex:2,padding:'10px',background:refundAction==='approve'?'#16a34a':'#dc2626',color:'#fff',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer',opacity: processingRefund ? 0.6 : 1}}>
                                     {processingRefund?'Memproses...':(refundAction==='approve'?'✅ Konfirmasi Approve':'❌ Konfirmasi Tolak')}
                                 </button>
                             </div>
@@ -799,7 +810,7 @@ const ManagePharmacy = () => {
                         <h5 style={{fontWeight:700,marginBottom:0}}>
                             {orderAction==='verify-rx'&&<><FaFileImage style={{color:'#f59e0b',marginRight:8}}/>Verifikasi Resep</>}
                             {orderAction==='adjust-items'&&<><FaEdit style={{color:'#2563eb',marginRight:8}}/>Sesuaikan Dosis</>}
-                            {orderAction==='status'&&<><FaBoxOpen style={{color:'#16a34a',marginRight:8}}/>Update Status Pesanan</>}
+
                             {orderAction==='rx-preview'&&<><FaEye style={{color:'#2563eb',marginRight:8}}/>Foto Resep</>}
                         </h5>
                         <button onClick={()=>setShowOrderModal(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#64748b'}}>×</button>
@@ -826,7 +837,7 @@ const ManagePharmacy = () => {
                                     {selectedOrder.prescription?.imageUrl&&(
                                         <div style={{marginBottom:16}}>
                                             <p style={{fontSize:12,fontWeight:600,color:'#64748b',marginBottom:6}}>FOTO RESEP DOKTER</p>
-                                            <img src={`${API_URL}${selectedOrder.prescription.imageUrl}`} alt="Resep"
+                                            <img src={`${API_URL}${selectedOrder.prescription?.imageUrl}`} alt="Resep"
                                                 style={{maxWidth:'100%',maxHeight:300,objectFit:'contain',borderRadius:10,border:'1px solid #e2e8f0',display:'block'}}/>
                                         </div>
                                     )}
@@ -878,32 +889,11 @@ const ManagePharmacy = () => {
                             )}
 
                             {/* UPDATE STATUS */}
-                            {orderAction==='status'&&(
-                                <div>
-                                    <p style={{fontSize:12,fontWeight:600,color:'#64748b',marginBottom:8}}>PILIH STATUS BARU</p>
-                                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                                        {getValidNextStatuses(selectedOrder).map(s=>{
-                                            const v = STATUS_CFG[s];
-                                            return (
-                                                <div key={s} style={{border:`2px solid ${newStatus===s?v.color:'#e2e8f0'}`,borderRadius:12,padding:'12px 16px',cursor:'pointer',background:newStatus===s?v.bg:'#fff',transition:'all .15s'}} onClick={()=>setNewStatus(s)}>
-                                                    <div style={{display:'flex',alignItems:'center',gap:8,color:newStatus===s?v.color:'#475569',fontWeight:600,fontSize:13}}>
-                                                        <v.icon size={14}/>{v.label}
-                                                    </div>
-                                                    {s==='diproses'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>{selectedOrder.deliveryMethod==='pickup'?'Akan siap diambil dalam ±30 menit setelah ini':'Lanjutkan ke pengiriman setelah obat siap'}</div>}
-                                                    {s==='dikirim'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Estimasi tiba 1–2 hari kerja</div>}
-                                                    {s==='terkirim'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Konfirmasi obat sudah tiba ke pasien</div>}
-                                                    {s==='selesai'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Pesanan diselesaikan</div>}
-                                                    {s==='cancelled'&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>Batalkan pesanan dan kembalikan stok</div>}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
+
 
                             {/* RX PREVIEW */}
                             {orderAction==='rx-preview'&&selectedOrder.prescription?.imageUrl&&(
-                                <img src={`${API_URL}${selectedOrder.prescription.imageUrl}`} alt="Resep" style={{maxWidth:'100%',maxHeight:500,objectFit:'contain',borderRadius:10,display:'block',margin:'0 auto'}}/>
+                                <img src={`${API_URL}${selectedOrder.prescription?.imageUrl}`} alt="Resep" style={{maxWidth:'100%',maxHeight:500,objectFit:'contain',borderRadius:10,display:'block',margin:'0 auto'}}/>
                             )}
                         </div>
                     )}
@@ -913,7 +903,7 @@ const ManagePharmacy = () => {
                             <button className="btn-o-sm" onClick={()=>setShowOrderModal(false)}>Batal</button>
                             <button className="btn-g" onClick={handleOrderAction} disabled={updatingOrder||
                                 (orderAction==='verify-rx'&&(!newStatus||(!selectedOrder?.prescription&&newStatus==='approve')||(newStatus==='reject'&&!rejectReason.trim())))||
-                                (orderAction==='status'&&!newStatus)}>
+                                false}>
                                 {updatingOrder?<><Spinner size="sm" animation="border"/> Memproses...</>
                                     :orderAction==='verify-rx'?<><FaCheckCircle size={12}/>Konfirmasi Verifikasi</>
                                     :orderAction==='adjust-items'?<><FaSave size={12}/>Simpan Perubahan</>

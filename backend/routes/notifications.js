@@ -6,9 +6,10 @@ const auth = require('../middleware/auth');
 // GET all notifications for current user
 router.get('/', auth, async (req, res) => {
     try {
+        const limit = Math.min(parseInt(req.query.limit) || 50, 100);
         const notifications = await Notification.find({ userId: req.userId })
             .sort('-createdAt')
-            .limit(50);
+            .limit(limit);
         
         const unreadCount = await Notification.countDocuments({ 
             userId: req.userId, 

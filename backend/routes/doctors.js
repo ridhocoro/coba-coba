@@ -647,4 +647,103 @@ router.delete('/:id', auth, async (req, res) => {
     }
 });
 
+// ── Chat dokter ↔ admin (dokter bisa baca & balas) ────────────────────────────
+const AdminChat    = require('../models/AdminChat');
+const { createNotification } = require('../utils/notificationHelper');
+
+const chatDir = path.join(__dirname, '../uploads/admin-chat');
+if (!fs.existsSync(chatDir)) fs.mkdirSync(chatDir, { recursive: true });
+const uploadChatFile = multer({
+    storage: multer.diskStorage({
+        destination: (_, __, cb) => cb(null, chatDir),
+        filename: (_, file, cb) => cb(null, `chat-${Date.now()}-${file.originalname}`),
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+// GET /api/doctors/my/chat — baca pesan dari admin
+router.get('/my/chat', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        const thread = await AdminChat.findOne({ doctorId: doctor._id }).lean();
+        res.json({ success: true, messages: thread?.messages || [], unreadDoctor: thread?.unreadDoctor || 0 });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// POST /api/doctors/my/chat — balas pesan ke admin
+router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text?.trim() && !req.file) return res.status(400).json({ message: 'Pesan atau file wajib ada' });
+
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+
+        let fileUrl = null, fileName = null, fileType = null;
+        if (req.file) {
+            fileUrl  = `/uploads/admin-chat/${req.file.filename}`;
+            fileName = req.file.originalname;
+            fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
+        }
+
+        const msg = {
+            senderId  : req.userId,
+            senderRole: 'doctor',
+            text      : text?.trim() || '',
+            fileUrl, fileName, fileType,
+            isRead    : false,
+            createdAt : new Date(),
+        };
+
+        const thread = await AdminChat.findOneAndUpdate(
+            { doctorId: doctor._id },
+            {
+                $push: { messages: msg },
+                $set : { lastMessage: text?.trim() || `📎 ${fileName}`, lastAt: new Date(), doctorUserId: req.userId },
+                $inc : { unreadAdmin: 1 },
+                $setOnInsert: { doctorUserId: req.userId },
+            },
+            { upsert: true, new: true }
+        );
+
+        // Notif ke semua admin
+        const User = require('../models/User');
+        const admins = await User.find({ role: 'admin' }).select('_id');
+        const io = req.app.get('io');
+        for (const admin of admins) {
+            await createNotification({
+                userId : admin._id,
+                type   : 'new_message',
+                title  : `💬 Pesan dari dr. ${doctor.name}`,
+                message: text?.trim() || 'Dokter mengirimkan file',
+                data   : { doctorId: doctor._id },
+                io,
+            });
+            if (io) io.to(`user-${admin._id}`).emit('admin-chat-message', { doctorId: doctor._id.toString(), message: msg });
+        }
+
+        res.json({ success: true, message: msg });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// PUT /api/doctors/my/chat/read — tandai sudah dibaca oleh dokter
+router.put('/my/chat/read', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ userId: req.userId });
+        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        await AdminChat.findOneAndUpdate(
+            { doctorId: doctor._id },
+            { $set: { unreadDoctor: 0 } }
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 module.exports = router;

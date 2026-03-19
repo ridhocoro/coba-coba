@@ -13,6 +13,7 @@ const medicineSchema = new mongoose.Schema({
     price               : { type: Number, required: true, min: 0 },
     stock               : { type: Number, required: true, default: 0, min: 0 },
     lockedStock         : { type: Number, default: 0 },
+    minStock            : { type: Number, default: 10 },  // batas minimum stok (admin set per item)
     unit                : { type: String, default: 'tablet' },
     requiresPrescription: { type: Boolean, default: false },
 

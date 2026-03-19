@@ -189,6 +189,7 @@ router.put('/my', auth, doctorAuth, async (req, res) => {
 router.get('/slots/:doctorId', async (req, res) => {
     try {
         const { doctorId } = req.params;
+        const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
 
         const doctor = await Doctor.findById(doctorId);
         if (!doctor || !doctor.isActive)
@@ -204,6 +205,10 @@ router.get('/slots/:doctorId', async (req, res) => {
                 message:     'Dokter belum merilis jadwal untuk minggu ini. Silakan cek kembali beberapa saat lagi.',
             });
         }
+
+        // Ambil tanggal yang diblokir admin (override)
+        const overrides = await DoctorScheduleOverride.find({ doctorId }).lean();
+        const blockedDates = new Set(overrides.map(o => o.date));
 
         const nowUTC   = new Date();
         const result   = [];
@@ -223,6 +228,9 @@ router.get('/slots/:doctorId', async (req, res) => {
             const dayStartUTC = wibToUtcDate(dateStr, '00:00');
             const dayEndUTC   = wibToUtcDate(dateStr, '23:59');
 
+            // Jika tanggal diblokir admin — semua slot tidak tersedia
+            const isBlocked = blockedDates.has(dateStr);
+
             const bookedList = await Consultation.find({
                 doctorId,
                 scheduledAt: { $gte: dayStartUTC, $lte: dayEndUTC },
@@ -233,7 +241,7 @@ router.get('/slots/:doctorId', async (req, res) => {
 
             for (const slot of activeSlots) {
                 const slotUTC  = wibToUtcDate(dateStr, slot);
-                const CUTOFF_MS = 20 * 60 * 1000; // 20 menit sebelum slot
+                const CUTOFF_MS = 20 * 60 * 1000;
                 const isPast   = (slotUTC.getTime() - CUTOFF_MS) <= nowUTC.getTime();
                 const isBooked = bookedSet.has(slot);
                 const endUTC   = new Date(slotUTC.getTime() + 30 * 60 * 1000);
@@ -244,9 +252,11 @@ router.get('/slots/:doctorId', async (req, res) => {
                     endTime:   utcToWibHHMM(endUTC),
                     startUtc:  slotUTC.toISOString(),
                     endUtc:    endUTC.toISOString(),
-                    available: !isPast && !isBooked,
+                    available: !isPast && !isBooked && !isBlocked,
                     isPast,
                     isBooked,
+                    isBlocked,
+                    blockReason: isBlocked ? (overrides.find(o => o.date === dateStr)?.reason || 'Dokter tidak hadir') : undefined,
                 });
             }
 

@@ -30,23 +30,11 @@ import BookingSlot from './pages/user/BookingSlot';
 import PaymentResult from './pages/user/PaymentResult';
 import UserAppointments from './pages/user/Appointments';
 
-// ─── Doctor: SATU FILE untuk semua halaman dokter ─────────────────────────────
-// Semua route /doctor/* dihandle di dalam komponen ini.
-// Navbar & Footer tidak ditampilkan untuk dokter karena
-// DoctorDashboard sudah punya sidebar navigasinya sendiri.
+// Doctor
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
 
-// Admin Pages
-import AdminHome from './pages/Admin/Home';
-import AdminDashboard from './pages/Admin/index';
-import VerifyPayments from './pages/Admin/VerifyPayments';
-import ManageDoctors from './pages/Admin/ManageDoctors';
-import ManageUsers from './pages/Admin/ManageUsers';
-import ManageConsultations from './pages/Admin/ManageConsultations';
-import ManageAppointments from './pages/Admin/ManageAppointments';
-import ManagePharmacy from './pages/Admin/ManagePharmacy';
-import AdminManualPayment from './pages/Admin/ManualPayment';
-import ClinicSettings from './pages/Admin/ClinicSettings';
+// Admin — satu entry point, semua tab dihandle di dalam AdminIndex
+import AdminIndex from './pages/Admin/index';
 
 // Context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -70,9 +58,9 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 const HomeRouter = () => {
     const { user, loading } = useAuth();
     if (loading) return null;
-    if (user?.role === 'admin')  return <AdminHome />;
+    if (user?.role === 'admin')  return <Navigate to="/admin" replace />;
     if (user?.role === 'doctor') return <Navigate to="/doctor" replace />;
-    return <Home />; // 'user' dan 'mahasiswa' → Home
+    return <Home />;
 };
 
 // ─── Dashboard redirect ───────────────────────────────────────────────────────
@@ -81,75 +69,66 @@ const DashboardRouter = () => {
     if (!user) return <Navigate to="/login" />;
     if (user.role === 'admin')  return <Navigate to="/admin" />;
     if (user.role === 'doctor') return <Navigate to="/doctor" />;
-    return <UserDashboard />; // 'user' dan 'mahasiswa'
+    return <UserDashboard />;
 };
 
 // ─── App content ──────────────────────────────────────────────────────────────
 function AppContent() {
     const { user } = useAuth();
     const isDoctor = user?.role === 'doctor';
+    const isAdmin  = user?.role === 'admin';
+
+    // Admin dan Dokter punya layout sendiri — sembunyikan Navbar & Footer global
+    const hideLayout = isDoctor || isAdmin;
 
     return (
         <div className="App">
-            {/* Navbar & Footer disembunyikan untuk dokter —
-                DoctorDashboard punya sidebar sendiri */}
-            {!isDoctor && <Navbar />}
+            {!hideLayout && <Navbar />}
 
-            <main style={{ minHeight: isDoctor ? '100vh' : '80vh' }}>
+            <main style={{ minHeight: hideLayout ? '100vh' : '80vh' }}>
                 <Routes>
                     {/* ===== PUBLIC ===== */}
-                    <Route path="/" element={<HomeRouter />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/forgot-email" element={<ForgotEmail />} />
-                    <Route path="/reset-password" element={<ResetPassword />} />
-                    <Route path="/health-check" element={<HealthCheck />} />
-                    <Route path="/health-check/bmi" element={<BMICalculator />} />
-                    <Route path="/health-check/calories" element={<CalorieCalculator />} />
+                    <Route path="/"                         element={<HomeRouter />} />
+                    <Route path="/login"                    element={<Login />} />
+                    <Route path="/register"                 element={<Register />} />
+                    <Route path="/forgot-password"          element={<ForgotPassword />} />
+                    <Route path="/forgot-email"             element={<ForgotEmail />} />
+                    <Route path="/reset-password"           element={<ResetPassword />} />
+                    <Route path="/health-check"             element={<HealthCheck />} />
+                    <Route path="/health-check/bmi"         element={<BMICalculator />} />
+                    <Route path="/health-check/calories"    element={<CalorieCalculator />} />
                     <Route path="/health-check/blood-pressure" element={<BloodPressureChecker />} />
 
                     {/* ===== DASHBOARD ===== */}
                     <Route path="/dashboard" element={<ProtectedRoute><DashboardRouter /></ProtectedRoute>} />
-                    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                    <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
                     {/* ===== USER ===== */}
-                    <Route path="/consultations" element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><Consultations /></ProtectedRoute>} />
-
-                    {/* ⚠️ /book/:doctorId HARUS di atas /:id */}
+                    <Route path="/consultations" element={
+                        <ProtectedRoute allowedRoles={['user','mahasiswa']}><Consultations /></ProtectedRoute>
+                    } />
+                    {/* /book/:doctorId HARUS di atas /:id */}
                     <Route path="/consultations/book/:doctorId" element={
                         <ProtectedRoute allowedRoles={['user','mahasiswa']}><BookingSlot /></ProtectedRoute>
                     } />
-
-                    {/* Route chat dipakai oleh user DAN dokter (tombol "Buka Chat" di DoctorDashboard) */}
                     <Route path="/consultations/:id" element={
-                        <ProtectedRoute allowedRoles={['user', 'mahasiswa', 'doctor']}><ConsultationChat /></ProtectedRoute>
+                        <ProtectedRoute allowedRoles={['user','mahasiswa','doctor']}><ConsultationChat /></ProtectedRoute>
                     } />
 
                     <Route path="/payment/success" element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
                     <Route path="/payment/failed"  element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
 
-                    <Route path="/pharmacy"    element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><Pharmacy /></ProtectedRoute>} />
-                    <Route path="/payments"    element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><PaymentHistory /></ProtectedRoute>} />
+                    <Route path="/pharmacy"     element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><Pharmacy /></ProtectedRoute>} />
+                    <Route path="/payments"     element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><PaymentHistory /></ProtectedRoute>} />
                     <Route path="/appointments" element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><UserAppointments /></ProtectedRoute>} />
 
-                    {/* ===== DOCTOR — semua dihandle DoctorDashboard ===== */}
-                    <Route path="/doctor" element={
-                        <ProtectedRoute allowedRoles={['doctor']}><DoctorDashboard /></ProtectedRoute>
-                    } />
-                    {/* Semua sub-route lama /doctor/* redirect ke /doctor */}
+                    {/* ===== DOCTOR ===== */}
+                    <Route path="/doctor"   element={<ProtectedRoute allowedRoles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />
                     <Route path="/doctor/*" element={<Navigate to="/doctor" replace />} />
 
-                    {/* ===== ADMIN ===== */}
-                    <Route path="/admin"                 element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
-                    <Route path="/admin/verify-payments" element={<ProtectedRoute allowedRoles={['admin']}><VerifyPayments /></ProtectedRoute>} />
-                    <Route path="/admin/doctors"         element={<ProtectedRoute allowedRoles={['admin']}><ManageDoctors /></ProtectedRoute>} />
-                    <Route path="/admin/users"           element={<ProtectedRoute allowedRoles={['admin']}><ManageUsers /></ProtectedRoute>} />
-                    <Route path="/admin/consultations"   element={<ProtectedRoute allowedRoles={['admin']}><ManageConsultations /></ProtectedRoute>} />
-                    <Route path="/admin/appointments"    element={<ProtectedRoute allowedRoles={['admin']}><ManageAppointments /></ProtectedRoute>} />
-                    <Route path="/admin/pharmacy"        element={<ProtectedRoute allowedRoles={['admin']}><ManagePharmacy /></ProtectedRoute>} />
-                    <Route path="/admin/manual-payments" element={<ProtectedRoute allowedRoles={['admin']}><AdminManualPayment /></ProtectedRoute>} />
-                    <Route path="/admin/clinic-settings" element={<ProtectedRoute allowedRoles={['admin']}><ClinicSettings /></ProtectedRoute>} />
+                    {/* ===== ADMIN — satu route, semua tab dihandle di AdminIndex ===== */}
+                    <Route path="/admin"   element={<ProtectedRoute allowedRoles={['admin']}><AdminIndex /></ProtectedRoute>} />
+                    <Route path="/admin/*" element={<ProtectedRoute allowedRoles={['admin']}><AdminIndex /></ProtectedRoute>} />
 
                     {/* ===== 404 ===== */}
                     <Route path="*" element={
@@ -162,7 +141,7 @@ function AppContent() {
                 </Routes>
             </main>
 
-            {!isDoctor && <Footer />}
+            {!hideLayout && <Footer />}
 
             <Toaster
                 position="top-right"

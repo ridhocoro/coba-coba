@@ -370,25 +370,6 @@ const handleConsultationPaid = async (consultation, xenditEvent, io) => {
             }
         }
 
-        // WhatsApp konfirmasi ke pasien
-        try {
-            const { waKonfirmasiKonsultasi, waDokterBookingBaru } = require('../utils/fonnte');
-            const patient = await User.findById(consultation.userId).select('name phone');
-            if (patient?.phone && doctor) {
-                await waKonfirmasiKonsultasi(patient, doctor, consultation);
-            }
-            // WA ke dokter jika ada nomor HP
-            if (doctor) {
-                const doctorUser = await User.findById(doctor.userId).select('name phone');
-                if (doctorUser?.phone) {
-                    const tipe = consultation.consultationType === 'video_call' ? 'Video Call' : 'Chat';
-                    await waDokterBookingBaru(doctorUser.phone, doctor.name, patient?.name || 'Pasien', _fmtDate(consultation.scheduledAt), tipe);
-                }
-            }
-        } catch (waErr) {
-            console.error('[Xendit] WA konfirmasi error:', waErr.message);
-        }
-
         if (io) {
             io.to(`user-${consultation.userId}`).emit('consultation-status-update', {
                 consultationId: consultation._id.toString(),
@@ -427,6 +408,21 @@ const handlePaymentPaid = async (payment, xenditEvent, io) => {
                     io,
                 });
                 if (io) io.to(`user-${order.userId}`).emit('order-status-update', { orderId: order._id.toString(), status: 'paid' });
+
+                // Notifikasi ke semua admin
+                try {
+                    const admins = await User.find({ role: 'admin' }).select('_id');
+                    for (const admin of admins) {
+                        await createNotification({
+                            userId : admin._id,
+                            type   : 'order_shipped',
+                            title  : '🛒 Pesanan Baru Masuk',
+                            message: `Pesanan ${order.orderNumber} sudah dibayar dan menunggu diproses.`,
+                            data   : { orderId: order._id },
+                            io,
+                        });
+                    }
+                } catch (e) { console.error('[Xendit] admin notif error:', e.message); }
             }
         }
 

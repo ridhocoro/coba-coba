@@ -604,7 +604,7 @@ const Pharmacy = () => {
                                                 <div className="ph-card">
                                                     <div style={{position:'relative'}}>
                                                         <img src={med.image?`${API_URL}${med.image}`:'/images/medicine-placeholder.jpg'} alt={med.name}
-                                                            style={{height:170,objectFit:'cover',width:'100%',cursor:'pointer',filter:med.isActive===false?'grayscale(60%)':'none',opacity:med.isActive===false?.75:1}}
+                                                            style={{height:170,objectFit:'cover',width:'100%',cursor:'pointer',filter:med.isActive===false?'grayscale(60%)':'none',opacity: med.isActive===false ? 0.75 : 1}}
                                                             onClick={()=>setSelectedMed(med)}/>
                                                         {med.isActive===false&&(
                                                             <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
@@ -886,7 +886,7 @@ const Pharmacy = () => {
                                     disabled={submittingRefund||(refundModal.type==='video'&&!refundVideo)||!refundReason.trim()}
                                     style={{flex:2,padding:'10px',borderRadius:8,border:'none',
                                         background:(refundModal.type==='video'&&!refundVideo)||!refundReason.trim()?'#9ca3af':'#dc2626',
-                                        color:'#fff',fontWeight:700,cursor:'pointer',opacity:submittingRefund?.6:1}}>
+                                        color:'#fff',fontWeight:700,cursor:'pointer',opacity: submittingRefund ? 0.6 : 1}}>
                                     {submittingRefund ? 'Memproses...' : refundModal.type==='instant' ? '↩️ Konfirmasi Refund' : '📤 Kirim Pengajuan Refund'}
                                 </button>
                             </div>

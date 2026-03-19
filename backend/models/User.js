@@ -14,6 +14,7 @@ const userSchema = new mongoose.Schema({
     },
     role     : { type: String, enum: ['user', 'mahasiswa', 'doctor', 'admin'], default: 'user' },
     isActive : { type: Boolean, default: true },
+    quotaBonus : { type: Number, default: 0 }, // tambahan kuota gratis mahasiswa dari admin
 
     // ── Email verification OTP ───────────────────────────────────────────────
     isVerified           : { type: Boolean, default: false },
