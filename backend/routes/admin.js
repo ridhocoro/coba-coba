@@ -248,10 +248,55 @@ router.get('/doctors', guard, async (req, res) => {
         const filter = {};
         if (req.query.specialization) filter.specialization = req.query.specialization;
         const doctors = await Doctor.find(filter).populate('userId', 'name email phone isActive').lean();
-        // Tandai lowStock untuk setiap dokter tidak relevan — ini untuk obat
         res.json({ success: true, doctors });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// POST /admin/doctors — buat akun dokter baru
+router.post('/doctors', guard, async (req, res) => {
+    try {
+        const { name, email, password, specialization, qualification, gender, consultationFee, bio, experience } = req.body;
+
+        if (!name?.trim())           return res.status(400).json({ message: 'Nama wajib diisi' });
+        if (!email?.trim())          return res.status(400).json({ message: 'Email wajib diisi' });
+        if (!password || password.length < 6) return res.status(400).json({ message: 'Password minimal 6 karakter' });
+        if (!specialization?.trim()) return res.status(400).json({ message: 'Spesialisasi wajib diisi' });
+
+        // Cek email sudah ada
+        const existing = await User.findOne({ email: email.toLowerCase().trim() });
+        if (existing) return res.status(400).json({ message: 'Email sudah digunakan' });
+
+        // Buat akun User dengan role doctor
+        const user = new User({
+            name    : name.trim(),
+            email   : email.toLowerCase().trim(),
+            password,           // pre-save hook akan hash
+            role    : 'doctor',
+            isVerified: true,   // langsung verified karena dibuat admin
+        });
+        await user.save();
+
+        // Buat profil Doctor
+        const doctor = new Doctor({
+            userId          : user._id,
+            name            : name.trim(),
+            specialization  : specialization.trim(),
+            qualification   : qualification?.trim() || '',
+            gender          : gender || '',
+            bio             : bio?.trim() || '',
+            experience      : experience ? Number(experience) : 0,
+            consultationFee : consultationFee ? Number(consultationFee) : 0,
+            isActive        : true,
+        });
+        await doctor.save();
+
+        // Populate untuk response
+        const populated = await Doctor.findById(doctor._id).populate('userId', 'name email').lean();
+        res.status(201).json({ success: true, message: 'Dokter berhasil ditambahkan', doctor: populated });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 

@@ -7,7 +7,7 @@ const ManageDoctors = () => {
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
   const [spec, setSpec]           = useState('');
-  const [selected, setSelected]   = useState(null); // detail modal
+  const [selected, setSelected]   = useState(null);
   const [editMode, setEditMode]   = useState(false);
   const [editForm, setEditForm]   = useState({});
   const [saving, setSaving]       = useState(false);
@@ -15,6 +15,10 @@ const ManageDoctors = () => {
   const [overrideDates, setOverrideDates] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
   const [overrides, setOverrides] = useState([]);
+  // ── Tambah Dokter ──
+  const [addModal, setAddModal]   = useState(false);
+  const [addForm, setAddForm]     = useState({ name:'', email:'', password:'', specialization:'', qualification:'', gender:'', consultationFee:'', bio:'', experience:'' });
+  const [addSaving, setAddSaving] = useState(false);
 
   const fetchDoctors = useCallback(async () => {
     setLoading(true);
@@ -54,12 +58,14 @@ const ManageDoctors = () => {
     finally { setSaving(false); }
   };
 
-  const handleToggle = async (doc) => {
+  const handleToggle = async (doc, closeModal = false) => {
     try {
-      await api.put(`/api/admin/doctors/${doc._id}/toggle-status`);
-      toast.success(doc.isActive ? 'Dokter dinonaktifkan' : 'Dokter diaktifkan');
+      const r = await api.put(`/api/admin/doctors/${doc._id}/toggle-status`);
+      const nowActive = r.data?.doctor?.isActive ?? !doc.isActive;
+      toast.success(nowActive ? 'Dokter diaktifkan' : 'Dokter dinonaktifkan');
       fetchDoctors();
-      if (selected?.doctor?._id === doc._id) openDetail(doc);
+      // Refresh detail modal only if it's open AND we're not closing it
+      if (!closeModal && selected?.doctor?._id === doc._id) openDetail(doc);
     } catch { toast.error('Gagal mengubah status'); }
   };
 
@@ -93,6 +99,25 @@ const ManageDoctors = () => {
     } catch { toast.error('Gagal menghapus blokiran'); }
   };
 
+  const handleAddDoctor = async () => {
+    if (!addForm.name.trim())           { toast.error('Nama wajib diisi'); return; }
+    if (!addForm.email.trim())          { toast.error('Email wajib diisi'); return; }
+    if (!addForm.password || addForm.password.length < 6) { toast.error('Password minimal 6 karakter'); return; }
+    if (!addForm.specialization.trim()) { toast.error('Spesialisasi wajib diisi'); return; }
+    setAddSaving(true);
+    try {
+      await api.post('/api/admin/doctors', addForm);
+      toast.success('Dokter berhasil ditambahkan ✅');
+      setAddModal(false);
+      setAddForm({ name:'', email:'', password:'', specialization:'', qualification:'', gender:'', consultationFee:'', bio:'', experience:'' });
+      fetchDoctors();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menambahkan dokter');
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
   const filtered = doctors.filter(d =>
     !search || d.name?.toLowerCase().includes(search.toLowerCase()) || d.specialization?.toLowerCase().includes(search.toLowerCase())
   );
@@ -123,6 +148,7 @@ const ManageDoctors = () => {
           {specs.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <button style={S.btn('#2563eb')} onClick={fetchDoctors}>🔄 Refresh</button>
+        <button style={S.btn('#16a34a')} onClick={() => setAddModal(true)}>➕ Tambah Dokter</button>
       </div>
 
       {loading ? <p style={{ color: '#64748b' }}>Memuat...</p> : (
@@ -222,7 +248,7 @@ const ManageDoctors = () => {
 
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button style={S.btn('#2563eb')} onClick={() => setEditMode(true)}>✏️ Edit Profil & Fee</button>
-                  <button style={S.btnOutline(selected.doctor.isActive ? '#ef4444' : '#16a34a')} onClick={() => { handleToggle(selected.doctor); setSelected(null); }}>
+                  <button style={S.btnOutline(selected.doctor.isActive ? '#ef4444' : '#16a34a')} onClick={() => { handleToggle(selected.doctor, true); setSelected(null); }}>
                     {selected.doctor.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                   </button>
                 </div>
@@ -287,6 +313,80 @@ const ManageDoctors = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* ── Tambah Dokter Modal ── */}
+      {addModal && (
+        <div style={S.overlay}>
+          <div style={{ ...S.modal, maxWidth: 560 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>➕ Tambah Dokter Baru</h3>
+              <button onClick={() => setAddModal(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {/* Nama */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={S.label}>Nama Lengkap <span style={{ color: '#ef4444' }}>*</span></label>
+                <input style={S.field} placeholder="dr. Nama Lengkap" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              {/* Email */}
+              <div>
+                <label style={S.label}>Email <span style={{ color: '#ef4444' }}>*</span></label>
+                <input type="email" style={S.field} placeholder="email@klinik.com" value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              {/* Password */}
+              <div>
+                <label style={S.label}>Password <span style={{ color: '#ef4444' }}>*</span></label>
+                <input type="password" style={S.field} placeholder="Min. 6 karakter" value={addForm.password} onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))} />
+              </div>
+              {/* Spesialisasi */}
+              <div>
+                <label style={S.label}>Spesialisasi <span style={{ color: '#ef4444' }}>*</span></label>
+                <input style={S.field} placeholder="mis. Umum, Penyakit Dalam" value={addForm.specialization} onChange={e => setAddForm(f => ({ ...f, specialization: e.target.value }))} />
+              </div>
+              {/* Kualifikasi */}
+              <div>
+                <label style={S.label}>Gelar / Kualifikasi</label>
+                <input style={S.field} placeholder="mis. dr., Sp.PD" value={addForm.qualification} onChange={e => setAddForm(f => ({ ...f, qualification: e.target.value }))} />
+              </div>
+              {/* Fee */}
+              <div>
+                <label style={S.label}>Biaya Konsultasi (Rp)</label>
+                <input type="number" style={S.field} placeholder="mis. 50000" value={addForm.consultationFee} onChange={e => setAddForm(f => ({ ...f, consultationFee: e.target.value }))} />
+              </div>
+              {/* Pengalaman */}
+              <div>
+                <label style={S.label}>Pengalaman (tahun)</label>
+                <input type="number" style={S.field} placeholder="mis. 5" value={addForm.experience} onChange={e => setAddForm(f => ({ ...f, experience: e.target.value }))} />
+              </div>
+              {/* Jenis Kelamin */}
+              <div>
+                <label style={S.label}>Jenis Kelamin</label>
+                <select style={S.field} value={addForm.gender} onChange={e => setAddForm(f => ({ ...f, gender: e.target.value }))}>
+                  <option value="">— Pilih —</option>
+                  <option value="Laki-laki">Laki-laki</option>
+                  <option value="Perempuan">Perempuan</option>
+                </select>
+              </div>
+              {/* Bio */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={S.label}>Bio / Deskripsi</label>
+                <textarea rows={3} style={{ ...S.field, resize: 'vertical' }} placeholder="Deskripsi singkat dokter..." value={addForm.bio} onChange={e => setAddForm(f => ({ ...f, bio: e.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#166534', margin: '14px 0' }}>
+              ℹ️ Akun akan langsung aktif dan terverifikasi. Dokter dapat login menggunakan email dan password yang diisi.
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={S.btnOutline('#64748b')} onClick={() => setAddModal(false)}>Batal</button>
+              <button style={S.btn('#16a34a')} disabled={addSaving} onClick={handleAddDoctor}>
+                {addSaving ? 'Menyimpan...' : '✅ Tambah Dokter'}
+              </button>
+            </div>
           </div>
         </div>
       )}
