@@ -244,13 +244,30 @@ router.post('/orders', auth, async (req, res) => {
         const initStatus = needsRx ? 'waiting_prescription' : 'pending';
         const lockExpiry = needsRx ? null : new Date(Date.now() + PAYMENT_LOCK_MIN*60000);
 
-        // Lock stok hanya jika tidak butuh resep
+        // BUG-28 fix: atomic check+lock — replace two-step check/lock with single atomic op
+        // Uses $expr to validate stock availability and $inc in same operation
         if (!needsRx) {
             for (const item of items) {
-                await Medicine.findByIdAndUpdate(item._id, {
-                    $inc: { lockedStock: item.quantity },
-                    $set: { stockLockExpiry: lockExpiry },
-                });
+                const lockResult = await Medicine.findOneAndUpdate(
+                    {
+                        _id: item._id,
+                        // Atomic condition: stock - lockedStock >= requested quantity
+                        $expr: { $gte: [{ $subtract: ['$stock', { $ifNull: ['$lockedStock', 0] }] }, item.quantity] },
+                    },
+                    {
+                        $inc: { lockedStock: item.quantity },
+                        $set: { stockLockExpiry: lockExpiry },
+                    },
+                    { new: false }
+                );
+                if (!lockResult) {
+                    // Atomic check failed — roll back already-locked items
+                    const lockedSoFar = orderItems.slice(0, orderItems.indexOf(orderItems.find(o => o.medicineId.toString() === item._id.toString())));
+                    for (const prev of lockedSoFar) {
+                        await Medicine.findByIdAndUpdate(prev.medicineId, { $inc: { lockedStock: -prev.quantity } });
+                    }
+                    return res.status(400).json({ success: false, message: `Stok ${item.name || item._id} habis saat diproses. Silakan cek kembali keranjang Anda.` });
+                }
             }
         }
 
@@ -557,7 +574,8 @@ router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) =
 
         // Notif user bahwa kuantitas diubah
         const io = req.app.get('io');
-        await createNotification({ userId:order.userId, type:'payment_verified',
+        // BUG-29 fix: was 'payment_verified' — wrong type for adjusted items
+        await createNotification({ userId:order.userId, type:'order_items_adjusted',
             title:'Kuantitas Obat Disesuaikan 📋',
             message:`Admin telah menyesuaikan jumlah obat di pesanan ${order.orderNumber} sesuai dosis resep. Silakan cek detail pesanan.`,
             data:{ orderId:order._id }, io });

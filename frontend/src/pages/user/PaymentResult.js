@@ -112,6 +112,7 @@ const PaymentResult = () => {
                     </div>
                 )}
 
+                {/* BUG-16 fix: always show relevant navigation even when type is unknown */}
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                     {isMedicine && (
                         <button style={S.btn(true)} onClick={() => navigate('/pharmacy')}>
@@ -123,7 +124,17 @@ const PaymentResult = () => {
                             Lihat Konsultasi
                         </button>
                     )}
-                    <button style={S.btn(!isMedicine && !isConsultation)} onClick={() => navigate('/dashboard')}>
+                    {!isMedicine && !isConsultation && (
+                        <>
+                            <button style={S.btn(true)} onClick={() => navigate('/consultations')}>
+                                Konsultasi
+                            </button>
+                            <button style={S.btn(false)} onClick={() => navigate('/pharmacy')}>
+                                Farmasi
+                            </button>
+                        </>
+                    )}
+                    <button style={S.btn(false)} onClick={() => navigate('/dashboard')}>
                         Dashboard
                     </button>
                 </div>

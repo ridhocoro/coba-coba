@@ -29,7 +29,7 @@ const ManageConsultations = () => {
   const [status, setStatus]   = useState('');
   const [page, setPage]       = useState(1);
 
-  const fetch = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 30 });
@@ -43,7 +43,7 @@ const ManageConsultations = () => {
     finally { setLoading(false); }
   }, [period, from, to, status, page]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const S = {
     periodBar: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' },

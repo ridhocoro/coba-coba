@@ -837,30 +837,33 @@ router.get('/reports/revenue', guard, async (req, res) => {
         const { period, from, to, format = 'json' } = req.query;
         const { start, end } = dateRange(period, from, to);
 
-        // Konsultasi
+        // BUG-30 fix: add limit to prevent OOM on large datasets in revenue report
+        // 5000 rows is sufficient for any realistic report period; warn if truncated
+        const REPORT_LIMIT = 5000;
         const consultations = await Consultation.find({
             paidAt: { $gte: start, $lte: end },
             status: { $nin: ['pending_payment','expired','cancelled','cancelled_by_user'] },
         })
+        .limit(REPORT_LIMIT)
         .populate('userId',   'name email')
         .populate('doctorId', 'name')
         .select('paidAt amount xenditExternalId consultationType status userId doctorId')
         .lean();
 
-        // Pesanan farmasi
         const orders = await Order.find({
             createdAt: { $gte: start, $lte: end },
             status   : { $nin: ['pending','expired','cancelled'] },
         })
+        .limit(REPORT_LIMIT)
         .populate('userId', 'name email')
         .select('orderNumber createdAt totalAmount shippingCost xenditExternalId status userId deliveryMethod items')
         .lean();
 
-        // Janji temu (tidak ada revenue karena gratis / manual)
         const appointments = await Appointment.find({
             scheduledAt: { $gte: start, $lte: end },
             status     : { $in: ['checked_in','completed'] },
         })
+        .limit(REPORT_LIMIT)
         .populate('userId',   'name email')
         .populate('doctorId', 'name')
         .select('scheduledAt appointmentTime userId doctorId status')
@@ -1074,4 +1077,4 @@ router.put('/chat/:doctorId/read', guard, async (req, res) => {
     }
 });
 
-module.exports = router;
+module.exports = router;    

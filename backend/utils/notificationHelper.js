@@ -39,10 +39,22 @@ const createNotification = async ({
             case 'appointment_completed':
             case 'appointment_cancelled':
             case 'appointment_rescheduled':
-                url = data.appointmentId ? `/appointments/${data.appointmentId}` : '/appointments';
+                // BUG-22 fix: /appointments/:id route doesn't exist in App.js — use query param instead
+                url = data.appointmentId ? `/appointments?id=${data.appointmentId}` : '/appointments';
                 break;
             case 'consultation_rescheduled':
                 url = data.consultationId ? `/consultations/${data.consultationId}` : '/consultations';
+                break;
+            // BUG-20 fix: schedule_reminder was missing → fell to default '/'
+            case 'schedule_reminder':
+                url = '/doctor';
+                break;
+            // BUG-25/BUG-29 fix: proper types for expired order and adjusted items
+            case 'order_expired':
+                url = data.orderId ? `/pharmacy?orderId=${data.orderId}` : '/pharmacy';
+                break;
+            case 'order_items_adjusted':
+                url = data.orderId ? `/pharmacy?orderId=${data.orderId}` : '/pharmacy';
                 break;
             default:
                 url = '/';

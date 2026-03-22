@@ -49,7 +49,8 @@ const calcWeekRange = () => {
     const nowWIB = nowAsWIB();
     const dow    = wibDay(nowWIB); // 0=Min,1=Sen,...,6=Sab
 
-    const daysToMonday = dow === 0 ? 1 : (dow === 1 ? 0 : 8 - dow);
+    // BUG-12 fix: 8-dow points to NEXT Monday for Tue-Sat; correct is 1-dow (negative = go back)
+    const daysToMonday = dow === 0 ? 1 : (1 - dow);
 
     const monWIB     = new Date(nowWIB.getTime() + daysToMonday * 24 * 60 * 60 * 1000);
     const monDateStr = wibDateStr(monWIB);
@@ -213,7 +214,28 @@ router.get('/slots/:doctorId', async (req, res) => {
         const nowUTC   = new Date();
         const result   = [];
         const msPerDay = 24 * 60 * 60 * 1000;
-        let cursor     = new Date(avail.weekStart.getTime());
+
+        // BUG-21 fix: single query for entire week instead of one per day (N+1)
+        // BUG-19 fix: exclude expired pending_payment slots (paymentDeadline < now)
+        const weekBookings = await Consultation.find({
+            doctorId,
+            scheduledAt: { $gte: avail.weekStart, $lte: avail.weekEnd },
+            $or: [
+                { status: { $in: ['waiting_verification','confirmed','in_progress'] } },
+                // pending_payment only valid if paymentDeadline hasn't passed
+                { status: 'pending_payment', paymentDeadline: { $gt: nowUTC } },
+            ],
+        }).select('scheduledAt').lean();
+
+        // Group booked slots by WIB date string for O(1) lookup
+        const bookedByDate = {};
+        for (const c of weekBookings) {
+            const dateKey = wibDateStr(new Date(new Date(c.scheduledAt).getTime() + WIB_OFFSET));
+            if (!bookedByDate[dateKey]) bookedByDate[dateKey] = new Set();
+            bookedByDate[dateKey].add(utcToWibHHMM(c.scheduledAt));
+        }
+
+        let cursor = new Date(avail.weekStart.getTime());
 
         while (cursor <= avail.weekEnd) {
             const cursorWIB = new Date(cursor.getTime() + WIB_OFFSET);
@@ -224,20 +246,12 @@ router.get('/slots/:doctorId', async (req, res) => {
             const activeSlots = avail.getSlotsForDay(dow);
             if (!activeSlots.length) { cursor = new Date(cursor.getTime() + msPerDay); continue; }
 
-            const dateStr     = wibDateStr(cursorWIB);
-            const dayStartUTC = wibToUtcDate(dateStr, '00:00');
-            const dayEndUTC   = wibToUtcDate(dateStr, '23:59');
+            const dateStr = wibDateStr(cursorWIB);
 
             // Jika tanggal diblokir admin — semua slot tidak tersedia
             const isBlocked = blockedDates.has(dateStr);
 
-            const bookedList = await Consultation.find({
-                doctorId,
-                scheduledAt: { $gte: dayStartUTC, $lte: dayEndUTC },
-                status:      { $in: ['pending_payment','waiting_verification','confirmed','in_progress'] },
-            }).select('scheduledAt');
-
-            const bookedSet = new Set(bookedList.map(c => utcToWibHHMM(c.scheduledAt)));
+            const bookedSet = bookedByDate[dateStr] || new Set();
 
             for (const slot of activeSlots) {
                 const slotUTC  = wibToUtcDate(dateStr, slot);

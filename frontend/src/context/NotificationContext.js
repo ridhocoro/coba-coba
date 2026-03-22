@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import io from 'socket.io-client';
 import api, { API_URL } from '../utils/api';
@@ -9,6 +10,7 @@ export const useNotifications = () => useContext(NotificationContext);
 
 export const NotificationProvider = ({ children }) => {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [socket, setSocket] = useState(null);
@@ -76,14 +78,20 @@ export const NotificationProvider = ({ children }) => {
 
     const handleNotificationClick = (notification) => {
         if (!notification.isRead) markAsRead(notification._id);
-        if (notification.data?.url) window.location.href = notification.data.url;
+        if (notification.data?.url) {
+            // BUG-26 fix: use React Router navigate() — window.location.href resets all React state
+            navigate(notification.data.url);
+        }
         setShowDropdown(false);
     };
 
     return (
         <NotificationContext.Provider value={{
             notifications, unreadCount, showDropdown, setShowDropdown,
-            markAsRead, markAllAsRead, handleNotificationClick, fetchNotifications
+            markAsRead, markAllAsRead, handleNotificationClick, fetchNotifications,
+            // BUG-23 fix: expose socket so pages (Consultations, ConsultationChat) can
+            // reuse this connection instead of creating a duplicate socket
+            socket,
         }}>
             {children}
         </NotificationContext.Provider>

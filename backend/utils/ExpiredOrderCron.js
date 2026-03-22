@@ -19,7 +19,8 @@ const run = async (io) => {
             for (const item of o.items)
                 await Medicine.findByIdAndUpdate(item.medicineId, { $inc: { lockedStock: -item.quantity } });
             o.status = 'expired'; o.updatedAt = now; await o.save();
-            await createNotification({ userId: o.userId, type: 'payment_verified',
+            // BUG-25 fix: was 'payment_verified' — wrong type for expired order
+            await createNotification({ userId: o.userId, type: 'order_expired',
                 title: 'Pesanan Kedaluwarsa ⏰',
                 message: `Pesanan ${o.orderNumber} kedaluwarsa karena tidak dibayar dalam 15 menit. Silakan pesan kembali.`,
                 data: { orderId: o._id }, io });

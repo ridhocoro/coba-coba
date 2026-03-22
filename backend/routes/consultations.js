@@ -367,10 +367,22 @@ router.post('/:id/upload-proof', auth, async (req, res) => {
 // ── Admin: cancelled_by_doctor ────────────────────────────────────────────────
 router.put('/:id/cancel-by-doctor', auth, async (req, res) => {
     try {
-        if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
+        // BUG-13 fix: allow doctor (not just admin) to cancel their own consultation
+        const isAdmin = req.userRole === 'admin';
+        const isDoctor = req.userRole === 'doctor';
+        if (!isAdmin && !isDoctor) return res.status(403).json({ message: 'Akses ditolak' });
 
-        const consultation = await Consultation.findById(req.params.id);
+        const consultation = await Consultation.findById(req.params.id)
+            .populate('doctorId', 'userId');
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        // Doctor can only cancel their own consultations
+        if (isDoctor) {
+            const doctor = await Doctor.findOne({ userId: req.userId });
+            if (!doctor || consultation.doctorId._id.toString() !== doctor._id.toString()) {
+                return res.status(403).json({ message: 'Anda bukan dokter konsultasi ini' });
+            }
+        }
 
         const cancellableStatuses = ['confirmed', 'waiting_verification', 'pending_payment'];
         if (!cancellableStatuses.includes(consultation.status)) {
@@ -379,7 +391,7 @@ router.put('/:id/cancel-by-doctor', auth, async (req, res) => {
 
         consultation.status = 'cancelled_by_doctor';
         consultation.cancelledAt = new Date();
-        consultation.cancelledBy = 'admin';
+        consultation.cancelledBy = isDoctor ? 'doctor' : 'admin';
         consultation.cancelReason = req.body.reason || 'Dokter membatalkan konsultasi';
         await consultation.save();
 
@@ -1007,7 +1019,12 @@ router.post('/:id/messages', auth, async (req, res) => {
             return res.status(403).json({ message: 'Konsultasi tidak aktif. Pesan hanya bisa dikirim saat konsultasi sedang berlangsung.' });
         }
 
-        const isUser = consultation.userId._id.toString() === req.userId;
+        // SEC-01 fix: verify req.userId is the actual patient or doctor of this consultation
+        const isUser   = consultation.userId._id.toString() === req.userId;
+        const isDrThis = consultation.doctorId?.userId?.toString() === req.userId;
+        if (!isUser && !isDrThis && req.userRole !== 'admin') {
+            return res.status(403).json({ message: 'Anda bukan peserta konsultasi ini' });
+        }
         const senderRole = isUser ? 'user' : 'doctor';
         const senderName = isUser ? consultation.userId.name : `dr. ${consultation.doctorId.name}`;
 
@@ -1052,6 +1069,13 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
             return res.status(403).json({ message: 'Konsultasi tidak aktif. Pesan hanya bisa dikirim saat konsultasi sedang berlangsung.' });
         }
         if (!req.file) return res.status(400).json({ message: 'File tidak ditemukan' });
+
+        // SEC-01 fix: verify sender is patient or doctor of this consultation
+        const isPatientImg = consultation.userId._id.toString() === req.userId;
+        const isDrImg      = consultation.doctorId?.userId?.toString() === req.userId;
+        if (!isPatientImg && !isDrImg && req.userRole !== 'admin') {
+            return res.status(403).json({ message: 'Anda bukan peserta konsultasi ini' });
+        }
 
         const isUser = consultation.userId._id.toString() === req.userId;
         const senderName = isUser ? consultation.userId.name : `dr. ${consultation.doctorId.name}`;
@@ -1685,7 +1709,10 @@ router.get('/:id', auth, async (req, res) => {
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
         // ★ Akses room hanya jika paid / scheduled / ongoing / completed
+        // BUG-09 fix: include cancelled/no_show statuses so user can view history & rate
         const chatAllowedStatuses = ['confirmed', 'in_progress', 'completed', 'no_show',
+            'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin', 'cancelled_by_user',
+            'refund_requested', 'refunded', 'refund_rejected',
             // legacy
             'paid', 'scheduled', 'ongoing'];
         const isOwnerOrDoctor = canAccess(consultation, req.userId, req.userRole);

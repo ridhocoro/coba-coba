@@ -17,7 +17,7 @@ const SectionSuratSakit = () => {
     const [loading, setLoading]   = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [selCons, setSelCons]   = useState(null);
-    const [form, setForm] = useState({ diagnosis: '', notes: '', startDate: '', endDate: '', patientAge: '', patientGender: '', patientWeight: '' });
+    const [form, setForm] = useState({ diagnosis: '', notes: '', restDays: 3, patientAge: '', patientGender: '', patientWeight: '' });
     const [saving, setSaving]     = useState(false);
     const [issuing, setIssuing]   = useState({});
 
@@ -35,14 +35,13 @@ const SectionSuratSakit = () => {
 
     const openCreate = (c) => {
         setSelCons(c);
-        setForm({ diagnosis: '', notes: '', startDate: new Date().toISOString().slice(0,10), endDate: '', patientAge: '', patientGender: '', patientWeight: '' });
+        setForm({ diagnosis: '', notes: '', restDays: 3, patientAge: '', patientGender: '', patientWeight: '' });
         setModalOpen(true);
     };
 
     const handleCreate = async () => {
         if (!form.diagnosis.trim()) { toast.error('Diagnosis wajib diisi'); return; }
-        if (!form.startDate || !form.endDate) { toast.error('Tanggal mulai dan selesai wajib diisi'); return; }
-        if (form.startDate > form.endDate) { toast.error('Tanggal mulai tidak boleh setelah tanggal selesai'); return; }
+        if (!form.restDays || Number(form.restDays) < 1) { toast.error('Lama istirahat minimal 1 hari'); return; }
         setSaving(true);
         try {
             await api.post(`/api/consultations/${selCons._id}/sick-letter`, form);
@@ -172,9 +171,18 @@ const SectionSuratSakit = () => {
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <ProfileField label="Diagnosis" value={form.diagnosis} onChange={v => setForm(f => ({ ...f, diagnosis: v }))} required />
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                        <ProfileField label="Tanggal Mulai" type="date" value={form.startDate} onChange={v => setForm(f => ({ ...f, startDate: v }))} required />
-                        <ProfileField label="Tanggal Selesai" type="date" value={form.endDate} onChange={v => setForm(f => ({ ...f, endDate: v }))} required />
+                    <div>
+                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.muted }}>Lama Istirahat (hari) <span style={{ color: colors.danger }}>*</span></label>
+                        <input
+                            type="number" min={1} max={30}
+                            value={form.restDays}
+                            onChange={e => setForm(f => ({ ...f, restDays: e.target.value }))}
+                            placeholder="mis. 3"
+                            style={{ width: '100%', padding: '8px 11px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+                        />
+                        <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
+                            Mulai hari ini: {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} s/d {form.restDays && Number(form.restDays) >= 1 ? new Date(Date.now() + (Number(form.restDays)-1)*86400000).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+                        </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                         <ProfileField label="Usia Pasien" value={form.patientAge} onChange={v => setForm(f => ({ ...f, patientAge: v }))} placeholder="mis. 28 tahun" />

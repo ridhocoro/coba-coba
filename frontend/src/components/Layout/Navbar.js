@@ -93,6 +93,15 @@ const Navigation = () => {
                     {/* ========== NAV: BELUM LOGIN ========== */}
                     {!user && (
                         <Nav className="me-auto">
+                            <Nav.Link as={Link} to="/consultations">
+                                <FaUserMd className="me-1" /> Konsultasi
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/pharmacy">
+                                <FaPills className="me-1" /> Farmasi
+                            </Nav.Link>
+                            <Nav.Link as={Link} to="/appointments">
+                                <FaCalendarAlt className="me-1" /> Janji Temu
+                            </Nav.Link>
                             <Nav.Link as={Link} to="/health-check">
                                 <FaClipboardList className="me-1" /> Cek Kesehatan
                             </Nav.Link>

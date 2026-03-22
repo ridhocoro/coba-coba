@@ -271,7 +271,7 @@ router.put('/doctor/availability', auth, doctorAuth, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** GET daftar dokter yang punya availability offline aktif */
-router.get('/doctors-with-slots', auth, async (req, res) => {
+router.get('/doctors-with-slots', async (req, res) => { // public — no auth needed for guest browse
     try {
         const availList = await AppointmentAvailability.find({ isActive: true })
             .populate({ path: 'doctorId', select: 'name specialization photo rating isActive' });
@@ -294,7 +294,7 @@ router.get('/doctors-with-slots', auth, async (req, res) => {
  * GET /slots/:doctorId?date=YYYY-MM-DD
  * Returns slot tersedia. Slot lewat tetap ditampilkan (isPast:true, available:false).
  */
-router.get('/slots/:doctorId', auth, async (req, res) => {
+router.get('/slots/:doctorId', async (req, res) => { // public — no auth needed for guest browse
     try {
         const { date } = req.query;
         if (!date) return res.status(400).json({ message: 'Parameter date wajib (YYYY-MM-DD)' });

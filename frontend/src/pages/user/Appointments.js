@@ -106,6 +106,172 @@ function fmtDeadline(scheduledAt) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT UTAMA
 // ═══════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+// GUEST DOCTOR BROWSER — card besar, klik → modal login
+// ════════════════════════════════════════════════════════════════
+const GuestApptDoctorBrowser = ({ onBuatJanji }) => {
+    const [doctors,    setDoctors]    = React.useState([]);
+    const [loading,    setLoading]    = React.useState(true);
+    const [search,     setSearch]     = React.useState('');
+    const [filterSpec, setFilterSpec] = React.useState('');
+
+    React.useEffect(() => {
+        api.get('/api/doctors')
+            .then(r => setDoctors(r.data || []))
+            .catch(() => {})
+            .finally(() => setLoading(false));
+    }, []);
+
+    const specializations = [...new Set(doctors.map(d => d.specialization))].sort();
+
+    const filtered = doctors.filter(d => {
+        const q = search.toLowerCase();
+        return (!search || d.name.toLowerCase().includes(q) || d.specialization.toLowerCase().includes(q))
+            && (!filterSpec || d.specialization === filterSpec);
+    });
+
+    if (loading) return (
+        <div style={{ textAlign: 'center', padding: 60, color: '#6b7280' }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>⏳</div>
+            <div>Memuat daftar dokter...</div>
+        </div>
+    );
+
+    return (
+        <div>
+            {/* Search & Filter */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 12, top: '50%',
+                                   transform: 'translateY(-50%)', color: '#9ca3af' }}>🔍</span>
+                    <input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Cari nama dokter atau spesialisasi..."
+                        style={{ width: '100%', padding: '10px 14px 10px 36px',
+                                 border: '1px solid #e5e7eb', borderRadius: 10,
+                                 fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                </div>
+                <select
+                    value={filterSpec}
+                    onChange={e => setFilterSpec(e.target.value)}
+                    style={{ padding: '10px 14px', border: '1px solid #e5e7eb',
+                             borderRadius: 10, fontSize: 13, outline: 'none', minWidth: 160 }}>
+                    <option value="">Semua Spesialisasi</option>
+                    {specializations.map(sp => <option key={sp}>{sp}</option>)}
+                </select>
+            </div>
+
+            {/* Info banner */}
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,
+                          padding: '10px 16px', marginBottom: 20,
+                          display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 18, flexShrink: 0 }}>ℹ️</span>
+                <span style={{ color: '#1e40af', fontSize: 13 }}>
+                    Klik <strong>Buat Janji Sekarang</strong> pada dokter pilihan —
+                    login atau daftar untuk melanjutkan booking.
+                </span>
+            </div>
+
+            {/* Count */}
+            {filtered.length > 0 && (
+                <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 14 }}>
+                    {filtered.length} dokter tersedia
+                </div>
+            )}
+
+            {/* Doctor cards */}
+            {filtered.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+                    Dokter tidak ditemukan
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {filtered.map(doc => {
+                        const stars = Array.from({ length: 5 }, (_, idx) => (
+                            <span key={idx} style={{ color: idx < Math.round(doc.rating || 0) ? '#f59e0b' : '#d1d5db', fontSize: 13 }}>★</span>
+                        ));
+                        return (
+                            <div key={doc._id}
+                                style={{
+                                    background: '#fff', border: '1px solid #e5e7eb', borderRadius: 16,
+                                    padding: 20, display: 'flex', gap: 18, alignItems: 'flex-start',
+                                    boxShadow: '0 1px 4px rgba(0,0,0,.06)', transition: 'box-shadow .15s',
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.10)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,.06)'; }}>
+
+                                {/* Avatar */}
+                                <div style={{ width: 72, height: 72, borderRadius: '50%', flexShrink: 0,
+                                              background: '#f3f4f6', overflow: 'hidden',
+                                              border: '3px solid #e5e7eb',
+                                              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {doc.photo
+                                        ? <img src={`${API_URL}${doc.photo}`} alt={doc.name}
+                                               style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        : <span style={{ fontSize: 34 }}>👨‍⚕️</span>}
+                                </div>
+
+                                {/* Info */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 800, fontSize: 16, color: '#111827', marginBottom: 2 }}>
+                                        dr. {doc.name}
+                                    </div>
+                                    <div style={{ color: '#2563eb', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                                        {doc.specialization}
+                                    </div>
+
+                                    {/* Rating */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                                                  marginBottom: 8, flexWrap: 'wrap' }}>
+                                        <span>{stars}</span>
+                                        <span style={{ color: '#6b7280', fontSize: 12 }}>
+                                            {(doc.rating || 0).toFixed(1)} ({doc.totalReviews || 0} ulasan)
+                                        </span>
+                                        {doc.experience && (
+                                            <span style={{ color: '#6b7280', fontSize: 12 }}>
+                                                · {doc.experience} thn pengalaman
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Bio */}
+                                    {doc.bio && (
+                                        <p style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.6,
+                                                    margin: 0, display: '-webkit-box',
+                                                    WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                                                    overflow: 'hidden' }}>
+                                            {doc.bio}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* CTA */}
+                                <div style={{ flexShrink: 0, alignSelf: 'center' }}>
+                                    <button
+                                        onClick={() => onBuatJanji()}
+                                        style={{
+                                            padding: '11px 20px',
+                                            background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+                                            color: '#fff', border: 'none', borderRadius: 10,
+                                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                                            whiteSpace: 'nowrap',
+                                            boxShadow: '0 2px 8px rgba(37,99,235,.3)',
+                                        }}>
+                                        📅 Buat Janji
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const Appointments = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -136,12 +302,17 @@ const Appointments = () => {
     const [reschedSlots,   setReschedSlots]   = useState([]);
     const [reschedLoading, setReschedLoading] = useState(false);
     const [rescheduling,   setRescheduling]   = useState(false);
+    const [guestModal,     setGuestModal]     = useState(false);
 
     useEffect(() => {
-        if (!user) { navigate('/login'); return; }
+        if (!user) {
+            setLoading(false);
+            setTab('book'); // guest starts on doctor browse
+            return;
+        }
         fetchDoctors();
         fetchMyAppointments();
-    }, [user]);
+    }, [user]); // eslint-disable-line
 
     const fetchDoctors = async () => {
         try {
@@ -183,6 +354,7 @@ const Appointments = () => {
     // ── Booking ────────────────────────────────────────────────────────────
     const handleBook = async () => {
         if (!selectedDoctor || !selectedDate || !selectedSlot) {
+        if (!user) { setGuestModal(true); return; } // guest: show modal
             toast.error('Pilih dokter, tanggal, dan slot waktu terlebih dahulu');
             return;
         }
@@ -285,8 +457,45 @@ const Appointments = () => {
     const activeAppts  = myAppointments.filter(a => ['scheduled','checked_in'].includes(a.status));
     const historyAppts = myAppointments.filter(a => !['scheduled','checked_in'].includes(a.status));
 
+    // ── Guest login modal ──────────────────────────────────────────
+    const GuestModal = () => (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)', zIndex:9999,
+                      display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+             onClick={() => setGuestModal(false)}>
+            <div style={{ background:'#fff', borderRadius:18, padding:'32px 28px', maxWidth:400,
+                          width:'100%', textAlign:'center', boxShadow:'0 24px 64px rgba(0,0,0,.25)' }}
+                 onClick={e => e.stopPropagation()}>
+                <div style={{ width:64, height:64, borderRadius:'50%', background:'#eff6ff',
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              margin:'0 auto 16px', fontSize:30 }}>🔐</div>
+                <h5 style={{ fontWeight:800, fontSize:20, color:'#111827', marginBottom:8 }}>Login Diperlukan</h5>
+                <p style={{ color:'#6b7280', fontSize:14, lineHeight:1.6, marginBottom:28 }}>
+                    Silakan login atau daftar untuk membuat dan melihat janji temu Anda.
+                </p>
+                <div style={{ display:'flex', gap:10 }}>
+                    <button onClick={() => navigate('/login')}
+                        style={{ flex:1, padding:'11px 0', background:'#2563eb', color:'#fff',
+                                 border:'none', borderRadius:10, fontWeight:700, cursor:'pointer', fontSize:14 }}>
+                        Login
+                    </button>
+                    <button onClick={() => navigate('/register')}
+                        style={{ flex:1, padding:'11px 0', background:'#f9fafb', color:'#374151',
+                                 border:'1px solid #e5e7eb', borderRadius:10, fontWeight:600, cursor:'pointer', fontSize:14 }}>
+                        Daftar Gratis
+                    </button>
+                </div>
+                <button onClick={() => setGuestModal(false)}
+                    style={{ marginTop:14, background:'none', border:'none',
+                             color:'#9ca3af', cursor:'pointer', fontSize:13 }}>
+                    Lanjut Jelajahi
+                </button>
+            </div>
+        </div>
+    );
+
     return (
         <div style={s.root}>
+            {guestModal && <GuestModal />}
             <div style={s.inner}>
 
                 {/* Header */}
@@ -297,18 +506,21 @@ const Appointments = () => {
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', gap: 4, background: '#f3f4f6', borderRadius: 10, padding: 4, marginBottom: 24 }}>
-                    <button style={activeTab('book')} onClick={() => setTab('book')}>📅 Buat Janji</button>
-                    <button style={activeTab('my')}   onClick={() => setTab('my')}>
-                        📋 Janji Saya
-                        {activeAppts.length > 0 && (
+                    <button style={activeTab('book')} onClick={() => setTab('book')}>👨‍⚕️ Dokter</button>
+                    <button style={activeTab('my')} onClick={() => !user ? setGuestModal(true) : setTab('my')}>
+                        🔐 Janji Saya
+                        {user && activeAppts.length > 0 && (
                             <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '0 6px', fontSize: 11 }}>{activeAppts.length}</span>
                         )}
                     </button>
                 </div>
 
-                {/* ═══ TAB: BUAT JANJI ═════════════════════════════════════ */}
+                {/* ═══ TAB: BUAT JANJI / DOKTER ════════════════════════════ */}
                 {tab === 'book' && (
                     <>
+                        {!user ? (
+                            <GuestApptDoctorBrowser onBuatJanji={() => setGuestModal(true)} />
+                        ) : (<>
                         {/* Step 1: Pilih Dokter */}
                         <div style={s.card}>
                             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#111827' }}>1️⃣ Pilih Dokter</div>
@@ -457,13 +669,25 @@ const Appointments = () => {
                                 </div>
                             </div>
                         )}
+                        </>
+                        )}
                     </>
                 )}
 
                 {/* ═══ TAB: JANJI SAYA ═════════════════════════════════════ */}
                 {tab === 'my' && (
                     <>
-                        {loading ? (
+                        {!user ? (
+                            <div style={{ textAlign:'center', padding:40, color:'#6b7280' }}>
+                              <div style={{ fontSize:48, marginBottom:12 }}>🔐</div>
+                              <div style={{ fontWeight:600 }}>Janji temu Anda membutuhkan login</div>
+                              <div style={{ fontSize:13, marginTop:4 }}>Login atau daftar untuk membuat dan melihat janji temu</div>
+                              <div style={{ display:'flex', gap:10, justifyContent:'center', marginTop:16 }}>
+                                <button onClick={() => setGuestModal(true)} style={{ padding:'10px 24px', background:'#2563eb', color:'#fff', border:'none', borderRadius:10, fontWeight:700, cursor:'pointer' }}>Login</button>
+                                <button onClick={() => navigate('/register')} style={{ padding:'10px 24px', background:'#f9fafb', color:'#374151', border:'1px solid #e5e7eb', borderRadius:10, fontWeight:600, cursor:'pointer' }}>Daftar Gratis</button>
+                              </div>
+                            </div>
+                        ) : loading ? (
                             <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Memuat...</div>
                         ) : myAppointments.length === 0 ? (
                             <div style={{ ...s.card, textAlign: 'center', padding: 40 }}>

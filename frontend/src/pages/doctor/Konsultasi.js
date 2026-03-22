@@ -47,8 +47,10 @@ const SectionKonsultasi = ({ socketRef }) => {
                 api.get('/api/consultations/doctor/pending'),
                 api.get('/api/consultations/doctor/history'),
             ]);
+            // BUG-18 fix: spread history FIRST then pending so pending (authoritative for
+            // active status) wins on duplicate _id — prevents active consultations disappearing
             const map = new Map();
-            [...(ar.data?.consultations || []), ...(hr.data?.consultations || [])].forEach(c => map.set(c._id, c));
+            [...(hr.data?.consultations || []), ...(ar.data?.consultations || [])].forEach(c => map.set(c._id, c));
             setConsultations(Array.from(map.values()));
         } catch { toast.error('Gagal memuat konsultasi'); }
         finally { setLoading(false); }

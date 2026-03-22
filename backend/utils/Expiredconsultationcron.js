@@ -199,12 +199,25 @@ const checkDoctorNoShow = async () => {
             }
         }
 
+        // BUG-17 fix: re-fetch final status after refund attempt — updated.status is always
+        // 'doctor_no_show' from findOneAndUpdate, but refund may have changed it to
+        // 'refunded' or 'refund_requested'
         if (_io) {
-            _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
-                consultationId: updated._id.toString(),
-                status        : updated.status,
-                hasAvailableSlots,
-            });
+            try {
+                const finalDoc = await Consultation.findById(updated._id).select('status').lean();
+                _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                    consultationId: updated._id.toString(),
+                    status        : finalDoc?.status || updated.status,
+                    hasAvailableSlots,
+                });
+            } catch {
+                // Fallback to updated.status if re-fetch fails
+                _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
+                    consultationId: updated._id.toString(),
+                    status        : updated.status,
+                    hasAvailableSlots,
+                });
+            }
         }
     }
 };
@@ -261,6 +274,24 @@ const checkUserNoShow = async () => {
             data    : { consultationId: updated._id },
             io      : _io,
         });
+
+        // BUG-15 fix: notify doctor to complete medical record after auto-close
+        if (finalStatus === 'completed') {
+            try {
+                const Doctor = require('../models/Doctor');
+                const doctorDoc = await Doctor.findById(updated.doctorId).select('userId').lean();
+                if (doctorDoc?.userId) {
+                    await createNotification({
+                        userId  : doctorDoc.userId,
+                        type    : 'consultation_ended',
+                        title   : '📋 Lengkapi Rekam Medis',
+                        message : 'Sesi konsultasi berakhir otomatis. Harap lengkapi rekam medis pasien segera.',
+                        data    : { consultationId: updated._id },
+                        io      : _io,
+                    });
+                }
+            } catch { /* non-critical */ }
+        }
 
         if (_io) {
             _io.to(`user-${updated.userId}`).emit('consultation-status-update', {

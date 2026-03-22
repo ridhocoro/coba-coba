@@ -209,8 +209,10 @@ router.post('/webhook', async (req, res) => {
  */
 router.post('/refund/:consultationId', auth, async (req, res) => {
     try {
-        if (!['admin', 'system'].includes(req.userRole) && req.userId !== req.body._callerId) {
-            return res.status(403).json({ error: 'Akses ditolak' });
+        // BUG-14 fix: _callerId never sent by anyone; role 'system' never valid in JWT
+        // Only admin should trigger this endpoint directly (internal refunds use processRefundInternal)
+        if (req.userRole !== 'admin') {
+            return res.status(403).json({ error: 'Akses ditolak — hanya admin' });
         }
 
         const consultation = await Consultation.findById(req.params.consultationId)

@@ -44,8 +44,12 @@ router.put('/change-password', auth, async (req, res) => {
             return res.status(400).json({ message: 'Password lama dan baru wajib diisi' });
         }
 
-        if (newPassword.length < 6) {
-            return res.status(400).json({ message: 'Password baru minimal 6 karakter' });
+        // BUG-24 fix: align with register requirement (min 8 chars + complexity)
+        if (newPassword.length < 8) {
+            return res.status(400).json({ message: 'Password baru minimal 8 karakter' });
+        }
+        if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+            return res.status(400).json({ message: 'Password baru harus mengandung huruf besar, huruf kecil, dan angka' });
         }
 
         const user = await User.findById(req.userId);

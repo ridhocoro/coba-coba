@@ -180,7 +180,7 @@ const PaymentForm = ({ consultation, amount, deadline, onClose }) => {
 // ── Multi-step Form ───────────────────────────────────────────────
 const STEPS = ['Pilih Dokter', 'Tipe Konsultasi', 'Keluhan', 'Pilih Slot'];
 
-const NewConsultationWizard = ({ onCreated }) => {
+const NewConsultationWizard = ({ onCreated, onGuestAction, isGuest }) => {
   const [step, setStep] = useState(0);
   const [doctors, setDoctors] = useState([]);
   const [search, setSearch] = useState('');
@@ -524,12 +524,17 @@ const NewConsultationWizard = ({ onCreated }) => {
           <button onClick={() => setStep(s => s - 1)} style={s.btnGhost}>← Kembali</button>
         ) : <div />}
         {step < STEPS.length - 1 ? (
-          <button onClick={() => setStep(s => s + 1)} disabled={!canNext()} style={{ ...s.btn, opacity: canNext() ? 1 : 0.4 }}>
-            Lanjut →
+          <button
+            onClick={() => isGuest && step === 0 ? onGuestAction?.() : setStep(s => s + 1)}
+            disabled={!canNext()}
+            style={{ ...s.btn, opacity: canNext() ? 1 : 0.4 }}>
+            {isGuest && step === 0 ? 'Konsultasi Sekarang 🔐' : 'Lanjut →'}
           </button>
         ) : (
-          <button onClick={handleSubmit} disabled={!canNext() || submitting} style={{ ...s.btn, opacity: (!canNext() || submitting) ? 0.4 : 1 }}>
-            {submitting ? 'Membuat...' : 'Buat Konsultasi & Bayar'}
+          <button onClick={isGuest ? onGuestAction : handleSubmit}
+            disabled={!canNext() || submitting}
+            style={{ ...s.btn, opacity: (!canNext() || submitting) ? 0.4 : 1 }}>
+            {submitting ? 'Membuat...' : isGuest ? 'Login untuk Lanjut 🔐' : 'Buat Konsultasi & Bayar'}
           </button>
         )}
       </div>
@@ -901,12 +906,166 @@ const RatingModal = ({ consultationId, doctorName, onClose, onSuccess }) => {
 };
 
 // ══════════════════════════════════════════════════════════════════
+// GUEST DOCTOR BROWSER — read-only, no auth required
+// ══════════════════════════════════════════════════════════════════
+const GuestDoctorBrowser = ({ onConsultasi }) => {
+  const [doctors,      setDoctors]      = React.useState([]);
+  const [loading,      setLoading]      = React.useState(true);
+  const [search,       setSearch]       = React.useState('');
+  const [filterSpec,   setFilterSpec]   = React.useState('');
+  const [detailDoc,    setDetailDoc]    = React.useState(null);
+
+  React.useEffect(() => {
+    api.get('/api/doctors')
+      .then(r => setDoctors(r.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const specializations = [...new Set(doctors.map(d => d.specialization))].sort();
+  const filtered = doctors.filter(d => {
+    const q = search.toLowerCase();
+    return (!search || d.name.toLowerCase().includes(q) || d.specialization.toLowerCase().includes(q))
+      && (!filterSpec || d.specialization === filterSpec);
+  });
+
+  const S = {
+    card: { background:'#fff', border:'1px solid #e5e7eb', borderRadius:14,
+            padding:'14px 16px', cursor:'pointer', display:'flex', alignItems:'center',
+            gap:14, transition:'box-shadow .15s' },
+    inp:  { background:'#fff', border:'1px solid #e5e7eb', borderRadius:9,
+            padding:'9px 14px', color:'#111827', fontSize:13, outline:'none',
+            width:'100%' },
+  };
+
+  if (loading) return (
+    <div style={{ textAlign:'center', padding:48, color:'#6b7280' }}>
+      <div style={{ fontSize:32, marginBottom:8 }}>⏳</div>Memuat daftar dokter...
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Search & Filter */}
+      <div style={{ display:'flex', gap:8, marginBottom:18, flexWrap:'wrap' }}>
+        <div style={{ flex:1, minWidth:180, position:'relative' }}>
+          <FaSearch style={{ position:'absolute', left:11, top:'50%', transform:'translateY(-50%)',
+                            color:'#9ca3af', fontSize:13 }} />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Cari nama dokter atau spesialisasi..."
+            style={{ ...S.inp, paddingLeft:33 }} />
+        </div>
+        <select value={filterSpec} onChange={e => setFilterSpec(e.target.value)}
+          style={{ ...S.inp, width:'auto', minWidth:150 }}>
+          <option value="">Semua Spesialisasi</option>
+          {specializations.map(sp => <option key={sp}>{sp}</option>)}
+        </select>
+      </div>
+
+      {/* Info banner for guest */}
+      <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:10,
+                    padding:'10px 14px', marginBottom:18, display:'flex',
+                    alignItems:'center', gap:10, fontSize:13 }}>
+        <span style={{ fontSize:18 }}>ℹ️</span>
+        <span style={{ color:'#1e40af' }}>
+          Pilih dokter dan klik <strong>Konsultasi Sekarang</strong> untuk mulai — perlu login terlebih dahulu.
+        </span>
+      </div>
+
+      {/* Doctor list */}
+      {filtered.length === 0 ? (
+        <div style={{ textAlign:'center', padding:32, color:'#6b7280' }}>
+          Dokter tidak ditemukan
+        </div>
+      ) : (
+        <div style={{ display:'grid', gap:10 }}>
+          {filtered.map(doc => (
+            <div key={doc._id}
+              style={{ ...S.card, boxShadow: detailDoc?._id === doc._id
+                ? '0 0 0 2px #2563eb' : '0 1px 3px rgba(0,0,0,.06)' }}
+              onClick={() => setDetailDoc(detailDoc?._id === doc._id ? null : doc)}
+              onMouseEnter={e => e.currentTarget.style.boxShadow='0 4px 12px rgba(0,0,0,.1)'}
+              onMouseLeave={e => e.currentTarget.style.boxShadow = detailDoc?._id === doc._id
+                ? '0 0 0 2px #2563eb' : '0 1px 3px rgba(0,0,0,.06)'}>
+
+              {/* Avatar */}
+              <div style={{ width:52, height:52, borderRadius:'50%', background:'#f3f4f6',
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            flexShrink:0, overflow:'hidden' }}>
+                {doc.photo
+                  ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                  : <span style={{ fontSize:26 }}>👨‍⚕️</span>}
+              </div>
+
+              {/* Info */}
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:700, fontSize:14, color:'#111827' }}>dr. {doc.name}</div>
+                <div style={{ color:'#2563eb', fontSize:12, marginTop:1 }}>{doc.specialization}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:3 }}>
+                  <StarRating value={doc.rating} />
+                  <span style={{ color:'#6b7280', fontSize:11 }}>({doc.totalReviews || 0} ulasan)</span>
+                  {doc.experience && <span style={{ color:'#6b7280', fontSize:11 }}>· {doc.experience} thn pengalaman</span>}
+                </div>
+              </div>
+
+              {/* Fee + CTA */}
+              <div style={{ textAlign:'right', flexShrink:0 }}>
+                <div style={{ color:'#2563eb', fontWeight:700, fontSize:13 }}>{fmtRupiah(doc.consultationFee)}</div>
+                <button
+                  onClick={e => { e.stopPropagation(); onConsultasi(); }}
+                  style={{ marginTop:6, padding:'6px 12px', background:'#2563eb', color:'#fff',
+                           border:'none', borderRadius:8, fontSize:12, fontWeight:600,
+                           cursor:'pointer', whiteSpace:'nowrap' }}>
+                  Konsultasi →
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Expanded detail panel */}
+      {detailDoc && (
+        <div style={{ marginTop:12, background:'#f9fafb', border:'1px solid #e5e7eb',
+                      borderRadius:14, padding:18 }}>
+          <div style={{ fontWeight:700, fontSize:15, color:'#111827', marginBottom:8 }}>
+            dr. {detailDoc.name}
+          </div>
+          {detailDoc.bio && (
+            <p style={{ fontSize:13, color:'#374151', lineHeight:1.7, marginBottom:12 }}>{detailDoc.bio}</p>
+          )}
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
+            {detailDoc.consultationSettings?.allowChat !== false && (
+              <span style={{ background:'#eff6ff', color:'#1d4ed8', borderRadius:20,
+                             padding:'3px 10px', fontSize:12, fontWeight:600 }}>💬 Chat</span>
+            )}
+            {detailDoc.consultationSettings?.allowVideoCall !== false && (
+              <span style={{ background:'#f0fdf4', color:'#15803d', borderRadius:20,
+                             padding:'3px 10px', fontSize:12, fontWeight:600 }}>📹 Video Call</span>
+            )}
+          </div>
+          <button
+            onClick={() => onConsultasi()}
+            style={{ width:'100%', padding:'11px 0', background:'linear-gradient(135deg,#2563eb,#3b82f6)',
+                     color:'#fff', border:'none', borderRadius:10, fontWeight:700,
+                     cursor:'pointer', fontSize:14 }}>
+            🔐 Konsultasi Sekarang — Login untuk Lanjut
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════
 const Consultations = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [view, setView] = useState('history'); // 'new' | 'history'
+  // guest starts on 'new' (doctor list), logged-in users start on 'history'
+  const [view, setView] = useState('history');
+  const [guestModal, setGuestModal] = useState(false);
   const [consultations, setConsultations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [payModal, setPayModal] = useState(null);
@@ -983,8 +1142,13 @@ const Consultations = () => {
           payload.accountNumber = postCancelAccount;
           payload.accountName = postCancelAccountName;
         }
-        await api.post(`/api/xendit/refund/${postCancelModal._id}`, payload);
-        toast.success('Refund sedang diproses. Dana akan masuk dalam 1x24 jam.');
+        // BUG-05 fix: correct endpoint is /api/consultations/:id/refund-request
+        const fd2 = new FormData();
+        if (payload.bankCode)      fd2.append('bankCode', payload.bankCode);
+        if (payload.accountNumber) fd2.append('accountNumber', payload.accountNumber);
+        if (payload.accountName)   fd2.append('accountName', payload.accountName);
+        await api.post(`/api/consultations/${postCancelModal._id}/refund-request`, fd2);
+        toast.success('Permintaan refund dikirim. Dana akan masuk dalam 1×24 jam.');
         setPostCancelModal(null); fetchConsultations();
       } else if (postCancelChoice === 'reschedule') {
         navigate(`/consultations/book/${postCancelModal.doctorId?._id || postCancelModal.doctorId}?rescheduleId=${postCancelModal._id}`);
@@ -995,9 +1159,14 @@ const Consultations = () => {
   };
 
   useEffect(() => {
-    if (!user) { navigate('/login'); return; }
+    if (!user) {
+      setLoading(false);
+      setView('doctors'); // guest always sees doctor browser
+      return;
+    }
+    setView('history'); // logged-in users start on their history
     fetchConsultations();
-  }, [user, fetchConsultations, navigate]);
+  }, [user, fetchConsultations]); // intentionally exclude navigate — it causes reset
 
   // ── Polling ringan saat ada pending_payment (safety net untuk Xendit webhook)
   useEffect(() => {
@@ -1006,6 +1175,36 @@ const Consultations = () => {
     const interval = setInterval(fetchConsultations, 10000);
     return () => clearInterval(interval);
   }, [consultations, fetchConsultations]);
+
+
+  // ── Guest login modal ──────────────────────────────────────────
+  const GuestModal = () => (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+         onClick={() => setGuestModal(false)}>
+      <div style={{ background:'#fff', borderRadius:18, padding:'32px 28px', maxWidth:400, width:'100%', textAlign:'center', boxShadow:'0 24px 64px rgba(0,0,0,.25)' }}
+           onClick={e => e.stopPropagation()}>
+        <div style={{ width:64, height:64, borderRadius:'50%', background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>🔐</div>
+        <h5 style={{ fontWeight:800, fontSize:20, color:'#111827', marginBottom:8 }}>Login Diperlukan</h5>
+        <p style={{ color:'#6b7280', fontSize:14, lineHeight:1.6, marginBottom:28 }}>
+          Silakan login atau daftar untuk membuat konsultasi dan melihat riwayat Anda.
+        </p>
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={() => navigate('/login')}
+            style={{ flex:1, padding:'11px 0', background:'#2563eb', color:'#fff', border:'none', borderRadius:10, fontWeight:700, cursor:'pointer', fontSize:14 }}>
+            Login
+          </button>
+          <button onClick={() => navigate('/register')}
+            style={{ flex:1, padding:'11px 0', background:'#f9fafb', color:'#374151', border:'1px solid #e5e7eb', borderRadius:10, fontWeight:600, cursor:'pointer', fontSize:14 }}>
+            Daftar Gratis
+          </button>
+        </div>
+        <button onClick={() => setGuestModal(false)}
+          style={{ marginTop:14, background:'none', border:'none', color:'#9ca3af', cursor:'pointer', fontSize:13 }}>
+          Lanjut Jelajahi
+        </button>
+      </div>
+    </div>
+  );
 
   // ── Socket: update real-time dari Xendit webhook
   useEffect(() => {
@@ -1080,6 +1279,7 @@ const Consultations = () => {
 
   return (
     <div style={{ ...s, minHeight: '100vh', background: '#ffffff', padding: '32px 16px' }}>
+      {guestModal && <GuestModal />}
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         {/* Header */}
@@ -1089,19 +1289,39 @@ const Consultations = () => {
             <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>Konsultasi dengan dokter berpengalaman dari rumah</p>
           </div>
           <div style={{ display: 'flex', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
-            {[['history', '📋 Riwayat'], ['new', '➕ Konsultasi Baru']].map(([v, label]) => (
-              <button key={v} onClick={() => setView(v)}
-                style={{
-                  padding: '9px 18px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                  background: view === v ? '#2563eb' : 'transparent',
-                  color: view === v ? '#fff' : '#6b7280', transition: 'all 0.2s'
-                }}>{label}</button>
-            ))}
+            {/* Guest: show Dokter + locked Konsultasi tab */}
+            {!user ? (
+              <>
+                <button onClick={() => setView('doctors')}
+                  style={{ padding:'9px 18px', border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
+                    background: view === 'doctors' ? '#2563eb' : 'transparent',
+                    color: view === 'doctors' ? '#fff' : '#6b7280', transition:'all 0.2s' }}>
+                  👨‍⚕️ Dokter
+                </button>
+                <button onClick={() => setGuestModal(true)}
+                  style={{ padding:'9px 18px', border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
+                    background:'transparent', color:'#9ca3af' }}>
+                  🔐 Konsultasi Saya
+                </button>
+              </>
+            ) : (
+              [['history', '📋 Riwayat'], ['new', '➕ Konsultasi Baru']].map(([v, label]) => (
+                <button key={v} onClick={() => setView(v)}
+                  style={{
+                    padding: '9px 18px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                    background: view === v ? '#2563eb' : 'transparent',
+                    color: view === v ? '#fff' : '#6b7280', transition: 'all 0.2s'
+                  }}>{label}</button>
+              ))
+            )}
           </div>
         </div>
 
-        {view === 'new' ? (
-          <NewConsultationWizard onCreated={handleCreated} />
+        {view === 'doctors' ? (
+          /* ── Guest doctor browser — simple, no wizard ─── */
+          <GuestDoctorBrowser onConsultasi={() => setGuestModal(true)} />
+        ) : view === 'new' ? (
+          <NewConsultationWizard onCreated={handleCreated} onGuestAction={() => setGuestModal(true)} isGuest={!user} />
         ) : (
           <div>
             {/* Active */}
@@ -1150,6 +1370,16 @@ const Consultations = () => {
               </h6>
               {loading ? (
                 <div style={{ textAlign: 'center', padding: 48, color: '#6b7280' }}>Memuat...</div>
+              ) : !user ? (
+                <div style={{ textAlign: 'center', padding: 48, color: '#6b7280', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14 }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
+                  <div style={{ fontWeight: 600 }}>Riwayat konsultasi membutuhkan login</div>
+                  <div style={{ fontSize: 13, marginTop: 4 }}>Login atau daftar untuk mulai berkonsultasi dengan dokter</div>
+                  <div style={{ display:'flex', gap:10, justifyContent:'center', marginTop:16 }}>
+                    <button onClick={() => navigate('/login')} style={{ padding:'10px 24px', background:'#2563eb', color:'#fff', border:'none', borderRadius:8, fontWeight:600, cursor:'pointer' }}>Login</button>
+                    <button onClick={() => navigate('/register')} style={{ padding:'10px 24px', background:'#fff', color:'#374151', border:'1px solid #d1d5db', borderRadius:8, fontWeight:600, cursor:'pointer' }}>Daftar</button>
+                  </div>
+                </div>
               ) : history.length === 0 && active.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 48, color: '#6b7280', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14 }}>
                   <div style={{ fontSize: 48, marginBottom: 12 }}>🏥</div>

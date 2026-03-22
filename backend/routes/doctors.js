@@ -554,7 +554,19 @@ router.post('/', auth, async (req, res) => {
 router.put('/:id', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
-        const doctor = await Doctor.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+        // SEC-03 fix: whitelist updatable fields — prevent mass assignment of rating, userId, etc.
+        const { name, specialization, qualification, gender, bio, experience, consultationFee, isActive } = req.body;
+        const update = {};
+        if (name            !== undefined) update.name             = name;
+        if (specialization  !== undefined) update.specialization   = specialization;
+        if (qualification   !== undefined) update.qualification    = qualification;
+        if (gender          !== undefined) update.gender           = gender;
+        if (bio             !== undefined) update.bio              = bio;
+        if (experience      !== undefined) update.experience       = experience;
+        if (consultationFee !== undefined) update.consultationFee  = consultationFee;
+        if (isActive        !== undefined) update.isActive         = isActive;
+        // Explicitly excluded: rating, totalReviews, userId, photo, signature
+        const doctor = await Doctor.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json({ success: true, message: 'Dokter berhasil diperbarui', doctor });
     } catch (error) {

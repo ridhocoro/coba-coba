@@ -177,6 +177,7 @@ const Pharmacy = () => {
 
     // Detail obat
     const [selectedMed, setSelectedMed] = useState(null);
+    const [guestModal,    setGuestModal]    = useState(false);
 
     // Orders
     const [orders,        setOrders]        = useState([]);
@@ -199,7 +200,7 @@ const Pharmacy = () => {
     };
 
     useEffect(() => {
-        if (!user) { toast.error('Silakan login'); navigate('/login'); return; }
+        if (!user) { fetchMedicines(); return; } // guest: fetch catalog, no personal data
         fetchMedicines();
         if (isStudent) fetchQuota();
     }, [currentPage, searchTerm, selectedCat]); // eslint-disable-line
@@ -284,6 +285,7 @@ const Pharmacy = () => {
 
     // ── Checkout utama ────────────────────────────────────────────────────────
     const handleCheckoutClick = () => {
+        if (!user) { setGuestModal(true); return; } // guest: show modal
         if (cartHasRx) {
             // Checkout untuk obat resep: buat order dulu → upload resep
             proceedCheckoutWithRx();
@@ -474,8 +476,45 @@ const Pharmacy = () => {
     };
 
     // ────────────────────────────────────────────────────────────────────────
+    // ── Guest login modal ──────────────────────────────────────────
+    const GuestModal = () => (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)', zIndex:9999,
+                      display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+             onClick={() => setGuestModal(false)}>
+            <div style={{ background:'#fff', borderRadius:18, padding:'32px 28px', maxWidth:400,
+                          width:'100%', textAlign:'center', boxShadow:'0 24px 64px rgba(0,0,0,.25)' }}
+                 onClick={e => e.stopPropagation()}>
+                <div style={{ width:64, height:64, borderRadius:'50%', background:'#eff6ff',
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              margin:'0 auto 16px', fontSize:30 }}>🔐</div>
+                <h5 style={{ fontWeight:800, fontSize:20, color:'#111827', marginBottom:8 }}>Login Diperlukan</h5>
+                <p style={{ color:'#6b7280', fontSize:14, lineHeight:1.6, marginBottom:28 }}>
+                    Silakan login atau daftar untuk memesan obat dan melihat riwayat pesanan.
+                </p>
+                <div style={{ display:'flex', gap:10 }}>
+                    <button onClick={() => navigate('/login')}
+                        style={{ flex:1, padding:'11px 0', background:'#2563eb', color:'#fff',
+                                 border:'none', borderRadius:10, fontWeight:700, cursor:'pointer', fontSize:14 }}>
+                        Login
+                    </button>
+                    <button onClick={() => navigate('/register')}
+                        style={{ flex:1, padding:'11px 0', background:'#f9fafb', color:'#374151',
+                                 border:'1px solid #e5e7eb', borderRadius:10, fontWeight:600, cursor:'pointer', fontSize:14 }}>
+                        Daftar Gratis
+                    </button>
+                </div>
+                <button onClick={() => setGuestModal(false)}
+                    style={{ marginTop:14, background:'none', border:'none',
+                             color:'#9ca3af', cursor:'pointer', fontSize:13 }}>
+                    Lanjut Belanja
+                </button>
+            </div>
+        </div>
+    );
+
     return (
         <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:"'Inter',sans-serif",padding:24}}>
+            {guestModal && <GuestModal />}
             <style>{`
                 .ph-tab{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:500;border:none;background:transparent;color:#64748b;cursor:pointer;flex:1;transition:all .2s}
                 .ph-tab.active{background:#2563eb;color:#fff}
@@ -557,7 +596,7 @@ const Pharmacy = () => {
                 {/* Tabs */}
                 <div style={{display:'flex',gap:6,marginBottom:24,background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:4}}>
                     <button className={`ph-tab ${activeTab==='shop'?'active':''}`} onClick={()=>setActiveTab('shop')}><FaSearch style={{marginRight:6}}/>Belanja Obat</button>
-                    <button className={`ph-tab ${activeTab==='orders'?'active':''}`} onClick={()=>setActiveTab('orders')}><FaHistory style={{marginRight:6}}/>Pesanan Saya {orders.filter(o=>['waiting_prescription','pending','paid','diproses','dikirim','siap_diambil'].includes(o.status)).length>0&&<span style={{background:'#b91c1c',color:'#fff',borderRadius:20,padding:'1px 7px',fontSize:10,fontWeight:700,marginLeft:6}}>{orders.filter(o=>['waiting_prescription','pending','paid','diproses','dikirim','siap_diambil'].includes(o.status)).length}</span>}</button>
+                    <button className={`ph-tab ${activeTab==='orders'?'active':''}`} onClick={()=> !user ? setGuestModal(true) : setActiveTab('orders')}><FaHistory style={{marginRight:6}}/>Pesanan Saya {orders.filter(o=>['waiting_prescription','pending','paid','diproses','dikirim','siap_diambil'].includes(o.status)).length>0&&<span style={{background:'#b91c1c',color:'#fff',borderRadius:20,padding:'1px 7px',fontSize:10,fontWeight:700,marginLeft:6}}>{orders.filter(o=>['waiting_prescription','pending','paid','diproses','dikirim','siap_diambil'].includes(o.status)).length}</span>}</button>
                 </div>
 
                 {/* ─── SHOP ─────────────────────────────────────────────── */}
@@ -577,7 +616,7 @@ const Pharmacy = () => {
                             </Col>
                             <Col md={2}>
                                 <button style={{background:'#2563eb',border:'none',borderRadius:12,padding:'11px 16px',color:'#fff',fontWeight:500,width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',position:'relative'}}
-                                    onClick={()=>setShowCart(true)}>
+                                    onClick={()=> !user ? setGuestModal(true) : setShowCart(true)}>
                                     <FaShoppingCart/> Keranjang
                                     {cart.length>0&&<span style={{position:'absolute',top:-6,right:-6,background:'#b91c1c',color:'#fff',borderRadius:20,padding:'1px 7px',fontSize:10,fontWeight:700}}>{cart.reduce((s,i)=>s+i.quantity,0)}</span>}
                                 </button>
@@ -632,7 +671,9 @@ const Pharmacy = () => {
                                                                     </div>
                                                                 ) : <span style={{fontWeight:700,color:'#2563eb',fontSize:14}}>{fmt(med.price)}</span>}
                                                             </div>
-                                                            <button disabled={med.availableStock===0||med.isActive===false} onClick={()=>addToCart(med)}
+                                                            <button
+                                                                disabled={med.availableStock===0||med.isActive===false}
+                                                                onClick={()=> !user ? setGuestModal(true) : addToCart(med)}
                                                                 style={{background:(med.isActive===false||med.availableStock===0)?'#e2e8f0':'#2563eb',color:(med.isActive===false||med.availableStock===0)?'#94a3b8':'#fff',border:'none',borderRadius:30,padding:'6px 12px',fontSize:12,cursor:(med.isActive===false||med.availableStock===0)?'not-allowed':'pointer',fontFamily:'inherit'}}>
                                                                 {med.isActive===false?'Tidak Tersedia':med.availableStock===0?'Habis':<><FaPlus size={10} style={{marginRight:4}}/>Tambah</>}
                                                             </button>
@@ -661,6 +702,17 @@ const Pharmacy = () => {
                 {/* ─── ORDERS ───────────────────────────────────────────── */}
                 {activeTab==='orders'&&(
                     <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,padding:24}}>
+                        {!user ? (
+                            <div style={{textAlign:'center',padding:40}}>
+                              <div style={{fontSize:48,marginBottom:12}}>🔐</div>
+                              <div style={{fontWeight:600}}>Pesanan Anda membutuhkan login</div>
+                              <div style={{fontSize:13,marginTop:4,color:'#6b7280'}}>Login atau daftar untuk melihat dan melacak pesanan obat</div>
+                              <div style={{display:'flex',gap:10,justifyContent:'center',marginTop:16}}>
+                                <button className='btn-p' onClick={()=>setGuestModal(true)}>Login</button>
+                                <button onClick={()=>navigate('/register')} style={{padding:'10px 24px',background:'#fff',color:'#374151',border:'1px solid #d1d5db',borderRadius:8,fontWeight:600,cursor:'pointer'}}>Daftar</button>
+                              </div>
+                            </div>
+                        ) : (<>
                         <h5 style={{fontWeight:700,marginBottom:20}}><FaBox style={{marginRight:8,color:'#0e7490'}}/>Pesanan Saya</h5>
                         {loadingOrders?<div style={{textAlign:'center',padding:40}}><Spinner animation="border" variant="primary"/></div>
                             :orders.length===0?(
@@ -788,6 +840,8 @@ const Pharmacy = () => {
                                 </div>
                             ))
                         }
+                        </>
+                        )}
                     </div>
                 )}
 
@@ -1092,7 +1146,8 @@ const Pharmacy = () => {
                             </div>
                             <div style={{padding:'14px 24px',borderTop:'1px solid #e2e8f0',display:'flex',justifyContent:'flex-end',gap:8}}>
                                 <button className="btn-o" onClick={()=>setSelectedMed(null)}>Tutup</button>
-                                <button className="btn-p" disabled={selectedMed.availableStock===0||selectedMed.isActive===false} onClick={()=>{addToCart(selectedMed);setSelectedMed(null);toast.success(`${selectedMed.name} ditambahkan ke keranjang`);}}>
+                                <button className="btn-p" disabled={selectedMed.availableStock===0||selectedMed.isActive===false}
+                                    onClick={()=>{ if (!user) { setGuestModal(true); return; } addToCart(selectedMed); setSelectedMed(null); toast.success(`${selectedMed.name} ditambahkan ke keranjang`); }}>
                                     <FaShoppingCart size={12}/>{selectedMed.isActive===false?'Tidak Tersedia':selectedMed.availableStock===0?'Stok Habis':'Tambah ke Keranjang'}
                                 </button>
                             </div>

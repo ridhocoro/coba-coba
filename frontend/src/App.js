@@ -104,9 +104,7 @@ function AppContent() {
                     <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
                     {/* ===== USER ===== */}
-                    <Route path="/consultations" element={
-                        <ProtectedRoute allowedRoles={['user','mahasiswa']}><Consultations /></ProtectedRoute>
-                    } />
+                    <Route path="/consultations" element={<Consultations />} />
                     {/* /book/:doctorId HARUS di atas /:id */}
                     <Route path="/consultations/book/:doctorId" element={
                         <ProtectedRoute allowedRoles={['user','mahasiswa']}><BookingSlot /></ProtectedRoute>
@@ -118,9 +116,9 @@ function AppContent() {
                     <Route path="/payment/success" element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
                     <Route path="/payment/failed"  element={<ProtectedRoute><PaymentResult /></ProtectedRoute>} />
 
-                    <Route path="/pharmacy"     element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><Pharmacy /></ProtectedRoute>} />
+                    <Route path="/pharmacy"     element={<Pharmacy />} />
                     <Route path="/payments"     element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><PaymentHistory /></ProtectedRoute>} />
-                    <Route path="/appointments" element={<ProtectedRoute allowedRoles={['user','mahasiswa']}><UserAppointments /></ProtectedRoute>} />
+                    <Route path="/appointments" element={<UserAppointments />} />
 
                     {/* ===== DOCTOR ===== */}
                     <Route path="/doctor"   element={<ProtectedRoute allowedRoles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />

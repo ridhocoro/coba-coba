@@ -635,7 +635,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
 };
 
 // ── Medical Record Modal (SOAP) ───────────────────────────────────
-const MedicalRecordModal = ({ existing, consultation, onClose, onSave }) => {
+const MedicalRecordModal = ({ existing, consultation, onClose, onSave, isEndSession = false, saving: externalSaving }) => {
   const mr = existing;
   const [form, setForm] = useState({
     objectiveFindings: mr?.objectiveFindings || '',
@@ -655,7 +655,7 @@ const MedicalRecordModal = ({ existing, consultation, onClose, onSave }) => {
     <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
       <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0d1117', zIndex: 1 }}>
-          <span style={{ color: '#e6edf3', fontWeight: 700 }}>📋 Rekam Medis (SOAP)</span>
+          <span style={{ color: '#e6edf3', fontWeight: 700 }}>{isEndSession ? '■ Akhiri Sesi & Isi Rekam Medis' : '📋 Rekam Medis (SOAP)'}</span>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 22, cursor: 'pointer' }}>×</button>
         </div>
         <div style={{ padding: 20 }}>
@@ -715,9 +715,9 @@ const MedicalRecordModal = ({ existing, consultation, onClose, onSave }) => {
 
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
-            <button onClick={handleSave} disabled={saving}
-              style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#1f6feb', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
-              {saving ? 'Menyimpan...' : '✓ Simpan Rekam Medis'}
+            <button onClick={handleSave} disabled={saving || externalSaving}
+              style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: isEndSession ? '#c0392b' : '#1f6feb', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (saving || externalSaving) ? 0.5 : 1 }}>
+              {(saving || externalSaving) ? 'Menyimpan...' : isEndSession ? '■ Akhiri & Simpan' : '✓ Simpan Rekam Medis'}
             </button>
           </div>
         </div>
@@ -844,6 +844,7 @@ const ConsultationChat = () => {
   const [uploadingImg, setUploadingImg] = useState(false);
   const [ending,   setEnding]   = useState(false);
   const [starting, setStarting] = useState(false);
+  const [showEndModal, setShowEndModal] = useState(false);
   const [sending,  setSending]  = useState(false);
 
   const msgEndRef     = useRef(null);
@@ -870,12 +871,17 @@ const ConsultationChat = () => {
   const timeHasArrived = consultation?.scheduledAt
     ? msUntil(consultation.scheduledAt) <= 0
     : true;
+  // BUG-09 fix: add doctor_no_show, cancelled_by_doctor, cancelled_by_admin to user access
+  // so user can view history, rate, and request refund from these statuses
+  const USER_ACCESSIBLE = ['confirmed', 'in_progress', 'ongoing', 'completed', 'no_show',
+    'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin', 'paid', 'scheduled'];
   const canAccessRoom = isDoctor
     ? !DOCTOR_BLOCKED.includes(consultation?.status)
-    : (isConfirmed || isLive || isCompleted || isRatable);
+    : (USER_ACCESSIBLE.includes(consultation?.status) || isRatable);
 
   // Bisa chat hanya saat live: dokter kapan saja, user perlu waktu sudah tiba
-  const canChat = isLive && (isDoctor || timeHasArrived);
+  // BUG-06 fix: when session is in_progress, user can ALWAYS chat (doctor already started)
+  const canChat = isLive && (isDoctor || ['in_progress', 'ongoing'].includes(consultation?.status) || timeHasArrived);
 
   const isVideoCall = consultation?.consultationType === 'video_call';
 
@@ -936,12 +942,23 @@ const ConsultationChat = () => {
     socket.emit('join-consultation', consultation._id);
 
     const onReceive = (msg) => {
+      // Filter own messages (already handled optimistically)
       if (msg.senderId?.toString() === myId?.toString()) return;
-      setMessages(prev => [...prev, msg]);
+      // BUG-11 fix: dedup by _id to prevent duplicate on reconnect
+      setMessages(prev => {
+        if (msg._id && prev.some(m => m._id?.toString() === msg._id?.toString())) return prev;
+        return [...prev, msg];
+      });
     };
     const onPrescription = (data) => {
-      setConsultation(c => ({ ...c, prescription: data.prescription, diagnosis: data.diagnosis }));
-      toast.success('Dokter mengirimkan resep!');
+      // BUG-03 fix: update both prescription (legacy) and prescriptionData (structured)
+      setConsultation(c => ({
+        ...c,
+        prescription:     data.prescription,
+        prescriptionData: data.prescriptionData || c.prescriptionData,
+        diagnosis:        data.diagnosis,
+      }));
+      toast.success('Dokter mengirimkan resep! 💊');
     };
     // Incoming video call (user side)
     const onVcOffer = ({ offer }) => {
@@ -968,6 +985,11 @@ const ConsultationChat = () => {
       }
     };
 
+    // BUG-08 fix: listen for medical-record-update to update UI in real-time
+    const onMedicalRecordUpdate = ({ medicalRecord }) => {
+      setConsultation(c => ({ ...c, medicalRecord }));
+    };
+
     socket.on('receive-message',             onReceive);
     socket.on('user-typing',                 () => { setTyping(true); setTimeout(() => setTyping(false), 3000); });
     socket.on('user-stop-typing',            () => setTyping(false));
@@ -975,6 +997,7 @@ const ConsultationChat = () => {
     socket.on('vc-offer',                    onVcOffer);
     socket.on('consultation-status-update',  onStatusUpdate);
     socket.on('show-rating-modal',           onShowRating);
+    socket.on('medical-record-update',       onMedicalRecordUpdate);
 
     return () => {
       socket.off('receive-message',            onReceive);
@@ -984,6 +1007,7 @@ const ConsultationChat = () => {
       socket.off('vc-offer',                   onVcOffer);
       socket.off('consultation-status-update', onStatusUpdate);
       socket.off('show-rating-modal',          onShowRating);
+      socket.off('medical-record-update',      onMedicalRecordUpdate);
     };
   }, [socket, consultation, myId, isDoctor, isUser, fetchConsultation]);
 
@@ -1044,14 +1068,25 @@ const ConsultationChat = () => {
     finally { setStarting(false); }
   };
 
-  const handleEnd = async () => {
-    if (!window.confirm('Akhiri konsultasi ini?')) return;
+  // handleEnd: opens end-session modal to collect assessment+plan (BUG-01 fix)
+  const handleEnd = () => {
+    setShowEndModal(true);
+  };
+
+  const handleEndConfirm = async (medForm) => {
+    if (!medForm.assessment?.trim()) { toast.error('Diagnosis wajib diisi'); return; }
+    if (!medForm.plan?.trim())       { toast.error('Rencana Terapi wajib diisi'); return; }
     setEnding(true);
     try {
-      await api.put(`/api/consultations/${id}/end`);
-      toast.success('Konsultasi selesai');
+      await api.put(`/api/consultations/${id}/end`, {
+        assessment:        medForm.assessment.trim(),
+        plan:              medForm.plan.trim(),
+        objectiveFindings: medForm.objectiveFindings?.trim() || '',
+        doctorNotes:       medForm.doctorNotes?.trim()       || '',
+      });
+      toast.success('Konsultasi selesai ✅');
+      setShowEndModal(false);
       fetchConsultation();
-      if (isUser) setShowRating(true);
     } catch (err) { toast.error(err.response?.data?.message || 'Gagal mengakhiri'); }
     finally { setEnding(false); }
   };
@@ -1095,12 +1130,27 @@ const ConsultationChat = () => {
     } catch { toast.error('Gagal menerbitkan'); }
   };
 
+  // BUG-10 fix: check content-type before treating response as PDF
+  const parseBlobError = async (blob) => {
+    try {
+      const text = await blob.text();
+      const json = JSON.parse(text);
+      return json.message || 'Server error';
+    } catch { return null; }
+  };
+
   const downloadSickLetterPDF = async () => {
     try {
       const r = await api.get(`/api/consultations/${id}/sick-letter/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const contentType = r.headers?.['content-type'] || '';
+      if (!contentType.includes('application/pdf')) {
+        const errMsg = await parseBlobError(r.data);
+        toast.error(errMsg || 'Surat sakit belum tersedia'); return;
+      }
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a'); a.href = url; a.download = `surat-sakit-${id}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
       toast.success('Surat sakit diunduh');
     } catch { toast.error('Gagal unduh surat sakit'); }
   };
@@ -1108,9 +1158,15 @@ const ConsultationChat = () => {
   const downloadPrescriptionPDF = async () => {
     try {
       const r = await api.get(`/api/consultations/${id}/prescription/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const contentType = r.headers?.['content-type'] || '';
+      if (!contentType.includes('application/pdf')) {
+        const errMsg = await parseBlobError(r.data);
+        toast.error(errMsg || 'Resep belum tersedia'); return;
+      }
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a'); a.href = url; a.download = `resep-${id}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
       toast.success('Resep diunduh');
     } catch { toast.error('Gagal unduh resep PDF'); }
   };
@@ -1118,9 +1174,15 @@ const ConsultationChat = () => {
   const downloadMedicalRecordPDF = async () => {
     try {
       const r = await api.get(`/api/consultations/${id}/medical-record/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const contentType = r.headers?.['content-type'] || '';
+      if (!contentType.includes('application/pdf')) {
+        const errMsg = await parseBlobError(r.data);
+        toast.error(errMsg || 'Rekam medis belum tersedia'); return;
+      }
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a'); a.href = url; a.download = `rekam-medis-${id}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
       toast.success('Rekam medis diunduh');
     } catch { toast.error('Gagal unduh rekam medis'); }
   };
@@ -1358,9 +1420,9 @@ const ConsultationChat = () => {
                   {sickLetter?.status === 'draft' && (
                     <button onClick={handleIssueSickLetter} style={s.actionBtn('#d97706')}>✓ Terbitkan Surat Sakit</button>
                   )}
-                  <button onClick={handleEnd} disabled={ending}
+                  <button onClick={handleEnd}
                     style={{ ...s.actionBtn('#c0392b'), background: 'transparent', border: '1px solid #f8514940', color: '#f85149' }}>
-                    ■ {ending ? 'Mengakhiri...' : 'Akhiri Sesi'}
+                    ■ Akhiri Sesi
                   </button>
                 </>
               )}
@@ -1639,6 +1701,16 @@ const ConsultationChat = () => {
       {showMedicalRecord  && <MedicalRecordModal existing={consultation.medicalRecord} consultation={consultation} onClose={() => setShowMedicalRecord(false)} onSave={handleSaveMedicalRecord} />}
       {showSickLetter     && <SickLetterModal onClose={() => setShowSickLetter(false)} onSave={handleCreateSickLetter} />}
       {showRating         && <RatingModal consultationId={id} onClose={() => setShowRating(false)} onSuccess={fetchConsultation} />}
+      {showEndModal       && (
+        <MedicalRecordModal
+          existing={consultation.medicalRecord}
+          consultation={consultation}
+          onClose={() => setShowEndModal(false)}
+          onSave={handleEndConfirm}
+          isEndSession={true}
+          saving={ending}
+        />
+      )}
 
       <style>{`
         @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }

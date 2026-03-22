@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Consultation = require('../models/Consultation');
+const Doctor       = require('../models/Doctor');
 
 module.exports = (io) => {
     // Middleware autentikasi socket
@@ -96,15 +97,38 @@ module.exports = (io) => {
         });
 
         // Kirim pesan teks
-        socket.on('send-message', (data) => {
-            io.to(`consultation-${data.consultationId}`).emit('receive-message', {
-                message:    data.message,
-                imageUrl:   data.imageUrl || null,
-                senderId:   data.senderId,
-                senderName: data.senderName,
-                senderRole: data.senderRole,
-                timestamp:  new Date()
-            });
+        // SEC-02 fix: derive senderRole and senderName from server-side data, never trust client
+        socket.on('send-message', async (data) => {
+            try {
+                const consultation = await Consultation.findById(data.consultationId)
+                    .populate('userId', 'name')
+                    .populate('doctorId', 'name userId')
+                    .lean();
+                if (!consultation) return;
+
+                const isPatient = consultation.userId?._id?.toString() === socket.userId;
+                const isDr      = consultation.doctorId?.userId?.toString() === socket.userId;
+
+                // Only patient or doctor of THIS consultation may broadcast
+                if (!isPatient && !isDr && socket.userRole !== 'admin') return;
+
+                const senderRole = isPatient ? (consultation.userId?.role || 'user') : 'doctor';
+                const senderName = isPatient
+                    ? (consultation.userId?.name || 'Pasien')
+                    : `dr. ${consultation.doctorId?.name || 'Dokter'}`;
+
+                io.to(`consultation-${data.consultationId}`).emit('receive-message', {
+                    _id:        data._id,
+                    message:    data.message,
+                    imageUrl:   data.imageUrl || null,
+                    senderId:   socket.userId,   // always use server-verified userId
+                    senderName,                   // server-derived, not from client
+                    senderRole,                   // server-derived, not from client
+                    timestamp:  new Date(),
+                });
+            } catch (err) {
+                console.error('[Socket] send-message error:', err.message);
+            }
         });
 
         // Typing indicator

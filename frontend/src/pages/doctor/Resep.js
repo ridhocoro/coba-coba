@@ -136,12 +136,12 @@ const SectionResep = () => {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                                 <InputField label="Nama Obat" value={med.name} onChange={v => updateMedicine(i, 'name', v)} required />
                                 <InputField label="Dosis" value={med.dose} onChange={v => updateMedicine(i, 'dose', v)} placeholder="mis. 500mg" />
-                                <InputField label="Frekuensi" value={med.frequency} onChange={v => updateMedicine(i, 'frequency', v)} placeholder="mis. 3x sehari" />
-                                <InputField label="Durasi" value={med.duration} onChange={v => updateMedicine(i, 'duration', v)} placeholder="mis. 5 hari" />
+                                <InputField label="Aturan Pakai" value={med.frequency} onChange={v => updateMedicine(i, 'frequency', v)} placeholder="mis. 3x sehari" />
+                                <InputField label="Jumlah" value={med.quantity} onChange={v => updateMedicine(i, 'quantity', v)} placeholder="mis. 10 tablet" />
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.muted }}>Catatan</label>
-                                <input value={med.notes} onChange={e => updateMedicine(i, 'notes', e.target.value)} placeholder="mis. Sesudah makan"
+                                <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.muted }}>Cara Pakai</label>
+                                <input value={med.instructions} onChange={e => updateMedicine(i, 'instructions', e.target.value)} placeholder="mis. Sesudah makan"
                                     style={{ width: '100%', padding: '8px 11px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
                             </div>
                         </div>
@@ -219,7 +219,7 @@ const SectionResep = () => {
                         {detail.prescriptionData?.medicines?.map((m, i) => (
                             <div key={i} style={{ border: `1px solid ${colors.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 10 }}>
                                 <div style={{ fontWeight: 700, fontSize: 14, color: colors.text, marginBottom: 6 }}>💊 {m.name}</div>
-                                {[['Dosis', m.dose], ['Frekuensi', m.frequency], ['Durasi', m.duration], ['Catatan', m.notes]].map(([k, v]) => v && (
+                                {[['Dosis', m.dose], ['Bentuk', m.form], ['Aturan Pakai', m.frequency], ['Cara Pakai', m.instructions], ['Jumlah', m.quantity]].map(([k, v]) => v && (
                                     <div key={k} style={{ display: 'flex', gap: 10, fontSize: 13, marginBottom: 3 }}>
                                         <span style={{ width: 80, color: colors.muted, fontWeight: 600 }}>{k}</span>
                                         <span style={{ color: colors.text }}>{v}</span>
