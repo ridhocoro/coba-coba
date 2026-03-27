@@ -916,9 +916,6 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
         }
 
         // ── APPROVE → proses refund via Xendit ───────────────────────────────
-        // Cek metode pembayaran: cari Payment record
-        const Payment = require('../models/Payment');
-        const payment = await Payment.findOne({ referenceId: order._id });
         const xenditExternalId = order.xenditExternalId;
 
         const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;

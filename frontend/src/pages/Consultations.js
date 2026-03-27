@@ -1176,6 +1176,13 @@ const Consultations = () => {
     return () => clearInterval(interval);
   }, [consultations, fetchConsultations]);
 
+  // ── Refetch saat user kembali ke tab ini (misal: balik dari halaman Xendit)
+  useEffect(() => {
+    const onFocus = () => fetchConsultations();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [fetchConsultations]);
+
 
   // ── Guest login modal ──────────────────────────────────────────
   const GuestModal = () => (

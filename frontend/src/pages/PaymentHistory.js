@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api, { API_URL } from '../utils/api';
+import api from '../utils/api';
 import {
     Container, Row, Col, Card, Table, Badge,
     Button, Form, InputGroup, Spinner, Modal
@@ -10,42 +10,44 @@ import { toast } from 'react-hot-toast';
 import {
     FaMoneyBillWave, FaSearch, FaFilter,
     FaCheckCircle, FaTimesCircle, FaClock,
-    FaEye, FaFileInvoice, FaQrcode, FaUniversity
+    FaEye, FaFileInvoice, FaHourglass
 } from 'react-icons/fa';
 
 const PaymentHistory = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
-    const [payments, setPayments] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
+    const [payments, setPayments]         = useState([]);
+    const [loading, setLoading]           = useState(true);
+    const [search, setSearch]             = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
-    const [filterType, setFilterType] = useState('all');
-    const [stats, setStats] = useState({ total: 0, verified: 0, pending: 0, rejected: 0, totalAmount: 0 });
-
+    const [filterType, setFilterType]     = useState('all');
+    const [stats, setStats]               = useState({
+        total: 0, paid: 0, pending: 0, failed: 0, totalAmount: 0
+    });
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedPayment, setSelectedPayment] = useState(null);
 
     useEffect(() => {
         if (!user) { navigate('/login'); return; }
         fetchHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user]);
 
     const fetchHistory = async () => {
         setLoading(true);
         try {
-            const res = await api.get('/api/manual-payment/history');
+            // Semua payment sekarang dari Xendit
+            const res  = await api.get('/api/xendit/history');
             const data = res.data.payments || [];
             setPayments(data);
 
-            // Hitung statistik
-            const verified = data.filter(p => p.status === 'verified');
+            const paid = data.filter(p => p.status === 'paid' || p.status === 'refunded');
             setStats({
-                total: data.length,
-                verified: verified.length,
-                pending: data.filter(p => p.status === 'pending').length,
-                rejected: data.filter(p => p.status === 'rejected').length,
-                totalAmount: verified.reduce((sum, p) => sum + (p.amount || 0), 0)
+                total      : data.length,
+                paid       : data.filter(p => p.status === 'paid').length,
+                pending    : data.filter(p => p.status === 'pending').length,
+                failed     : data.filter(p => p.status === 'failed').length,
+                totalAmount: paid.reduce((sum, p) => sum + (p.amount || 0), 0),
             });
         } catch (err) {
             toast.error('Gagal memuat riwayat pembayaran');
@@ -54,31 +56,46 @@ const PaymentHistory = () => {
         }
     };
 
+    // ── Status badge — disesuaikan dengan status Xendit ──────────────────────
     const getStatusBadge = (status) => {
         const map = {
-            pending: { bg: 'warning', icon: <FaClock size={11} className="me-1" />, label: 'Menunggu' },
-            verified: { bg: 'success', icon: <FaCheckCircle size={11} className="me-1" />, label: 'Terverifikasi' },
-            rejected: { bg: 'danger', icon: <FaTimesCircle size={11} className="me-1" />, label: 'Ditolak' },
+            paid      : { bg: 'success', icon: <FaCheckCircle size={11} className="me-1" />, label: 'Berhasil'  },
+            pending   : { bg: 'warning', icon: <FaClock       size={11} className="me-1" />, label: 'Menunggu'  },
+            failed    : { bg: 'danger',  icon: <FaTimesCircle size={11} className="me-1" />, label: 'Gagal'     },
+            refunded  : { bg: 'info',    icon: <FaHourglass   size={11} className="me-1" />, label: 'Direfund'  },
+            expired   : { bg: 'secondary',icon: <FaTimesCircle size={11} className="me-1" />, label: 'Kadaluarsa'},
         };
         const s = map[status] || { bg: 'secondary', icon: null, label: status };
         return <Badge bg={s.bg}>{s.icon}{s.label}</Badge>;
     };
 
     const getTypeLabel = (type) => {
-        const map = { consultation: 'Konsultasi', pharmacy: 'Farmasi', appointment: 'Janji Temu' };
+        const map = {
+            consultation: '🩺 Konsultasi',
+            medicine    : '💊 Farmasi',
+            appointment : '📅 Janji Temu',
+        };
         return map[type] || type;
     };
 
-    // Filter
+    const fmtRupiah = (n) => `Rp ${(n || 0).toLocaleString('id-ID')}`;
+
+    const fmtDate = (d) => d
+        ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+        : '-';
+
+    // ── Filter ────────────────────────────────────────────────────────────────
     const filtered = payments.filter(p => {
-        const matchSearch = !search || 
+        const matchSearch = !search ||
             p.transactionId?.toLowerCase().includes(search.toLowerCase()) ||
-            getTypeLabel(p.paymentType).toLowerCase().includes(search.toLowerCase());
+            getTypeLabel(p.paymentType).toLowerCase().includes(search.toLowerCase()) ||
+            p.doctorName?.toLowerCase().includes(search.toLowerCase());
         const matchStatus = filterStatus === 'all' || p.status === filterStatus;
-        const matchType = filterType === 'all' || p.paymentType === filterType;
+        const matchType   = filterType   === 'all' || p.paymentType === filterType;
         return matchSearch && matchStatus && matchType;
     });
 
+    // ── Loading ───────────────────────────────────────────────────────────────
     if (loading) return (
         <Container className="py-5 text-center">
             <Spinner animation="border" variant="primary" />
@@ -95,21 +112,22 @@ const PaymentHistory = () => {
                         <FaMoneyBillWave className="me-2 text-success" />
                         Riwayat Pembayaran
                     </h4>
-                    <p className="text-muted small mb-0">Semua transaksi pembayaran Anda</p>
+                    <p className="text-muted small mb-0">Semua transaksi pembayaran via Xendit</p>
+                </Col>
+                <Col xs="auto">
+                    <Button variant="outline-primary" size="sm" onClick={fetchHistory}>
+                        🔄 Refresh
+                    </Button>
                 </Col>
             </Row>
 
             {/* Stats Cards */}
             <Row className="mb-4 g-3">
                 {[
-                    { label: 'Total Transaksi', value: stats.total, bg: 'primary', icon: FaFileInvoice },
-                    { label: 'Terverifikasi', value: stats.verified, bg: 'success', icon: FaCheckCircle },
-                    { label: 'Menunggu', value: stats.pending, bg: 'warning', icon: FaClock },
-                    {
-                        label: 'Total Dibayar',
-                        value: `Rp ${stats.totalAmount.toLocaleString('id-ID')}`,
-                        bg: 'info', icon: FaMoneyBillWave
-                    },
+                    { label: 'Total Transaksi', value: stats.total,                        bg: 'primary', icon: FaFileInvoice   },
+                    { label: 'Berhasil',         value: stats.paid,                         bg: 'success', icon: FaCheckCircle  },
+                    { label: 'Menunggu',         value: stats.pending,                      bg: 'warning', icon: FaClock        },
+                    { label: 'Total Dibayar',    value: fmtRupiah(stats.totalAmount),       bg: 'info',    icon: FaMoneyBillWave},
                 ].map((s, i) => (
                     <Col md={3} xs={6} key={i}>
                         <Card className={`border-0 shadow-sm bg-${s.bg} text-white`}>
@@ -133,7 +151,7 @@ const PaymentHistory = () => {
                     <InputGroup>
                         <InputGroup.Text><FaSearch /></InputGroup.Text>
                         <Form.Control
-                            placeholder="Cari ID transaksi / layanan..."
+                            placeholder="Cari ID transaksi / layanan / dokter..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                         />
@@ -144,9 +162,10 @@ const PaymentHistory = () => {
                         <InputGroup.Text><FaFilter /></InputGroup.Text>
                         <Form.Select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                             <option value="all">Semua Status</option>
+                            <option value="paid">Berhasil</option>
                             <option value="pending">Menunggu</option>
-                            <option value="verified">Terverifikasi</option>
-                            <option value="rejected">Ditolak</option>
+                            <option value="failed">Gagal</option>
+                            <option value="refunded">Direfund</option>
                         </Form.Select>
                     </InputGroup>
                 </Col>
@@ -154,7 +173,7 @@ const PaymentHistory = () => {
                     <Form.Select value={filterType} onChange={e => setFilterType(e.target.value)}>
                         <option value="all">Semua Layanan</option>
                         <option value="consultation">Konsultasi</option>
-                        <option value="pharmacy">Farmasi</option>
+                        <option value="medicine">Farmasi</option>
                     </Form.Select>
                 </Col>
                 <Col md={2} className="text-end">
@@ -193,28 +212,23 @@ const PaymentHistory = () => {
                                             <Badge bg="light" text="dark" className="border">
                                                 {getTypeLabel(p.paymentType)}
                                             </Badge>
-                                            {p.referenceId?.doctorId && (
+                                            {p.doctorName && (
                                                 <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                                    dr. {p.referenceId.doctorId.name}
+                                                    dr. {p.doctorName}
+                                                    {p.doctorSpec && ` · ${p.doctorSpec}`}
                                                 </div>
                                             )}
                                         </td>
                                         <td>
-                                            <div className="d-flex align-items-center gap-1">
-                                                {p.bankName === 'QRIS'
-                                                    ? <FaQrcode className="text-success" />
-                                                    : <FaUniversity className="text-primary" />
-                                                }
-                                                <span className="small">{p.bankName}</span>
-                                            </div>
+                                            <span className="small">
+                                                {p.paymentMethod || 'Xendit'}
+                                            </span>
                                         </td>
                                         <td className="fw-semibold">
-                                            Rp {(p.amount || 0).toLocaleString('id-ID')}
+                                            {fmtRupiah(p.amount)}
                                         </td>
                                         <td className="small text-muted">
-                                            {new Date(p.createdAt).toLocaleDateString('id-ID', {
-                                                day: 'numeric', month: 'short', year: 'numeric'
-                                            })}
+                                            {fmtDate(p.paidAt || p.createdAt)}
                                         </td>
                                         <td>{getStatusBadge(p.status)}</td>
                                         <td>
@@ -244,81 +258,42 @@ const PaymentHistory = () => {
                 </Modal.Header>
                 <Modal.Body>
                     {selectedPayment && (
-                        <>
-                            <Table borderless size="sm" className="mb-3">
-                                <tbody>
+                        <Table borderless size="sm" className="mb-0">
+                            <tbody>
+                                <tr>
+                                    <td className="text-muted fw-semibold" style={{ width: '40%' }}>ID Transaksi</td>
+                                    <td><code className="small">{selectedPayment.transactionId}</code></td>
+                                </tr>
+                                <tr>
+                                    <td className="text-muted fw-semibold">Layanan</td>
+                                    <td>{getTypeLabel(selectedPayment.paymentType)}</td>
+                                </tr>
+                                {selectedPayment.doctorName && (
                                     <tr>
-                                        <td className="text-muted fw-semibold" style={{ width: '40%' }}>ID Transaksi</td>
-                                        <td><code>{selectedPayment.transactionId}</code></td>
+                                        <td className="text-muted fw-semibold">Dokter</td>
+                                        <td>dr. {selectedPayment.doctorName}</td>
                                     </tr>
-                                    <tr>
-                                        <td className="text-muted fw-semibold">Layanan</td>
-                                        <td>{getTypeLabel(selectedPayment.paymentType)}</td>
-                                    </tr>
-                                    <tr>
-                                        <td className="text-muted fw-semibold">Metode Bayar</td>
-                                        <td>{selectedPayment.bankName}</td>
-                                    </tr>
-                                    {selectedPayment.accountNumber && (
-                                        <tr>
-                                            <td className="text-muted fw-semibold">No. Rekening</td>
-                                            <td>{selectedPayment.accountNumber}</td>
-                                        </tr>
-                                    )}
-                                    <tr>
-                                        <td className="text-muted fw-semibold">Jumlah</td>
-                                        <td className="fw-bold text-primary">
-                                            Rp {(selectedPayment.amount || 0).toLocaleString('id-ID')}
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td className="text-muted fw-semibold">Tanggal Bayar</td>
-                                        <td>{new Date(selectedPayment.createdAt).toLocaleDateString('id-ID', { dateStyle: 'long' })}</td>
-                                    </tr>
-                                    {selectedPayment.transferDate && (
-                                        <tr>
-                                            <td className="text-muted fw-semibold">Tgl Transfer</td>
-                                            <td>{new Date(selectedPayment.transferDate).toLocaleDateString('id-ID')}</td>
-                                        </tr>
-                                    )}
-                                    <tr>
-                                        <td className="text-muted fw-semibold">Status</td>
-                                        <td>{getStatusBadge(selectedPayment.status)}</td>
-                                    </tr>
-                                    {selectedPayment.adminNotes && (
-                                        <tr>
-                                            <td className="text-muted fw-semibold">Catatan Admin</td>
-                                            <td className="text-danger small">{selectedPayment.adminNotes}</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </Table>
-
-                            {/* Bukti Transfer */}
-                            {selectedPayment.transferProof && (
-                                <div>
-                                    <p className="fw-semibold small mb-2">Bukti Transfer:</p>
-                                    <div className="text-center border rounded p-2 bg-light">
-                                        <img
-                                            src={`${API_URL}${selectedPayment.transferProof}`}
-                                            alt="Bukti Transfer"
-                                            style={{ maxHeight: 200, maxWidth: '100%', objectFit: 'contain' }}
-                                            onError={e => { e.target.style.display = 'none'; }}
-                                        />
-                                        <div className="mt-2">
-                                            <Button
-                                                variant="outline-primary"
-                                                size="sm"
-                                                href={`${API_URL}${selectedPayment.transferProof}`}
-                                                target="_blank"
-                                            >
-                                                Lihat Bukti Full
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </>
+                                )}
+                                <tr>
+                                    <td className="text-muted fw-semibold">Metode Bayar</td>
+                                    <td>{selectedPayment.paymentMethod || 'Xendit'}</td>
+                                </tr>
+                                <tr>
+                                    <td className="text-muted fw-semibold">Jumlah</td>
+                                    <td className="fw-bold text-primary">
+                                        {fmtRupiah(selectedPayment.amount)}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="text-muted fw-semibold">Tanggal Bayar</td>
+                                    <td>{fmtDate(selectedPayment.paidAt || selectedPayment.createdAt)}</td>
+                                </tr>
+                                <tr>
+                                    <td className="text-muted fw-semibold">Status</td>
+                                    <td>{getStatusBadge(selectedPayment.status)}</td>
+                                </tr>
+                            </tbody>
+                        </Table>
                     )}
                 </Modal.Body>
                 <Modal.Footer>

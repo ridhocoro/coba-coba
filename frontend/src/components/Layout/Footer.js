@@ -12,7 +12,7 @@ import {
 
 const Footer = () => {
     return (
-        <footer className="bg-dark text-light mt-5 py-5">
+        <footer className="bg-dark text-light pt-5 pb-5">
             <Container>
                 <Row className="g-4">
                     {/* INFORMASI KONTAK */}

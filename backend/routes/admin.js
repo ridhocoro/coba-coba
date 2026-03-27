@@ -70,7 +70,6 @@ const Appointment  = require('../models/Appointment');
 const Order        = require('../models/Order');
 const Medicine     = require('../models/Medicine');
 const SickLetter   = require('../models/SickLetter');
-const Payment      = require('../models/Payment');
 const AdminChat    = require('../models/AdminChat');
 const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
 const DoctorAvailability     = require('../models/DoctorAvailability');
@@ -1077,4 +1076,4 @@ router.put('/chat/:doctorId/read', guard, async (req, res) => {
     }
 });
 
-module.exports = router;    
+module.exports = router;

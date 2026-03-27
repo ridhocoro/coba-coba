@@ -450,6 +450,73 @@ const _fmtDate = (d) => {
     }) + ' WIB';
 };
 
+
+// ── GET /history — riwayat semua payment Xendit milik user ───────────────────
+// Menggabungkan dua sumber:
+//   1. Consultation yang sudah dibayar (paymentType = consultation)
+//   2. Payment model untuk farmasi (paymentType = medicine)
+router.get('/history', auth, async (req, res) => {
+    try {
+        // ── Sumber 1: Konsultasi yang sudah dibayar ───────────────────────────
+        const paidStatuses = ['confirmed', 'in_progress', 'completed', 'no_show',
+            'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin',
+            'cancelled_by_user', 'refund_requested', 'refunded'];
+
+        const consultations = await Consultation.find({
+            userId             : req.userId,
+            status             : { $in: paidStatuses },
+            xenditExternalId   : { $exists: true, $ne: null },
+        })
+        .populate('doctorId', 'name specialization')
+        .sort('-paidAt')
+        .lean();
+
+        const consultationItems = consultations.map(c => ({
+            _id            : c._id,
+            transactionId  : c.xenditExternalId,
+            paymentType    : 'consultation',
+            amount         : c.amount || 0,
+            status         : ['confirmed','in_progress','completed','no_show'].includes(c.status)
+                             ? 'paid'
+                             : c.status === 'refunded' ? 'refunded' : 'paid',
+            paymentMethod  : c.xenditPaymentMethod || 'Xendit',
+            paidAt         : c.paidAt,
+            createdAt      : c.createdAt,
+            // Info dokter untuk ditampilkan di frontend
+            doctorName     : c.doctorId?.name     || null,
+            doctorSpec     : c.doctorId?.specialization || null,
+            consultationId : c._id,
+        }));
+
+        // ── Sumber 2: Payment farmasi (obat) ─────────────────────────────────
+        const orderPayments = await Payment.find({
+            userId: req.userId,
+        })
+        .sort('-createdAt')
+        .lean();
+
+        const orderItems = orderPayments.map(p => ({
+            _id           : p._id,
+            transactionId : p.transactionId,
+            paymentType   : p.paymentType || 'medicine',
+            amount        : p.amount || 0,
+            status        : p.status,          // pending/paid/failed/refunded
+            paymentMethod : p.paymentMethod || 'Xendit',
+            paidAt        : p.paidAt,
+            createdAt     : p.createdAt,
+        }));
+
+        // ── Gabungkan dan urutkan berdasarkan tanggal terbaru ─────────────────
+        const all = [...consultationItems, ...orderItems]
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        res.json({ success: true, payments: all });
+    } catch (err) {
+        console.error('[Xendit] /history error:', err.message);
+        res.status(500).json({ error: 'Gagal memuat riwayat: ' + err.message });
+    }
+});
+
 module.exports = router;
 module.exports.handleConsultationPaid = handleConsultationPaid;
 module.exports.XENDIT_BANKS = XENDIT_BANKS;

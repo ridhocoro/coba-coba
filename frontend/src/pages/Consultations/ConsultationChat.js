@@ -422,7 +422,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
 
     pcRef.current = pc;
     return pc;
-  }, [consultationId, socket]);
+  }, [consultationId, socket, isDoctor]);
 
   // ── Ambil stream kamera & mic ─────────────────────────────────
   const getLocalStream = useCallback(async () => {
@@ -549,7 +549,8 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
       hasCalledRef.current = true;
       startCall();
     }
-  }, [isDoctor, startCall]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDoctor, startCall, consultationId]);
 
   // ── UI ──────────────────────────────────────────────────────────
   const stateLabel = {
@@ -826,7 +827,7 @@ const SessionEndCountdown = ({ scheduledEnd }) => {
 // ══════════════════════════════════════════════════════════════════
 const ConsultationChat = () => {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [consultation, setConsultation] = useState(null);
@@ -850,7 +851,6 @@ const ConsultationChat = () => {
   const msgEndRef     = useRef(null);
   const fileInputRef  = useRef(null);
   const typingTimerRef = useRef(null);
-  const pendingMsgIds  = useRef(new Set());
 
   const isDoctor = user?.role === 'doctor';
   const isUser   = user?.role === 'user';
@@ -903,9 +903,10 @@ const ConsultationChat = () => {
   }, [id, navigate, isDoctor]);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { navigate('/login'); return; }
     fetchConsultation();
-  }, [user, fetchConsultation, navigate]);
+  }, [user, authLoading, fetchConsultation, navigate]);
 
   // ── Setup Socket ───────────────────────────────────────────────
   useEffect(() => {
@@ -1202,7 +1203,7 @@ const ConsultationChat = () => {
   };
 
   // ── Loading / not found ─────────────────────────────────────────
-  if (loading) return (
+  if (authLoading || loading) return (
     <div style={{ ...s.root, alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ color: '#8b949e', textAlign: 'center' }}>
         <div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>

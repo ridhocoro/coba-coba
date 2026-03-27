@@ -29,46 +29,63 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Database connection
+// ── MongoDB ──────────────────────────────────────────────────────────────────
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/klinik-ipb')
   .then(() => console.log('✅ MongoDB Connected'))
   .catch(err => console.log('❌ MongoDB Connection Error:', err));
 
-// Ensure new models are registered
+// Pastikan model-model baru terdaftar di Mongoose
 require('./models/AdminChat');
 require('./models/DoctorScheduleOverride');
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/doctors', require('./routes/doctors'));
-app.use('/api/availability', require('./routes/availability'));
-app.use('/api/consultations', require('./routes/consultations'));
-app.use('/api/health-check', require('./routes/healthCheck'));
-app.use('/api/pharmacy', require('./routes/pharmacy'));
-app.use('/api/appointments', require('./routes/appointments'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/manual-payment', require('./routes/manualpayment'));
-app.use('/api/xendit', require('./routes/xendit'));
+// ── MySQL (hybrid database) ──────────────────────────────────────────────────
+const { connectMySQL } = require('./config/mysql');
+require('./models/mysql');
+connectMySQL();
+
+// ── Routes ───────────────────────────────────────────────────────────────────
+app.use('/api/auth',            require('./routes/auth'));
+app.use('/api/users',           require('./routes/users'));
+app.use('/api/doctors',         require('./routes/doctors'));
+app.use('/api/availability',    require('./routes/availability'));
+app.use('/api/consultations',   require('./routes/consultations'));
+app.use('/api/health-check',    require('./routes/healthCheck'));
+app.use('/api/pharmacy',        require('./routes/pharmacy'));
+app.use('/api/appointments',    require('./routes/appointments'));
+app.use('/api/admin',           require('./routes/admin'));
+app.use('/api/xendit',          require('./routes/xendit'));        // ← semua payment lewat sini
 app.use('/api/clinic-settings', require('./routes/clinicSettings'));
+app.use('/api/notifications',   require('./routes/notifications'));
 
-// 🔔 Notifikasi
-app.use('/api/notifications', require('./routes/notifications'));
+// routes/payments.js dan routes/manualpayment.js DIHAPUS —
+// semua payment sekarang berpusat ke /api/xendit
 
-// Socket.io for real-time chat
+// ── Socket.io (real-time chat + WebRTC signaling) ────────────────────────────
 require('./socket/chat')(io);
 
-// Cron: expired consultation checker (setiap 1 menit)
+// ── Cron Jobs ────────────────────────────────────────────────────────────────
+// Setiap cron menjalankan logika bisnis penting secara otomatis.
+
+// 1. Konsultasi kedaluwarsa, auto in_progress, doctor no-show, auto close
 require('./utils/Expiredconsultationcron').startCron(io);
 
-// Cron: expired order checker (setiap 1 menit)
+// 2. Order kedaluwarsa, auto siap_diambil, auto selesai
 require('./utils/ExpiredOrderCron').startCron(io);
 
-// ── Cron: appointment — auto no-show & reminder H-24 ─────────────────────────
+// 3. Appointment no-show + reminder H-24
 require('./utils/AppointmentCron').startCron(io);
-require('./utils/CleanupUnverifiedUsersCron').startCron(); // hapus user unverified > 24 jam
-require('./utils/WeeklyScheduleReminderCron').startCron(io); // reminder jadwal mingguan
+
+// 4. Hapus akun belum verifikasi > 24 jam
+require('./utils/CleanupUnverifiedUsersCron').startCron();
+
+// 5. Reminder jadwal mingguan dokter
+require('./utils/WeeklyScheduleReminderCron').startCron(io);
+
+// ── Error handler global ─────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('[API Error]', err.message);
+  res.status(err.status || 500).json({ message: err.message || 'Server error' });
+});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
