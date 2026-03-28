@@ -6,16 +6,15 @@ import { useNotifications } from '../../context/NotificationContext';
 import NotificationDropdown from '../Notifications/NotificationDropdown';
 import api from '../../utils/api';
 import {
-    FaUserMd, FaClipboardList, FaPills, FaCalendarAlt,
+    FaUserMd, FaPills, FaCalendarAlt,
     FaHeartbeat, FaSignInAlt, FaUserPlus, FaSignOutAlt,
     FaUser, FaShieldAlt, FaStethoscope,
-    FaHome, FaChartLine, FaCreditCard,
-    FaBox, FaUsers, FaMoneyBillWave, FaPrescription,
+    FaBox, FaUsers, FaMoneyBillWave, FaHistory
 } from 'react-icons/fa';
 
 const Navigation = () => {
     const { user, logout } = useAuth();
-    const { unreadCount } = useNotifications();
+    const { unreadCount } = useNotifications(); // Jika tidak dipakai, abaikan warning eslint
     const navigate = useNavigate();
     const [pendingPayments, setPendingPayments] = useState(0);
 
@@ -27,9 +26,6 @@ const Navigation = () => {
         }
     }, [user]);
 
-    // Dokter tidak pakai Navbar — DoctorDashboard punya sidebar sendiri.
-    // Pengecekan ini sebagai safety net; App.js sudah menyembunyikan Navbar
-    // untuk role dokter, tapi kalau komponen ini dipanggil langsung, tetap aman.
     if (user?.role === 'doctor') return null;
 
     const handleLogout = () => {
@@ -38,172 +34,195 @@ const Navigation = () => {
     };
 
     return (
-        <Navbar bg="light" expand="lg" className="shadow-sm sticky-top">
-            <Container>
-                <Navbar.Brand as={Link} to="/" className="fw-bold text-primary">
-                    <FaHeartbeat className="me-2" />
-                    Klinik Pratama IPB
-                </Navbar.Brand>
+        <>
+            <style>{`
+                .minimalist-navbar {
+                    background: rgba(255, 255, 255, 0.95) !important;
+                    backdrop-filter: blur(10px);
+                    border-bottom: 1px solid #f3f4f6 !important;
+                }
+                .brand-text {
+                    font-weight: 800;
+                    color: #111827 !important;
+                    letter-spacing: -0.5px;
+                    transition: color 0.2s ease;
+                }
+                .brand-text:hover {
+                    color: #2563eb !important;
+                }
+                .nav-link-custom {
+                    color: #4b5563 !important;
+                    font-weight: 500;
+                    font-size: 0.95rem;
+                    position: relative;
+                    padding: 8px 12px !important;
+                    margin: 0 4px;
+                    transition: color 0.2s ease;
+                }
+                .nav-link-custom:hover {
+                    color: #2563eb !important;
+                }
+                .nav-link-custom::after {
+                    content: '';
+                    position: absolute;
+                    width: 0;
+                    height: 2px;
+                    bottom: 0;
+                    left: 50%;
+                    background-color: #2563eb;
+                    transition: all 0.3s ease;
+                    transform: translateX(-50%);
+                    border-radius: 2px;
+                }
+                .nav-link-custom:hover::after {
+                    width: 80%;
+                }
+                .dropdown-menu {
+                    border: 1px solid #f3f4f6;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+                    padding: 8px;
+                    animation: fadeDown 0.2s ease-out forwards;
+                }
+                .dropdown-item {
+                    border-radius: 8px;
+                    padding: 8px 16px;
+                    font-size: 0.95rem;
+                    font-weight: 500;
+                    color: #4b5563;
+                    transition: all 0.2s;
+                }
+                .dropdown-item:hover {
+                    background-color: #f3f4f6;
+                    color: #111827;
+                }
+                .dropdown-item.text-danger:hover {
+                    background-color: #fef2f2;
+                    color: #dc2626 !important;
+                }
+                .login-btn {
+                    background-color: #2563eb;
+                    color: white !important;
+                    border-radius: 20px;
+                    padding: 8px 20px !important;
+                    transition: all 0.2s;
+                }
+                .login-btn:hover {
+                    background-color: #1d4ed8;
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+                }
+                .register-btn {
+                    border: 1px solid #e5e7eb;
+                    border-radius: 20px;
+                    padding: 8px 20px !important;
+                    transition: all 0.2s;
+                }
+                .register-btn:hover {
+                    background-color: #f9fafb;
+                    border-color: #d1d5db;
+                }
+                @keyframes fadeDown {
+                    from { opacity: 0; transform: translateY(-8px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+            `}</style>
 
-                <Navbar.Toggle aria-controls="main-navbar" />
-                <Navbar.Collapse id="main-navbar">
-
-                    {/* ========== NAV UTAMA: USER ========== */}
-                    {user?.role === 'user' && (
-                        <Nav className="me-auto">
-                            <Nav.Link as={Link} to="/dashboard">
-                                <FaHome className="me-1" /> Dashboard
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/health-check">
-                                <FaClipboardList className="me-1" /> Cek Kesehatan
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/consultations">
-                                <FaUserMd className="me-1" /> Konsultasi
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/pharmacy">
-                                <FaPills className="me-1" /> Farmasi
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/appointments">
-                                <FaCalendarAlt className="me-1" /> Janji Temu
-                            </Nav.Link>
-                        </Nav>
-                    )}
-
-                    {/* ========== NAV UTAMA: ADMIN ========== */}
-                    {user?.role === 'admin' && (
-                        <Nav className="me-auto">
-                            <Nav.Link as={Link} to="/admin">
-                                <FaHome className="me-1" /> Dashboard
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/admin/verify-payments">
-                                <FaMoneyBillWave className="me-1" /> Verifikasi
-                                {pendingPayments > 0 && (
-                                    <Badge bg="danger" className="ms-1">{pendingPayments}</Badge>
-                                )}
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/admin/doctors">
-                                <FaUserMd className="me-1" /> Dokter
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/admin/users">
-                                <FaUsers className="me-1" /> Pengguna
-                            </Nav.Link>
-                        </Nav>
-                    )}
-
-                    {/* ========== NAV: BELUM LOGIN ========== */}
-                    {!user && (
-                        <Nav className="me-auto">
-                            <Nav.Link as={Link} to="/consultations">
-                                <FaUserMd className="me-1" /> Konsultasi
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/pharmacy">
-                                <FaPills className="me-1" /> Farmasi
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/appointments">
-                                <FaCalendarAlt className="me-1" /> Janji Temu
-                            </Nav.Link>
-                            <Nav.Link as={Link} to="/health-check">
-                                <FaClipboardList className="me-1" /> Cek Kesehatan
-                            </Nav.Link>
-                        </Nav>
-                    )}
-
-                    {/* ========== NAV KANAN ========== */}
-                    <Nav className="align-items-center">
-                        {user && <NotificationDropdown />}
-
-                        {user ? (
-                            <>
-                                {/* ----- Dropdown: USER ----- */}
-                                {user.role === 'user' && (
-                                    <NavDropdown
-                                        title={<span><FaUser className="me-1" />{user.name?.split(' ')[0]}</span>}
-                                        id="user-dropdown"
-                                        align="end"
-                                    >
-                                        <NavDropdown.Header className="text-muted small">Menu User</NavDropdown.Header>
-                                        <NavDropdown.Item as={Link} to="/dashboard">
-                                            <FaHome className="me-2" /> Dashboard
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/profile">
-                                            <FaUser className="me-2" /> Profil Saya
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/consultations">
-                                            <FaUserMd className="me-2" /> Konsultasi Saya
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/appointments">
-                                            <FaCalendarAlt className="me-2" /> Janji Temu Saya
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/payments">
-                                            <FaCreditCard className="me-2" /> Riwayat Pembayaran
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/pharmacy">
-                                            <FaBox className="me-2" /> Pesanan Obat
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Divider />
-                                        <NavDropdown.Item onClick={handleLogout} className="text-danger">
-                                            <FaSignOutAlt className="me-2" /> Logout
-                                        </NavDropdown.Item>
+            <Navbar expand="lg" sticky="top" className="minimalist-navbar py-2 py-lg-3">
+                <Container>
+                    <Navbar.Brand as={Link} to="/" className="brand-text fs-4">
+                        Klinik IPB
+                    </Navbar.Brand>
+                    
+                    <Navbar.Toggle aria-controls="basic-navbar-nav" className="border-0 shadow-none" />
+                    
+                    <Navbar.Collapse id="basic-navbar-nav">
+                        <Nav className="me-auto ms-lg-4">
+                            {/* Menu User / Guest */}
+                            {user?.role !== 'admin' && (
+                                <>
+                                    <Nav.Link as={Link} to="/appointments" className="nav-link-custom d-flex align-items-center">
+                                        <FaCalendarAlt className="me-2 d-lg-none" /> Janji Temu
+                                    </Nav.Link>
+                                    <Nav.Link as={Link} to="/consultations" className="nav-link-custom d-flex align-items-center">
+                                        <FaStethoscope className="me-2 d-lg-none" /> Konsultasi
+                                    </Nav.Link>
+                                    <Nav.Link as={Link} to="/pharmacy" className="nav-link-custom d-flex align-items-center">
+                                        <FaPills className="me-2 d-lg-none" /> Farmasi
+                                    </Nav.Link>
+                                    <Nav.Link as={Link} to="/health-check" className="nav-link-custom d-flex align-items-center">
+                                        <FaHeartbeat className="me-2 d-lg-none" /> Cek Kesehatan
+                                    </Nav.Link>
+                                </>
+                            )}
+                            
+                            {/* Menu Khusus Admin */}
+                            {user?.role === 'admin' && (
+                                <>
+                                    <Nav.Link as={Link} to="/admin" className="nav-link-custom text-danger d-flex align-items-center">
+                                        <FaShieldAlt className="me-2" /> Admin Panel
+                                    </Nav.Link>
+                                    <NavDropdown title={<span><FaUsers className="me-1"/> Kelola Users</span>} id="admin-users-dropdown" className="nav-link-custom">
+                                        <NavDropdown.Item as={Link} to="/admin?tab=users"><FaUsers className="me-2 text-muted"/> Semua User</NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/admin?tab=doctors"><FaUserMd className="me-2 text-muted"/> Dokter</NavDropdown.Item>
                                     </NavDropdown>
-                                )}
-
-                                {/* ----- Dropdown: ADMIN ----- */}
-                                {user.role === 'admin' && (
-                                    <NavDropdown
-                                        title={<span className="text-warning"><FaShieldAlt className="me-1" />Admin</span>}
-                                        id="admin-dropdown"
-                                        align="end"
-                                    >
-                                        <NavDropdown.Header className="text-muted small">Panel Administrasi</NavDropdown.Header>
-                                        <NavDropdown.Item as={Link} to="/admin">
-                                            <FaChartLine className="me-2" /> Dashboard
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/admin/verify-payments">
-                                            <FaMoneyBillWave className="me-2" /> Verifikasi Pembayaran
-                                            {pendingPayments > 0 && (
-                                                <Badge bg="danger" className="ms-2">{pendingPayments}</Badge>
-                                            )}
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/admin/doctors">
-                                            <FaUserMd className="me-2" /> Kelola Dokter
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/admin/users">
-                                            <FaUsers className="me-2" /> Kelola Pengguna
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/admin/consultations">
-                                            <FaPrescription className="me-2" /> Semua Konsultasi
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/admin/appointments">
-                                            <FaCalendarAlt className="me-2" /> Semua Janji Temu
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/admin/pharmacy">
-                                            <FaPills className="me-2" /> Manajemen Farmasi
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Divider />
-                                        <NavDropdown.Item as={Link} to="/profile">
-                                            <FaUser className="me-2" /> Profil Saya
-                                        </NavDropdown.Item>
-                                        <NavDropdown.Divider />
-                                        <NavDropdown.Item onClick={handleLogout} className="text-danger">
-                                            <FaSignOutAlt className="me-2" /> Logout
-                                        </NavDropdown.Item>
+                                    <NavDropdown title={<span><FaBox className="me-1"/> Layanan</span>} id="admin-services-dropdown" className="nav-link-custom">
+                                        <NavDropdown.Item as={Link} to="/admin?tab=appointments"><FaCalendarAlt className="me-2 text-muted"/> Janji Temu Offline</NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/admin?tab=consultations"><FaStethoscope className="me-2 text-muted"/> Konsultasi Online</NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/admin?tab=pharmacy"><FaPills className="me-2 text-muted"/> Inventaris Obat</NavDropdown.Item>
                                     </NavDropdown>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                                <Nav.Link as={Link} to="/login">
-                                    <FaSignInAlt className="me-1" /> Login
-                                </Nav.Link>
-                                <Nav.Link as={Link} to="/register">
-                                    <FaUserPlus className="me-1" /> Register
-                                </Nav.Link>
-                            </>
-                        )}
-                    </Nav>
-                </Navbar.Collapse>
-            </Container>
-        </Navbar>
+                                    <Nav.Link as={Link} to="/admin?tab=payments" className="nav-link-custom d-flex align-items-center">
+                                        <FaMoneyBillWave className="me-2 d-lg-none" /> Keuangan
+                                        {pendingPayments > 0 && <Badge bg="danger" className="ms-2 rounded-pill">{pendingPayments}</Badge>}
+                                    </Nav.Link>
+                                </>
+                            )}
+                        </Nav>
+
+                        <Nav className="align-items-lg-center gap-2 mt-3 mt-lg-0">
+                            {user ? (
+                                <>
+                                    <NotificationDropdown />
+                                    {user.role === 'admin' ? (
+                                        <NavDropdown title={<span style={{ fontWeight: 600, color: '#111827' }}>Admin</span>} id="basic-nav-dropdown" align="end">
+                                            <NavDropdown.Item onClick={handleLogout} className="text-danger">
+                                                <FaSignOutAlt className="me-2" /> Logout
+                                            </NavDropdown.Item>
+                                        </NavDropdown>
+                                    ) : (
+                                        <NavDropdown 
+                                            title={<span style={{ fontWeight: 600, color: '#111827' }}>{user.name}</span>} 
+                                            id="basic-nav-dropdown" 
+                                            align="end"
+                                        >
+                                            <NavDropdown.Item as={Link} to="/profile">
+                                                <FaUser className="me-2 text-muted" /> Profil
+                                            </NavDropdown.Item>
+                                            <NavDropdown.Item as={Link} to="/payments">
+                                                <FaHistory className="me-2 text-muted" /> Riwayat Pembayaran
+                                            </NavDropdown.Item>
+                                            <NavDropdown.Divider style={{ borderColor: '#f3f4f6', margin: '4px 0' }} />
+                                            <NavDropdown.Item onClick={handleLogout} className="text-danger">
+                                                <FaSignOutAlt className="me-2" /> Logout
+                                            </NavDropdown.Item>
+                                        </NavDropdown>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="d-flex gap-2">
+                                    <Nav.Link as={Link} to="/register" className="nav-link-custom register-btn">
+                                        <FaUserPlus className="me-1 d-lg-none" /> Daftar
+                                    </Nav.Link>
+                                    <Nav.Link as={Link} to="/login" className="nav-link-custom login-btn">
+                                        <FaSignInAlt className="me-1 d-lg-none" /> Login
+                                    </Nav.Link>
+                                </div>
+                            )}
+                        </Nav>
+                    </Navbar.Collapse>
+                </Container>
+            </Navbar>
+        </>
     );
 };
 

@@ -54,6 +54,8 @@
  */
 
 const express   = require('express');
+const { User, Doctor, Order, Medicine, Payment } = require('../models/mysql');
+const { populateFromMySQL } = require('../utils/hybridJoin');
 const router    = express.Router();
 const multer    = require('multer');
 const path      = require('path');
@@ -63,12 +65,8 @@ const auth      = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const { createNotification } = require('../utils/notificationHelper');
 
-const User         = require('../models/User');
-const Doctor       = require('../models/Doctor');
 const Consultation = require('../models/Consultation');
 const Appointment  = require('../models/Appointment');
-const Order        = require('../models/Order');
-const Medicine     = require('../models/Medicine');
 const SickLetter   = require('../models/SickLetter');
 const AdminChat    = require('../models/AdminChat');
 const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
@@ -278,8 +276,8 @@ router.post('/doctors', guard, async (req, res) => {
         await user.save();
 
         // Buat profil Doctor
-        const doctor = new Doctor({
-            userId          : user._id,
+        const doctor = await Doctor.create({
+            userId          : user.id,
             name            : name.trim(),
             specialization  : specialization.trim(),
             qualification   : qualification?.trim() || '',
@@ -289,11 +287,14 @@ router.post('/doctors', guard, async (req, res) => {
             consultationFee : consultationFee ? Number(consultationFee) : 0,
             isActive        : true,
         });
-        await doctor.save();
 
         // Populate untuk response
-        const populated = await Doctor.findById(doctor._id).populate('userId', 'name email').lean();
-        res.status(201).json({ success: true, message: 'Dokter berhasil ditambahkan', doctor: populated });
+        const populated = await Doctor.findByPk(doctor.id, {
+            include: [{ model: User, as: 'user', attributes: ['name', 'email'] }]
+        });
+        const result = populated.toJSON();
+        result.userId = result.user;
+        res.status(201).json({ success: true, message: 'Dokter berhasil ditambahkan', doctor: result });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
@@ -302,11 +303,17 @@ router.post('/doctors', guard, async (req, res) => {
 // GET /admin/doctors/:id
 router.get('/doctors/:id', guard, async (req, res) => {
     try {
-        const doctor = await Doctor.findById(req.params.id).populate('userId', 'name email phone isActive gender dateOfBirth').lean();
-        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        const docRow = await Doctor.findByPk(req.params.id, {
+            include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone', 'isActive', 'gender', 'dateOfBirth'] }]
+        });
+        if (!docRow) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        const doctor = docRow.toJSON();
+        doctor.userId = doctor.user;
+        doctor._id = doctor.id;
+        // doctor null check handled above
 
         // Statistik rating
-        const reviews = await Consultation.find({ doctorId: doctor._id, rating: { $gt: 0 } })
+        const reviews = await Consultation.find({ doctorId: doctor.id, rating: { $gt: 0 } })
             .select('rating ratingComment ratedAt userId')
             .populate('userId', 'name')
             .sort('-ratedAt')
@@ -334,7 +341,8 @@ router.put('/doctors/:id', guard, async (req, res) => {
         if (gender)             updates.gender             = gender;
         if (consultationSettings) updates.consultationSettings = consultationSettings;
 
-        const doctor = await Doctor.findByIdAndUpdate(req.params.id, updates, { new: true });
+        await Doctor.update(updates, { where: { id: req.params.id } });
+        const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json({ success: true, doctor });
     } catch (err) {
@@ -345,12 +353,12 @@ router.put('/doctors/:id', guard, async (req, res) => {
 // PUT /admin/doctors/:id/toggle-status
 router.put('/doctors/:id/toggle-status', guard, async (req, res) => {
     try {
-        const doctor = await Doctor.findById(req.params.id).populate('userId');
+        const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         doctor.isActive = !doctor.isActive;
         await doctor.save();
         if (doctor.userId) {
-            await User.findByIdAndUpdate(doctor.userId._id, { isActive: doctor.isActive });
+            await User.update({ isActive: doctor.isActive }, { where: { id: doctor.userId } });
         }
         res.json({ success: true, isActive: doctor.isActive });
     } catch (err) {
@@ -363,7 +371,8 @@ router.post('/doctors/:id/photo', guard, uploadDoctorPhoto.single('photo'), asyn
     try {
         if (!req.file) return res.status(400).json({ message: 'File tidak ada' });
         const photoUrl = `/uploads/doctors/${req.file.filename}`;
-        const doctor   = await Doctor.findByIdAndUpdate(req.params.id, { photo: photoUrl }, { new: true });
+        await Doctor.update({ photo: photoUrl }, { where: { id: req.params.id } });
+        const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json({ success: true, photoUrl });
     } catch (err) {
@@ -415,17 +424,17 @@ router.put('/doctors/:id/schedule/override', guard, async (req, res) => {
             }).populate('userId', 'name');
 
             for (const appt of toCancel) {
-                await Appointment.findByIdAndUpdate(appt._id, {
+                await Appointment.findByIdAndUpdate(appt.id, {
                     status     : 'cancelled_by_admin',
                     cancelledAt: new Date(),
                     cancelReason: reason || 'Dokter tidak hadir (override jadwal oleh admin)',
                 });
                 await createNotification({
-                    userId : appt.userId._id,
+                    userId : appt.userId.id,
                     type   : 'appointment_cancelled',
                     title  : 'Janji Temu Dibatalkan',
                     message: `Janji temu Anda pada ${date} dibatalkan. ${reason ? 'Alasan: ' + reason : 'Dokter tidak hadir.'}`,
-                    data   : { appointmentId: appt._id },
+                    data   : { appointmentId: appt.id },
                     io     : req.app.get('io'),
                 });
                 cancelledCount++;
@@ -456,20 +465,22 @@ router.delete('/doctors/:id/schedule/override/:date', guard, async (req, res) =>
 router.get('/users', guard, async (req, res) => {
     try {
         const { role, search, page = 1, limit = 30 } = req.query;
-        const filter = { role: { $in: ['user','mahasiswa'] } };
+        const filter = { role: { [Op.in]: ['user','mahasiswa'] } };
         if (role && ['user','mahasiswa'].includes(role)) filter.role = role;
-        if (search) filter.$or = [
-            { name  : { $regex: search, $options: 'i' } },
-            { email : { $regex: search, $options: 'i' } },
-            { phone : { $regex: search, $options: 'i' } },
+        if (search) filter[Op.or] = [
+            { name  : { [Op.like]: `%${search}%` } },
+            { email : { [Op.like]: `%${search}%` } },
+            { phone : { [Op.like]: `%${search}%` } },
         ];
-        const total = await User.countDocuments(filter);
-        const users = await User.find(filter)
-            .select('-password -emailOtp -resetPasswordToken')
-            .sort('-createdAt')
-            .skip((page - 1) * limit)
-            .limit(Number(limit))
-            .lean();
+        const total = await User.count({ where: filter });
+        let users = await User.findAll({
+            where: filter,
+            attributes: { exclude: ['password', 'emailOtp', 'resetPasswordToken'] },
+            order: [['createdAt', 'DESC']],
+            offset: (page - 1) * limit,
+            limit: Number(limit),
+            raw: true
+        });
         res.json({ success: true, users, total, page: Number(page), pages: Math.ceil(total / limit) });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
@@ -479,22 +490,29 @@ router.get('/users', guard, async (req, res) => {
 // GET /admin/users/:id — detail + history transaksi
 router.get('/users/:id', guard, async (req, res) => {
     try {
-        const user = await User.findById(req.params.id).select('-password -emailOtp -resetPasswordToken').lean();
+        const user = await User.findByPk(req.params.id, {
+            attributes: { exclude: ['password', 'emailOtp', 'resetPasswordToken'] },
+            raw: true
+        });
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
 
-        const [consultations, appointments, orders] = await Promise.all([
-            Consultation.find({ userId: req.params.id })
-                .populate('doctorId', 'name specialization')
-                .select('status scheduledAt amount paidAt createdAt consultationType')
-                .sort('-createdAt').limit(20).lean(),
-            Appointment.find({ userId: req.params.id })
-                .populate('doctorId', 'name specialization')
-                .select('status scheduledAt appointmentTime appointmentDate createdAt')
-                .sort('-createdAt').limit(20).lean(),
-            Order.find({ userId: req.params.id })
-                .select('orderNumber status totalAmount createdAt completedAt deliveryMethod')
-                .sort('-createdAt').limit(20).lean(),
-        ]);
+        let consultations = await Consultation.find({ userId: req.params.id })
+            .select('status scheduledAt amount paidAt createdAt consultationType doctorId')
+            .sort('-createdAt').limit(20).lean();
+        consultations = await populateFromMySQL(consultations, 'doctorId', 'Doctor', 'name specialization');
+
+        let appointments = await Appointment.find({ userId: req.params.id })
+            .select('status scheduledAt appointmentTime appointmentDate createdAt doctorId')
+            .sort('-createdAt').limit(20).lean();
+        appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name specialization');
+
+        const orders = await Order.findAll({
+            where: { userId: req.params.id },
+            attributes: ['id', 'orderNumber', 'status', 'totalAmount', 'createdAt', 'completedAt', 'deliveryMethod'],
+            order: [['createdAt', 'DESC']],
+            limit: 20,
+            raw: true
+        });
 
         res.json({ success: true, user, consultations, appointments, orders });
     } catch (err) {
@@ -505,7 +523,7 @@ router.get('/users/:id', guard, async (req, res) => {
 // GET /admin/users/:id/quota — kuota mahasiswa
 router.get('/users/:id/quota', guard, async (req, res) => {
     try {
-        const user = await User.findById(req.params.id).lean();
+        const user = await User.findByPk(req.params.id, { raw: true });
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
 
         const STUDENT_MAX_PCS = 8;
@@ -513,13 +531,17 @@ router.get('/users/:id/quota', guard, async (req, res) => {
         const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endMonth   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-        const orders = await Order.find({
-            userId          : req.params.id,
-            isStudentDiscount: true,
-            studentFreeQty  : { $gt: 0 },
-            status          : { $nin: ['cancelled','expired','prescription_rejected'] },
-            createdAt       : { $gte: startMonth, $lte: endMonth },
-        }).select('orderNumber studentFreeQty createdAt').lean();
+        const orders = await Order.findAll({
+            where: {
+                userId          : req.params.id,
+                isStudentDiscount: true,
+                studentFreeQty  : { [Op.gt]: 0 },
+                status          : { [Op.notIn]: ['cancelled','expired','prescription_rejected'] },
+                createdAt       : { [Op.between]: [startMonth, endMonth] },
+            },
+            attributes: ['orderNumber', 'studentFreeQty', 'createdAt'],
+            raw: true
+        });
 
         const used = orders.reduce((s, o) => s + (o.studentFreeQty || 0), 0);
         const manualExtra = user.quotaBonus || 0; // bonus manual dari admin
@@ -536,7 +558,7 @@ router.get('/users/:id/quota', guard, async (req, res) => {
 router.put('/users/:id/quota', guard, async (req, res) => {
     try {
         const { action, amount } = req.body;
-        const user = await User.findById(req.params.id);
+        const user = await User.findByPk(req.params.id);
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
         if (user.role !== 'mahasiswa') return res.status(400).json({ message: 'Hanya untuk mahasiswa' });
 
@@ -558,7 +580,7 @@ router.put('/users/:id/quota', guard, async (req, res) => {
 // PUT /admin/users/:id/toggle-status
 router.put('/users/:id/toggle-status', guard, async (req, res) => {
     try {
-        const user = await User.findById(req.params.id);
+        const user = await User.findByPk(req.params.id);
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
         user.isActive = !user.isActive;
         await user.save();
@@ -572,17 +594,19 @@ router.put('/users/:id/toggle-status', guard, async (req, res) => {
 // Upgrade semua user dengan email @apps.ipb.ac.id ke role mahasiswa
 router.post('/users/upgrade-mahasiswa', guard, async (req, res) => {
     try {
-        const result = await User.updateMany(
+        const [affectedCount] = await User.update(
+            { role: 'mahasiswa' },
             {
-                email: { $regex: '@apps\.ipb\.ac\.id$', $options: 'i' },
-                role : { $in: ['user'] }, // hanya upgrade dari role user
-            },
-            { $set: { role: 'mahasiswa' } }
+                where: {
+                    email: { [Op.like]: '%@apps.ipb.ac.id' },
+                    role: 'user',
+                }
+            }
         );
         res.json({
             success  : true,
-            upgraded : result.modifiedCount,
-            message  : `${result.modifiedCount} akun berhasil diupgrade ke mahasiswa`,
+            upgraded : affectedCount,
+            message  : `${affectedCount} akun berhasil diupgrade ke mahasiswa`,
         });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
@@ -593,11 +617,16 @@ router.post('/users/upgrade-mahasiswa', guard, async (req, res) => {
 // POST /admin/users/reset-quota-bonus — reset quotaBonus semua mahasiswa ke 0
 router.post('/users/reset-quota-bonus', guard, async (req, res) => {
     try {
-        const result = await User.updateMany(
-            { role: 'mahasiswa', quotaBonus: { $gt: 0 } },
-            { $set: { quotaBonus: 0 } }
+        const [affectedCount] = await User.update(
+            { quotaBonus: 0 },
+            {
+                where: {
+                    role: 'mahasiswa',
+                    quotaBonus: { [Op.gt]: 0 },
+                }
+            }
         );
-        res.json({ success: true, reset: result.modifiedCount, message: `Kuota bonus ${result.modifiedCount} mahasiswa berhasil direset ke 0` });
+        res.json({ success: true, reset: affectedCount, message: `Kuota bonus ${affectedCount} mahasiswa berhasil direset ke 0` });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
@@ -695,11 +724,11 @@ router.put('/appointments/:id/check-in', guard, async (req, res) => {
         await appt.save();
 
         await createNotification({
-            userId : appt.userId._id,
+            userId : appt.userId.id,
             type   : 'appointment_reminder',
             title  : '✅ Check-In Berhasil',
             message: `Anda telah check-in untuk janji temu dengan dr. ${appt.doctorId?.name}. Silakan menunggu.`,
-            data   : { appointmentId: appt._id },
+            data   : { appointmentId: appt.id },
             io     : req.app.get('io'),
         });
 
@@ -731,11 +760,11 @@ router.put('/appointments/:id/cancel', guard, async (req, res) => {
 
         // Notifikasi ke pasien
         await createNotification({
-            userId : appt.userId._id,
+            userId : appt.userId.id,
             type   : 'appointment_cancelled',
             title  : '❌ Janji Temu Dibatalkan',
             message: `Janji temu Anda dengan dr. ${appt.doctorId?.name} dibatalkan. Alasan: ${reason}`,
-            data   : { appointmentId: appt._id },
+            data   : { appointmentId: appt.id },
             io,
         });
 
@@ -746,7 +775,7 @@ router.put('/appointments/:id/cancel', guard, async (req, res) => {
                 type   : 'appointment_cancelled',
                 title  : '❌ Janji Temu Dibatalkan Admin',
                 message: `Janji temu dengan pasien ${appt.userId?.name} dibatalkan. Alasan: ${reason}`,
-                data   : { appointmentId: appt._id },
+                data   : { appointmentId: appt.id },
                 io,
             });
         }
@@ -764,7 +793,7 @@ router.put('/appointments/:id/cancel', guard, async (req, res) => {
 // GET /admin/pharmacy/low-stock
 router.get('/pharmacy/low-stock', guard, async (req, res) => {
     try {
-        const meds = await Medicine.find({ isActive: true }).lean();
+        const meds = await Medicine.findAll({ where: { isActive: true }, raw: true });
         const lowStock = meds.filter(m => (m.stock - (m.lockedStock || 0)) <= (m.minStock ?? 10));
         res.json({ success: true, medicines: lowStock });
     } catch (err) {
@@ -776,17 +805,22 @@ router.get('/pharmacy/low-stock', guard, async (req, res) => {
 router.get('/pharmacy/best-sellers', guard, async (req, res) => {
     try {
         const limitN = parseInt(req.query.limit) || 5;
-        const result = await Order.aggregate([
-            { $match: { status: { $in: ['selesai','terkirim','dikirim','diproses'] } } },
-            { $unwind: '$items' },
-            { $group: {
-                _id    : '$items.medicineId',
-                name   : { $first: '$items.name' },
-                totalQty: { $sum: '$items.quantity' },
-            }},
-            { $sort: { totalQty: -1 } },
-            { $limit: limitN },
-        ]);
+        // Best sellers from Order items (JSON field in MySQL)
+        const allOrders = await Order.findAll({
+            where: { status: { [Op.in]: ['selesai','terkirim','dikirim','diproses'] } },
+            attributes: ['items'],
+            raw: true
+        });
+        const itemMap = {};
+        for (const order of allOrders) {
+            const items = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+            for (const item of items) {
+                const key = item.medicineId || item.name;
+                if (!itemMap[key]) itemMap[key] = { _id: key, name: item.name, totalQty: 0 };
+                itemMap[key].totalQty += (item.quantity || 0);
+            }
+        }
+        const result = Object.values(itemMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, limitN);
         res.json({ success: true, bestSellers: result });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
@@ -849,14 +883,20 @@ router.get('/reports/revenue', guard, async (req, res) => {
         .select('paidAt amount xenditExternalId consultationType status userId doctorId')
         .lean();
 
-        const orders = await Order.find({
-            createdAt: { $gte: start, $lte: end },
-            status   : { $nin: ['pending','expired','cancelled'] },
-        })
-        .limit(REPORT_LIMIT)
-        .populate('userId', 'name email')
-        .select('orderNumber createdAt totalAmount shippingCost xenditExternalId status userId deliveryMethod items')
-        .lean();
+        const dbOrders = await Order.findAll({
+            where: {
+                createdAt: { [Op.between]: [start, end] },
+                status   : { [Op.notIn]: ['pending','expired','cancelled'] },
+            },
+            limit: REPORT_LIMIT,
+            include: [{ model: User, as: 'user', attributes: ['name', 'email'] }],
+            attributes: ['orderNumber', 'createdAt', 'totalAmount', 'shippingCost', 'xenditExternalId', 'status', 'userId', 'deliveryMethod', 'items'],
+        });
+        const orders = dbOrders.map(o => {
+            const json = o.toJSON();
+            json.userId = json.user; 
+            return json;
+        });
 
         const appointments = await Appointment.find({
             scheduledAt: { $gte: start, $lte: end },
@@ -921,14 +961,20 @@ router.get('/reports/subsidi-mahasiswa', guard, async (req, res) => {
         const start = from ? new Date(from + 'T00:00:00') : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
         const end   = to   ? new Date(to   + 'T23:59:59') : new Date();
 
-        const orders = await Order.find({
-            isStudentDiscount: true,
-            status           : { $nin: ['cancelled','expired','prescription_rejected'] },
-            createdAt        : { $gte: start, $lte: end },
-        })
-        .populate('userId', 'name email')
-        .select('createdAt userId items studentFreeQty')
-        .lean();
+        const dbOrders2 = await Order.findAll({
+            where: {
+                isStudentDiscount: true,
+                status           : { [Op.notIn]: ['cancelled','expired','prescription_rejected'] },
+                createdAt        : { [Op.between]: [start, end] },
+            },
+            include: [{ model: User, as: 'user', attributes: ['name', 'email'] }],
+            attributes: ['createdAt', 'userId', 'items', 'studentFreeQty'],
+        });
+        const orders = dbOrders2.map(o => {
+            const json = o.toJSON();
+            json.userId = json.user;
+            return json;
+        });
 
         const rows = [];
         for (const order of orders) {
@@ -989,9 +1035,9 @@ router.get('/chat/:doctorId', guard, async (req, res) => {
         let thread = await AdminChat.findOne({ doctorId: req.params.doctorId }).lean();
         if (!thread) {
             // Thread belum ada — cari userId dokter
-            const doctor = await Doctor.findById(req.params.doctorId);
+            const doctor = await Doctor.findByPk(req.params.doctorId);
             if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
-            thread = { doctorId: doctor._id, doctorUserId: doctor.userId, messages: [] };
+            thread = { doctorId: doctor.id, doctorUserId: doctor.userId, messages: [] };
         }
         res.json({ success: true, messages: thread.messages || [], doctorId: req.params.doctorId });
     } catch (err) {
@@ -1005,8 +1051,13 @@ router.post('/chat/:doctorId', guard, uploadChatFile.single('file'), async (req,
         const { text } = req.body;
         if (!text?.trim() && !req.file) return res.status(400).json({ message: 'Pesan atau file wajib ada' });
 
-        const doctor = await Doctor.findById(req.params.doctorId).populate('userId', 'name');
+        const doctor = await Doctor.findByPk(req.params.doctorId, {
+            include: [{ model: User, as: 'user', attributes: ['id', 'name'] }]
+        });
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+        // Map user to userId for compatibility
+        const doctorJson = doctor.toJSON();
+        doctorJson.userId = doctorJson.user || { id: doctor.userId };
 
         let fileUrl = null, fileName = null, fileType = null;
         if (req.file) {
@@ -1032,25 +1083,25 @@ router.post('/chat/:doctorId', guard, uploadChatFile.single('file'), async (req,
                 $push: { messages: msg },
                 $set : { lastMessage: text?.trim() || `📎 ${fileName}`, lastAt: new Date(), adminId: req.userId },
                 $inc : { unreadDoctor: 1 },
-                $setOnInsert: { doctorUserId: doctor.userId._id },
+                $setOnInsert: { doctorUserId: doctorJson.userId.id },
             },
             { upsert: true, new: true }
         );
 
         // Notifikasi in-app ke dokter
         await createNotification({
-            userId : doctor.userId._id,
+            userId : doctorJson.userId.id,
             type   : 'new_message',
             title  : '💬 Pesan dari Admin',
             message: text?.trim() || 'Admin mengirimkan file',
-            data   : { doctorId: doctor._id },
+            data   : { doctorId: doctor.id },
             io     : req.app.get('io'),
         });
 
         // Socket emit ke dokter
         const io = req.app.get('io');
         if (io) {
-            io.to(`user-${doctor.userId._id}`).emit('admin-chat-message', {
+            io.to(`user-${doctorJson.userId.id}`).emit('admin-chat-message', {
                 doctorId: req.params.doctorId,
                 message : msg,
             });

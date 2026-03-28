@@ -124,7 +124,9 @@ const SectionPasien = () => {
                             <Card>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                                        <thead><tr>{['Pasien', 'Tanggal', 'Jam', 'Keluhan', 'Catatan Dokter', 'Aksi'].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
+                                        <thead>
+                                            <tr>{['Pasien', 'Tanggal', 'Jam', 'Keluhan', 'Diagnosis / Catatan', 'Aksi'].map(h => <th key={h} style={TH}>{h}</th>)}</tr>
+                                        </thead>
                                         <tbody>
                                             {filteredAppts.map((a, i) => (
                                                 <tr key={a._id} style={{ borderBottom: `1px solid #f8fafc`, background: i % 2 ? '#fafafa' : '#fff' }}>
@@ -138,7 +140,12 @@ const SectionPasien = () => {
                                                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.complaint || '—'}</div>
                                                     </td>
                                                     <td style={{ ...TD, maxWidth: 200, color: colors.muted }}>
-                                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.notes || <em style={{ color: colors.border }}>Belum ada catatan</em>}</div>
+                                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {/* ── Perbaikan Tampilan Catatan ── */}
+                                                            {a.medicalRecord?.assessment 
+                                                                ? `Dx: ${a.medicalRecord.assessment}` 
+                                                                : (a.notes || <em style={{ color: colors.border }}>Belum ada catatan</em>)}
+                                                        </div>
                                                     </td>
                                                     <td style={TD}><Btn size="sm" variant="ghost" onClick={() => setSelected({ type: 'appt', data: a })}>Detail</Btn></td>
                                                 </tr>
@@ -248,11 +255,14 @@ const SectionPasien = () => {
                             </div>
                         </div>
                         <div style={{ background: '#f8fafc', borderRadius: 11, padding: 16 }}>
+                            {/* ── Perbaikan Isi Modal Janji Temu ── */}
                             {[
                                 ['Keluhan', a.complaint || '—'],
-                                ['Catatan Dokter', a.notes || 'Belum ada catatan'],
+                                ['Pemeriksaan', a.medicalRecord?.objectiveFindings || a.notes || '—'],
+                                ['Diagnosis', a.medicalRecord?.assessment || '—'],
+                                ['Terapi', a.medicalRecord?.plan || '—'],
                                 ['Alasan Batal', a.cancelReason || '—'],
-                            ].map(([k, v]) => (
+                            ].filter(([k, v]) => v !== '—' || k !== 'Alasan Batal').map(([k, v]) => (
                                 <div key={k} style={{ display: 'flex', gap: 12, marginBottom: 10, fontSize: 13 }}>
                                     <div style={{ width: 130, fontWeight: 600, color: colors.muted, flexShrink: 0 }}>{k}</div>
                                     <div style={{ color: colors.text }}>{v}</div>
@@ -299,7 +309,5 @@ const SectionPasien = () => {
         </div>
     );
 };
-
-
 
 export default SectionPasien;

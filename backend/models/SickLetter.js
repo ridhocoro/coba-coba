@@ -2,13 +2,13 @@ const mongoose = require('mongoose');
 
 const sickLetterSchema = new mongoose.Schema({
     consultationId: { 
-        type: mongoose.Schema.Types.ObjectId, 
+        type: String, 
         ref: 'Consultation', 
         required: true,
         unique: true // Satu konsultasi hanya bisa punya satu surat sakit
     },
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
+    userId: { type: String, ref: 'User', required: true },
+    doctorId: { type: String, ref: 'Doctor', required: true },
     status: {
         type: String,
         enum: ['draft', 'issued'],

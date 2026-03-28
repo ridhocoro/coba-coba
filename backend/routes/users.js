@@ -1,13 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
+const { User } = require('../models/mysql');
 const auth = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
 
 // GET user profile
 router.get('/profile', auth, async (req, res) => {
     try {
-        const user = await User.findById(req.userId).select('-password');
+        const user = await User.findByPk(req.userId, {
+            attributes: { exclude: ['password'] }
+        });
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
@@ -23,11 +25,22 @@ router.put('/profile', auth, async (req, res) => {
             return res.status(400).json({ message: 'Nama dan nomor telepon wajib diisi' });
         }
 
-        const user = await User.findByIdAndUpdate(
-            req.userId,
-            { $set: { name, phone, address } },
-            { new: true }
-        ).select('-password');
+        let updates = { name, phone };
+        if (address) {
+            if (typeof address === 'string') {
+                updates.addressStreet = address;
+            } else {
+                updates.addressStreet = address.street;
+                updates.addressCity = address.city;
+                updates.addressProvince = address.province;
+                updates.addressPostalCode = address.postalCode;
+            }
+        }
+
+        await User.update(updates, { where: { id: req.userId } });
+        const user = await User.findByPk(req.userId, {
+            attributes: { exclude: ['password'] }
+        });
 
         res.json({ success: true, user });
     } catch (error) {
@@ -44,7 +57,6 @@ router.put('/change-password', auth, async (req, res) => {
             return res.status(400).json({ message: 'Password lama dan baru wajib diisi' });
         }
 
-        // BUG-24 fix: align with register requirement (min 8 chars + complexity)
         if (newPassword.length < 8) {
             return res.status(400).json({ message: 'Password baru minimal 8 karakter' });
         }
@@ -52,7 +64,7 @@ router.put('/change-password', auth, async (req, res) => {
             return res.status(400).json({ message: 'Password baru harus mengandung huruf besar, huruf kecil, dan angka' });
         }
 
-        const user = await User.findById(req.userId);
+        const user = await User.findByPk(req.userId);
         const isMatch = await user.comparePassword(currentPassword);
 
         if (!isMatch) {

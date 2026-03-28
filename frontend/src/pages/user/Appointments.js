@@ -1,19 +1,25 @@
 /**
  * frontend/src/pages/user/Appointments.js
- * Halaman Janji Temu untuk user:
- *  - Pilih dokter → pilih tanggal → pilih slot → booking
- *  - Lihat daftar janji aktif & riwayat
- *  - Cancel & Reschedule
+ * Updated:
+ * - Hapus fitur refund (post-cancel = reschedule only)
+ * - Rating tanpa komentar (hanya bintang)
+ * - Tampilkan tahun pengalaman di bawah rating bintang pada card dokter
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import io from 'socket.io-client';
+import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+const WIB_OFFSET        = 7 * 60 * 60 * 1000;
+const DAY_NAMES         = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
+
 const fmtDT = (dateStr, timeStr) => {
     if (!dateStr) return '-';
     const d = new Date(dateStr);
@@ -21,873 +27,970 @@ const fmtDT = (dateStr, timeStr) => {
     return timeStr ? `${tgl}, ${timeStr} WIB` : tgl;
 };
 
-const STATUS_CFG = {
-    scheduled           : { label: '📅 Terjadwal',          color: '#1d4ed8', bg: '#eff6ff' },
-    checked_in          : { label: '✅ Hadir',               color: '#166534', bg: '#dcfce7' },
-    completed           : { label: '🏁 Selesai',             color: '#0e7490', bg: '#ecfeff' },
-    no_show             : { label: '❌ Tidak Hadir',          color: '#b45309', bg: '#fffbeb' },
-    cancelled_by_user   : { label: '🚫 Dibatalkan (Anda)',   color: '#6b7280', bg: '#f3f4f6' },
-    cancelled_by_doctor : { label: '🚫 Dibatalkan Dokter',   color: '#b91c1c', bg: '#fef2f2' },
-    cancelled_by_admin  : { label: '🚫 Dibatalkan Admin',    color: '#b91c1c', bg: '#fef2f2' },
+const fmtDateLabel = (dateStr) => {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    const dateObj = new Date(Date.UTC(y, m - 1, d) - WIB_OFFSET);
+    const wib = new Date(dateObj.getTime() + WIB_OFFSET);
+    return `${DAY_NAMES[wib.getUTCDay()]}, ${parseInt(d, 10)}/${parseInt(m, 10)}`;
 };
 
-const StatusBadge = ({ status }) => {
-    const c = STATUS_CFG[status] || { label: status, color: '#6b7280', bg: '#f3f4f6' };
-    return (
-        <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.color}30`, borderRadius: 20, padding: '3px 12px', fontSize: 12, fontWeight: 600 }}>
-            {c.label}
-        </span>
-    );
-};
-
-// ── Derive hari praktik dari schedule Map (key '1'–'5') ──────────────────────
-function getPracticeDays(availability) {
-    if (!availability) return [1,2,3,4,5,6];
-    // availability.practiceDays (lama) atau dari schedule Map baru
-    if (availability.practiceDays) return availability.practiceDays;
-    if (availability.schedule) {
-        return Object.entries(availability.schedule)
-            .filter(([, slots]) => Array.isArray(slots) && slots.length > 0)
-            .map(([day]) => Number(day));
-    }
-    return [1,2,3,4,5,6];
-}
-
-// ── Generate tanggal praktik dari rentang weekStart–weekEnd ──────────────────
-// Menampilkan semua hari dalam rentang yang ada di practiceDays.
-// Hari ini (offset=0) ditampilkan jika masih dalam rentang.
-// Hari Minggu (dow=0) selalu diskip.
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-
-function generateAvailableDates(practiceDays = [1,2,3,4,5,6], weekStart = null, weekEnd = null) {
-    const dates  = [];
-    const nowWIB = new Date(Date.now() + WIB_OFFSET_MS);
-
-    // Tentukan rentang: jika weekStart/weekEnd tersedia gunakan itu, else fallback 7 hari
-    const startMs = weekStart ? new Date(weekStart).getTime() + WIB_OFFSET_MS : nowWIB.getTime();
-    const endMs   = weekEnd   ? new Date(weekEnd).getTime()   + WIB_OFFSET_MS : nowWIB.getTime() + 7 * 24 * 60 * 60 * 1000;
-
-    let cursor = new Date(Math.max(startMs, nowWIB.getTime())); // mulai dari hari ini atau weekStart, mana yang lebih baru
-    // Set cursor ke awal hari (UTC midnight WIB)
-    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate()));
-
-    while (cursor.getTime() <= endMs) {
-        const dow = cursor.getUTCDay();
-        if (dow !== 0 && practiceDays.includes(dow)) {
-            const y  = cursor.getUTCFullYear();
-            const mo = String(cursor.getUTCMonth() + 1).padStart(2, '0');
-            const dd = String(cursor.getUTCDate()).padStart(2, '0');
-            dates.push(`${y}-${mo}-${dd}`);
-        }
-        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
-    }
-    return dates;
-}
-
-// Semua batas (cancel & reschedule) adalah h-24 jam sebelum jadwal
-const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
-
-function canCancel(scheduledAt) {
-    return new Date(scheduledAt).getTime() - Date.now() > CANCEL_DEADLINE_MS;
-}
-function canReschedule(scheduledAt) {
-    return new Date(scheduledAt).getTime() - Date.now() > CANCEL_DEADLINE_MS;
-}
-
-// Format deadline: "Senin, 23 Jun 2025 pukul 09:00 WIB"
-function fmtDeadline(scheduledAt) {
+const fmtDeadline = (scheduledAt) => {
     const dl = new Date(new Date(scheduledAt).getTime() - CANCEL_DEADLINE_MS);
     return dl.toLocaleString('id-ID', {
         weekday: 'long', day: 'numeric', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta',
     }) + ' WIB';
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// COMPONENT UTAMA
-// ═══════════════════════════════════════════════════════════════════════════════
-// ════════════════════════════════════════════════════════════════
-// GUEST DOCTOR BROWSER — card besar, klik → modal login
-// ════════════════════════════════════════════════════════════════
-const GuestApptDoctorBrowser = ({ onBuatJanji }) => {
-    const [doctors,    setDoctors]    = React.useState([]);
-    const [loading,    setLoading]    = React.useState(true);
-    const [search,     setSearch]     = React.useState('');
-    const [filterSpec, setFilterSpec] = React.useState('');
-
-    React.useEffect(() => {
-        api.get('/api/doctors')
-            .then(r => setDoctors(r.data || []))
-            .catch(() => {})
-            .finally(() => setLoading(false));
-    }, []);
-
-    const specializations = [...new Set(doctors.map(d => d.specialization))].sort();
-
-    const filtered = doctors.filter(d => {
-        const q = search.toLowerCase();
-        return (!search || d.name.toLowerCase().includes(q) || d.specialization.toLowerCase().includes(q))
-            && (!filterSpec || d.specialization === filterSpec);
-    });
-
-    if (loading) return (
-        <div style={{ textAlign: 'center', padding: 60, color: '#6b7280' }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>⏳</div>
-            <div>Memuat daftar dokter...</div>
-        </div>
-    );
-
-    return (
-        <div>
-            {/* Search & Filter */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 12, top: '50%',
-                                   transform: 'translateY(-50%)', color: '#9ca3af' }}>🔍</span>
-                    <input
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder="Cari nama dokter atau spesialisasi..."
-                        style={{ width: '100%', padding: '10px 14px 10px 36px',
-                                 border: '1px solid #e5e7eb', borderRadius: 10,
-                                 fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
-                    />
-                </div>
-                <select
-                    value={filterSpec}
-                    onChange={e => setFilterSpec(e.target.value)}
-                    style={{ padding: '10px 14px', border: '1px solid #e5e7eb',
-                             borderRadius: 10, fontSize: 13, outline: 'none', minWidth: 160 }}>
-                    <option value="">Semua Spesialisasi</option>
-                    {specializations.map(sp => <option key={sp}>{sp}</option>)}
-                </select>
-            </div>
-
-            {/* Info banner */}
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,
-                          padding: '10px 16px', marginBottom: 20,
-                          display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 18, flexShrink: 0 }}>ℹ️</span>
-                <span style={{ color: '#1e40af', fontSize: 13 }}>
-                    Klik <strong>Buat Janji Sekarang</strong> pada dokter pilihan —
-                    login atau daftar untuk melanjutkan booking.
-                </span>
-            </div>
-
-            {/* Count */}
-            {filtered.length > 0 && (
-                <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 14 }}>
-                    {filtered.length} dokter tersedia
-                </div>
-            )}
-
-            {/* Doctor cards */}
-            {filtered.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
-                    <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
-                    Dokter tidak ditemukan
-                </div>
-            ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {filtered.map(doc => {
-                        const stars = Array.from({ length: 5 }, (_, idx) => (
-                            <span key={idx} style={{ color: idx < Math.round(doc.rating || 0) ? '#f59e0b' : '#d1d5db', fontSize: 13 }}>★</span>
-                        ));
-                        return (
-                            <div key={doc._id}
-                                style={{
-                                    background: '#fff', border: '1px solid #e5e7eb', borderRadius: 16,
-                                    padding: 20, display: 'flex', gap: 18, alignItems: 'flex-start',
-                                    boxShadow: '0 1px 4px rgba(0,0,0,.06)', transition: 'box-shadow .15s',
-                                }}
-                                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.10)'; }}
-                                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,.06)'; }}>
-
-                                {/* Avatar */}
-                                <div style={{ width: 72, height: 72, borderRadius: '50%', flexShrink: 0,
-                                              background: '#f3f4f6', overflow: 'hidden',
-                                              border: '3px solid #e5e7eb',
-                                              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {doc.photo
-                                        ? <img src={`${API_URL}${doc.photo}`} alt={doc.name}
-                                               style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        : <span style={{ fontSize: 34 }}>👨‍⚕️</span>}
-                                </div>
-
-                                {/* Info */}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 800, fontSize: 16, color: '#111827', marginBottom: 2 }}>
-                                        dr. {doc.name}
-                                    </div>
-                                    <div style={{ color: '#2563eb', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-                                        {doc.specialization}
-                                    </div>
-
-                                    {/* Rating */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-                                                  marginBottom: 8, flexWrap: 'wrap' }}>
-                                        <span>{stars}</span>
-                                        <span style={{ color: '#6b7280', fontSize: 12 }}>
-                                            {(doc.rating || 0).toFixed(1)} ({doc.totalReviews || 0} ulasan)
-                                        </span>
-                                        {doc.experience && (
-                                            <span style={{ color: '#6b7280', fontSize: 12 }}>
-                                                · {doc.experience} thn pengalaman
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Bio */}
-                                    {doc.bio && (
-                                        <p style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.6,
-                                                    margin: 0, display: '-webkit-box',
-                                                    WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                                                    overflow: 'hidden' }}>
-                                            {doc.bio}
-                                        </p>
-                                    )}
-                                </div>
-
-                                {/* CTA */}
-                                <div style={{ flexShrink: 0, alignSelf: 'center' }}>
-                                    <button
-                                        onClick={() => onBuatJanji()}
-                                        style={{
-                                            padding: '11px 20px',
-                                            background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
-                                            color: '#fff', border: 'none', borderRadius: 10,
-                                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
-                                            whiteSpace: 'nowrap',
-                                            boxShadow: '0 2px 8px rgba(37,99,235,.3)',
-                                        }}>
-                                        📅 Buat Janji
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
 };
 
-const Appointments = () => {
-    const { user } = useAuth();
-    const navigate = useNavigate();
+const canCancelOrReschedule = (scheduledAt) =>
+    new Date(scheduledAt).getTime() - Date.now() > CANCEL_DEADLINE_MS;
 
-    const [tab, setTab] = useState('book'); // 'book' | 'my'
-    const [doctors, setDoctors] = useState([]);
-    const [myAppointments, setMyAppointments] = useState([]);
-    const [loading, setLoading] = useState(true);
-
-    // Booking form state
-    const [selectedDoctor,    setSelectedDoctor]    = useState(null);
-    const [selectedDate,      setSelectedDate]      = useState('');
-    const [selectedSlot,      setSelectedSlot]      = useState(null);
-    const [complaint,         setComplaint]         = useState('');
-    const [slots,             setSlots]             = useState([]);
-    const [loadingSlots,      setLoadingSlots]      = useState(false);
-    const [booking,           setBooking]           = useState(false);
-
-    // Cancel modal
-    const [cancelTarget,   setCancelTarget]   = useState(null);
-    const [cancelReason,   setCancelReason]   = useState('');
-    const [cancelling,     setCancelling]     = useState(false);
-
-    // Reschedule modal
-    const [reschedTarget,  setReschedTarget]  = useState(null);
-    const [reschedDate,    setReschedDate]    = useState('');
-    const [reschedSlot,    setReschedSlot]    = useState(null);
-    const [reschedSlots,   setReschedSlots]   = useState([]);
-    const [reschedLoading, setReschedLoading] = useState(false);
-    const [rescheduling,   setRescheduling]   = useState(false);
-    const [guestModal,     setGuestModal]     = useState(false);
-
-    useEffect(() => {
-        if (!user) {
-            setLoading(false);
-            setTab('book'); // guest starts on doctor browse
-            return;
-        }
-        fetchDoctors();
-        fetchMyAppointments();
-    }, [user]); // eslint-disable-line
-
-    const fetchDoctors = async () => {
-        try {
-            const r = await api.get('/api/appointments/doctors-with-slots');
-            setDoctors(r.data.doctors || []);
-        } catch { toast.error('Gagal memuat daftar dokter'); }
-    };
-
-    const fetchMyAppointments = async () => {
-        setLoading(true);
-        try {
-            const r = await api.get('/api/appointments/my');
-            setMyAppointments(r.data.appointments || []);
-        } catch { toast.error('Gagal memuat janji temu'); }
-        finally { setLoading(false); }
-    };
-
-    // ── Fetch slots saat tanggal & dokter dipilih ──────────────────────────
-    const fetchSlots = useCallback(async (doctorId, date) => {
-        if (!doctorId || !date) return;
-        setLoadingSlots(true);
-        setSelectedSlot(null);
-        try {
-            const r = await api.get(`/api/appointments/slots/${doctorId}?date=${date}`);
-            setSlots(r.data.slots || []);
-        } catch { toast.error('Gagal memuat slot waktu'); }
-        finally { setLoadingSlots(false); }
-    }, []);
-
-    useEffect(() => {
-        if (selectedDoctor && selectedDate) {
-            fetchSlots(selectedDoctor.doctor._id, selectedDate);
-        } else {
-            setSlots([]);
-            setSelectedSlot(null);
-        }
-    }, [selectedDoctor, selectedDate, fetchSlots]);
-
-    // ── Booking ────────────────────────────────────────────────────────────
-    const handleBook = async () => {
-        if (!selectedDoctor || !selectedDate || !selectedSlot) {
-        if (!user) { setGuestModal(true); return; } // guest: show modal
-            toast.error('Pilih dokter, tanggal, dan slot waktu terlebih dahulu');
-            return;
-        }
-        setBooking(true);
-        try {
-            await api.post('/api/appointments/book', {
-                doctorId  : selectedDoctor.doctor._id,
-                date      : selectedDate,
-                time      : selectedSlot.startTime,
-                complaint : complaint.trim(),
-            });
-            toast.success('Janji temu berhasil dibuat! ✅');
-            setSelectedDoctor(null);
-            setSelectedDate('');
-            setSelectedSlot(null);
-            setComplaint('');
-            setSlots([]);
-            fetchMyAppointments();
-            setTab('my');
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Gagal membuat janji temu');
-        } finally { setBooking(false); }
-    };
-
-    // ── Cancel ─────────────────────────────────────────────────────────────
-    const handleCancelSubmit = async () => {
-        if (!cancelReason.trim() || cancelReason.trim().length < 5) {
-            toast.error('Alasan minimal 5 karakter');
-            return;
-        }
-        setCancelling(true);
-        try {
-            await api.put(`/api/appointments/${cancelTarget._id}/cancel`, { reason: cancelReason });
-            toast.success('Janji temu dibatalkan');
-            setCancelTarget(null);
-            setCancelReason('');
-            fetchMyAppointments();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Gagal membatalkan');
-        } finally { setCancelling(false); }
-    };
-
-    // ── Reschedule — fetch slots ───────────────────────────────────────────
-    useEffect(() => {
-        if (reschedTarget && reschedDate) {
-            setReschedLoading(true);
-            setReschedSlot(null);
-            api.get(`/api/appointments/slots/${reschedTarget.doctorId._id}?date=${reschedDate}`)
-                .then(r => setReschedSlots(r.data.slots || []))
-                .catch(() => toast.error('Gagal memuat slot'))
-                .finally(() => setReschedLoading(false));
-        }
-    }, [reschedTarget, reschedDate]);
-
-    const handleReschedSubmit = async () => {
-        if (!reschedDate || !reschedSlot) { toast.error('Pilih tanggal dan slot baru'); return; }
-        setRescheduling(true);
-        try {
-            await api.put(`/api/appointments/${reschedTarget._id}/reschedule`, {
-                date : reschedDate,
-                time : reschedSlot.startTime,
-            });
-            toast.success('Jadwal berhasil diubah ✅');
-            setReschedTarget(null);
-            setReschedDate('');
-            setReschedSlot(null);
-            fetchMyAppointments();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Gagal reschedule');
-        } finally { setRescheduling(false); }
-    };
-
-    // ── Styles ─────────────────────────────────────────────────────────────
-    const s = {
-        root   : { minHeight: '100vh', background: '#f8fafc', fontFamily: "'Inter', sans-serif", padding: '24px 16px' },
-        inner  : { maxWidth: 820, margin: '0 auto' },
-        card   : { background: '#fff', borderRadius: 14, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 },
-        label  : { color: '#374151', fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 },
-        input  : { width: '100%', border: '1px solid #d1d5db', borderRadius: 8, padding: '9px 12px', fontSize: 14, color: '#111827', outline: 'none', background: '#fff', boxSizing: 'border-box' },
-        btn    : (bg) => ({ padding: '10px 20px', background: bg, color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }),
-        btnOut : { padding: '10px 20px', background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' },
-    };
-
-    const activeTab = (key) => ({
-        flex: 1, padding: '10px 8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-        background: tab === key ? '#fff' : 'transparent',
-        color: tab === key ? '#111827' : '#6b7280',
-        boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
-    });
-
-    // ── Available dates for reschedule ─────────────────────────────────────
-    const reschedDates = reschedTarget
-        ? generateAvailableDates(
-            getPracticeDays(reschedTarget.doctorId?.availability),
-            reschedTarget.doctorId?.availability?.weekStart,
-            reschedTarget.doctorId?.availability?.weekEnd
-          )
-        : [];
-
-    const activeAppts  = myAppointments.filter(a => ['scheduled','checked_in'].includes(a.status));
-    const historyAppts = myAppointments.filter(a => !['scheduled','checked_in'].includes(a.status));
-
-    // ── Guest login modal ──────────────────────────────────────────
-    const GuestModal = () => (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)', zIndex:9999,
-                      display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
-             onClick={() => setGuestModal(false)}>
-            <div style={{ background:'#fff', borderRadius:18, padding:'32px 28px', maxWidth:400,
-                          width:'100%', textAlign:'center', boxShadow:'0 24px 64px rgba(0,0,0,.25)' }}
-                 onClick={e => e.stopPropagation()}>
-                <div style={{ width:64, height:64, borderRadius:'50%', background:'#eff6ff',
-                              display:'flex', alignItems:'center', justifyContent:'center',
-                              margin:'0 auto 16px', fontSize:30 }}>🔐</div>
-                <h5 style={{ fontWeight:800, fontSize:20, color:'#111827', marginBottom:8 }}>Login Diperlukan</h5>
-                <p style={{ color:'#6b7280', fontSize:14, lineHeight:1.6, marginBottom:28 }}>
-                    Silakan login atau daftar untuk membuat dan melihat janji temu Anda.
-                </p>
-                <div style={{ display:'flex', gap:10 }}>
-                    <button onClick={() => navigate('/login')}
-                        style={{ flex:1, padding:'11px 0', background:'#2563eb', color:'#fff',
-                                 border:'none', borderRadius:10, fontWeight:700, cursor:'pointer', fontSize:14 }}>
-                        Login
-                    </button>
-                    <button onClick={() => navigate('/register')}
-                        style={{ flex:1, padding:'11px 0', background:'#f9fafb', color:'#374151',
-                                 border:'1px solid #e5e7eb', borderRadius:10, fontWeight:600, cursor:'pointer', fontSize:14 }}>
-                        Daftar Gratis
-                    </button>
-                </div>
-                <button onClick={() => setGuestModal(false)}
-                    style={{ marginTop:14, background:'none', border:'none',
-                             color:'#9ca3af', cursor:'pointer', fontSize:13 }}>
-                    Lanjut Jelajahi
-                </button>
-            </div>
-        </div>
-    );
-
-    return (
-        <div style={s.root}>
-            {guestModal && <GuestModal />}
-            <div style={s.inner}>
-
-                {/* Header */}
-                <div style={{ marginBottom: 24 }}>
-                    <h1 style={{ fontSize: 24, fontWeight: 700, color: '#111827', marginBottom: 4 }}>Janji Temu Offline</h1>
-                    <p style={{ color: '#6b7280', fontSize: 14 }}>Buat dan kelola janji temu Anda di klinik</p>
-                </div>
-
-                {/* Tabs */}
-                <div style={{ display: 'flex', gap: 4, background: '#f3f4f6', borderRadius: 10, padding: 4, marginBottom: 24 }}>
-                    <button style={activeTab('book')} onClick={() => setTab('book')}>👨‍⚕️ Dokter</button>
-                    <button style={activeTab('my')} onClick={() => !user ? setGuestModal(true) : setTab('my')}>
-                        🔐 Janji Saya
-                        {user && activeAppts.length > 0 && (
-                            <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '0 6px', fontSize: 11 }}>{activeAppts.length}</span>
-                        )}
-                    </button>
-                </div>
-
-                {/* ═══ TAB: BUAT JANJI / DOKTER ════════════════════════════ */}
-                {tab === 'book' && (
-                    <>
-                        {!user ? (
-                            <GuestApptDoctorBrowser onBuatJanji={() => setGuestModal(true)} />
-                        ) : (<>
-                        {/* Step 1: Pilih Dokter */}
-                        <div style={s.card}>
-                            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#111827' }}>1️⃣ Pilih Dokter</div>
-                            {doctors.length === 0 ? (
-                                <div style={{ color: '#6b7280', fontSize: 14 }}>Belum ada dokter yang membuka jadwal janji temu offline.</div>
-                            ) : (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))', gap: 12 }}>
-                                    {doctors.map(({ doctor, availability }) => (
-                                        <div
-                                            key={doctor._id}
-                                            onClick={() => { setSelectedDoctor({ doctor, availability }); setSelectedDate(''); setSelectedSlot(null); setSlots([]); }}
-                                            style={{
-                                                border: `2px solid ${selectedDoctor?.doctor._id === doctor._id ? '#2563eb' : '#e5e7eb'}`,
-                                                borderRadius: 12, padding: 14, cursor: 'pointer',
-                                                background: selectedDoctor?.doctor._id === doctor._id ? '#eff6ff' : '#fff',
-                                                transition: 'all 0.15s',
-                                            }}
-                                        >
-                                            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                                                <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#e5e7eb', overflow: 'hidden', flexShrink: 0 }}>
-                                                    {doctor.photo
-                                                        ? <img src={`${API_URL}${doctor.photo}`} alt={doctor.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                        : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍⚕️</div>
-                                                    }
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>dr. {doctor.name}</div>
-                                                    <div style={{ fontSize: 12, color: '#6b7280' }}>{doctor.specialization}</div>
-                                                </div>
-                                            </div>
-                                            <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
-                                                {['Min','Sen','Sel','Rab','Kam','Jum','Sab'].filter((_, i) => getPracticeDays(availability).includes(i)).join(', ')}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Step 2: Pilih Tanggal */}
-                        {selectedDoctor && (
-                            <div style={s.card}>
-                                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#111827' }}>2️⃣ Pilih Tanggal</div>
-                                {!selectedDoctor.availability?.weekStart ? (
-                                    <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#92400e' }}>
-                                        ⚠️ Dokter belum merilis jadwal untuk minggu ini. Silakan cek kembali beberapa saat lagi.
-                                    </div>
-                                ) : (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                    {generateAvailableDates(
-                                        getPracticeDays(selectedDoctor.availability),
-                                        selectedDoctor.availability?.weekStart,
-                                        selectedDoctor.availability?.weekEnd
-                                    ).map(dateStr => {
-                                        const [y, mo, d] = dateStr.split('-').map(Number);
-                                        const dateObj = new Date(Date.UTC(y, mo - 1, d));
-                                        const label   = dateObj.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-                                        const active  = selectedDate === dateStr;
-                                        return (
-                                            <button
-                                                key={dateStr}
-                                                onClick={() => setSelectedDate(dateStr)}
-                                                style={{
-                                                    padding: '8px 14px', borderRadius: 8, border: `2px solid ${active ? '#2563eb' : '#e5e7eb'}`,
-                                                    background: active ? '#2563eb' : '#fff', color: active ? '#fff' : '#374151',
-                                                    fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                                                }}
-                                            >
-                                                {label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Step 3: Pilih Slot */}
-                        {selectedDoctor && selectedDate && (
-                            <div style={s.card}>
-                                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#111827' }}>3️⃣ Pilih Waktu</div>
-                                {loadingSlots ? (
-                                    <div style={{ color: '#6b7280', fontSize: 14 }}>Memuat slot...</div>
-                                ) : slots.length === 0 ? (
-                                    <div style={{ color: '#6b7280', fontSize: 14 }}>Tidak ada slot tersedia untuk tanggal ini.</div>
-                                ) : (
-                                    <>
-                                        {/* Pagi */}
-                                        {slots.some(s => parseInt(s.startTime) < 12) && (
-                                            <div style={{ marginBottom: 14 }}>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', marginBottom: 8, textTransform: 'uppercase' }}>☀️ Pagi</div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                                    {slots.filter(sl => parseInt(sl.startTime) < 12).map(sl => (
-                                                        <SlotBtn key={sl.startTime} slot={sl} selected={selectedSlot?.startTime === sl.startTime} onSelect={setSelectedSlot} />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        {/* Sore */}
-                                        {slots.some(s => parseInt(s.startTime) >= 13) && (
-                                            <div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', marginBottom: 8, textTransform: 'uppercase' }}>🌤️ Siang/Sore</div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                                    {slots.filter(sl => parseInt(sl.startTime) >= 13).map(sl => (
-                                                        <SlotBtn key={sl.startTime} slot={sl} selected={selectedSlot?.startTime === sl.startTime} onSelect={setSelectedSlot} />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Step 4: Keluhan & Konfirmasi */}
-                        {selectedDoctor && selectedDate && selectedSlot && (
-                            <div style={s.card}>
-                                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#111827' }}>4️⃣ Keluhan & Konfirmasi</div>
-
-                                {/* Ringkasan */}
-                                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 14, color: '#166534', marginBottom: 6 }}>Ringkasan Janji Temu</div>
-                                    <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.8 }}>
-                                        <div>👨‍⚕️ <strong>Dokter</strong>: dr. {selectedDoctor.doctor.name} ({selectedDoctor.doctor.specialization})</div>
-                                        <div>📅 <strong>Tanggal</strong>: {(() => { const [y,m,d] = selectedDate.split('-').map(Number); return new Date(Date.UTC(y,m-1,d)).toLocaleDateString('id-ID', { weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'UTC' }); })()}</div>
-                                        <div>🕐 <strong>Waktu</strong>: {selectedSlot.startTime} – {selectedSlot.endTime} WIB</div>
-                                        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>📍 Hadir langsung ke klinik dan tunjukkan nama Anda ke admin</div>
-                                    </div>
-                                </div>
-
-                                <div style={{ marginBottom: 16 }}>
-                                    <label style={s.label}>Keluhan Singkat (opsional)</label>
-                                    <textarea
-                                        value={complaint} rows={3}
-                                        onChange={e => setComplaint(e.target.value)}
-                                        placeholder="Contoh: sakit kepala, demam 2 hari, nyeri perut..."
-                                        style={{ ...s.input, resize: 'vertical' }}
-                                    />
-                                </div>
-
-                                <div style={{ display: 'flex', gap: 10 }}>
-                                    <button onClick={() => { setSelectedSlot(null); }} style={s.btnOut}>← Ubah Waktu</button>
-                                    <button onClick={handleBook} disabled={booking} style={{ ...s.btn('#16a34a'), flex: 1, opacity: booking ? 0.6 : 1 }}>
-                                        {booking ? 'Memproses...' : '✅ Konfirmasi Janji Temu'}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                        </>
-                        )}
-                    </>
-                )}
-
-                {/* ═══ TAB: JANJI SAYA ═════════════════════════════════════ */}
-                {tab === 'my' && (
-                    <>
-                        {!user ? (
-                            <div style={{ textAlign:'center', padding:40, color:'#6b7280' }}>
-                              <div style={{ fontSize:48, marginBottom:12 }}>🔐</div>
-                              <div style={{ fontWeight:600 }}>Janji temu Anda membutuhkan login</div>
-                              <div style={{ fontSize:13, marginTop:4 }}>Login atau daftar untuk membuat dan melihat janji temu</div>
-                              <div style={{ display:'flex', gap:10, justifyContent:'center', marginTop:16 }}>
-                                <button onClick={() => setGuestModal(true)} style={{ padding:'10px 24px', background:'#2563eb', color:'#fff', border:'none', borderRadius:10, fontWeight:700, cursor:'pointer' }}>Login</button>
-                                <button onClick={() => navigate('/register')} style={{ padding:'10px 24px', background:'#f9fafb', color:'#374151', border:'1px solid #e5e7eb', borderRadius:10, fontWeight:600, cursor:'pointer' }}>Daftar Gratis</button>
-                              </div>
-                            </div>
-                        ) : loading ? (
-                            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Memuat...</div>
-                        ) : myAppointments.length === 0 ? (
-                            <div style={{ ...s.card, textAlign: 'center', padding: 40 }}>
-                                <div style={{ fontSize: 48, marginBottom: 12 }}>📅</div>
-                                <div style={{ color: '#6b7280' }}>Belum ada janji temu</div>
-                                <button onClick={() => setTab('book')} style={{ ...s.btn('#2563eb'), marginTop: 16 }}>Buat Janji Sekarang</button>
-                            </div>
-                        ) : (
-                            <>
-                                {activeAppts.length > 0 && (
-                                    <div style={{ marginBottom: 24 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Janji Aktif</div>
-                                        {activeAppts.map(a => (
-                                            <AppointmentCard
-                                                key={a._id} appt={a}
-                                                onCancel={() => { setCancelTarget(a); setCancelReason(''); }}
-                                                onReschedule={() => { setReschedTarget(a); setReschedDate(''); setReschedSlot(null); setReschedSlots([]); }}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                                {historyAppts.length > 0 && (
-                                    <div>
-                                        <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Riwayat</div>
-                                        {historyAppts.map(a => <AppointmentCard key={a._id} appt={a} />)}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </>
-                )}
-            </div>
-
-            {/* ── Cancel Modal ────────────────────────────────────────────── */}
-            {cancelTarget && (
-                <Modal onClose={() => setCancelTarget(null)} title="❌ Batalkan Janji Temu">
-                    <div style={{ marginBottom: 16, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#b91c1c' }}>
-                        Janji dengan dr. {cancelTarget.doctorId?.name} pada {cancelTarget.appointmentTime} WIB akan dibatalkan. Tindakan ini tidak bisa dibatalkan.
-                    </div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Alasan Pembatalan *</label>
-                    <textarea
-                        value={cancelReason} rows={3}
-                        onChange={e => setCancelReason(e.target.value)}
-                        placeholder="Masukkan alasan pembatalan..."
-                        style={{ width: '100%', border: '1px solid #d1d5db', borderRadius: 8, padding: '9px 12px', fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
-                    />
-                    <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-                        <button onClick={() => setCancelTarget(null)} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontWeight: 600 }}>Batal</button>
-                        <button onClick={handleCancelSubmit} disabled={cancelling}
-                            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: cancelling ? 0.6 : 1 }}>
-                            {cancelling ? 'Memproses...' : 'Konfirmasi Pembatalan'}
-                        </button>
-                    </div>
-                </Modal>
-            )}
-
-            {/* ── Reschedule Modal ─────────────────────────────────────────── */}
-            {reschedTarget && (
-                <Modal onClose={() => setReschedTarget(null)} title="🔄 Ubah Jadwal Janji">
-                    <div style={{ marginBottom: 16, fontSize: 13, color: '#6b7280' }}>
-                        Jadwal saat ini: <strong>{reschedTarget.appointmentTime} WIB</strong>, dr. {reschedTarget.doctorId?.name}
-                    </div>
-
-                    {/* Pilih tanggal baru */}
-                    <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Pilih Tanggal Baru</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {reschedDates.map(dateStr => {
-                                const [y, mo, d] = dateStr.split('-').map(Number);
-                                const label = new Date(Date.UTC(y, mo-1, d)).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-                                return (
-                                    <button key={dateStr} onClick={() => setReschedDate(dateStr)}
-                                        style={{ padding: '6px 12px', borderRadius: 8, border: `2px solid ${reschedDate === dateStr ? '#2563eb' : '#e5e7eb'}`, background: reschedDate === dateStr ? '#2563eb' : '#fff', color: reschedDate === dateStr ? '#fff' : '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                                        {label}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Pilih slot baru */}
-                    {reschedDate && (
-                        <div style={{ marginBottom: 16 }}>
-                            <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Pilih Waktu Baru</label>
-                            {reschedLoading ? (
-                                <div style={{ color: '#6b7280', fontSize: 13 }}>Memuat slot...</div>
-                            ) : reschedSlots.length === 0 ? (
-                                <div style={{ color: '#6b7280', fontSize: 13 }}>Tidak ada slot tersedia</div>
-                            ) : (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                    {reschedSlots.map(sl => (
-                                        <SlotBtn key={sl.startTime} slot={sl} selected={reschedSlot?.startTime === sl.startTime} onSelect={setReschedSlot} />
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: 10 }}>
-                        <button onClick={() => setReschedTarget(null)} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontWeight: 600 }}>Batal</button>
-                        <button onClick={handleReschedSubmit} disabled={rescheduling || !reschedDate || !reschedSlot}
-                            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!reschedDate || !reschedSlot || rescheduling) ? 0.5 : 1 }}>
-                            {rescheduling ? 'Memproses...' : '✅ Konfirmasi Perubahan'}
-                        </button>
-                    </div>
-                </Modal>
-            )}
-        </div>
-    );
+const groupByDate = (slotsArr) => {
+    const map = {};
+    for (const s of slotsArr) {
+        if (!map[s.date]) map[s.date] = [];
+        map[s.date].push(s);
+    }
+    return map;
 };
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-const SlotBtn = ({ slot, selected, onSelect }) => (
-    <button
-        disabled={!slot.available}
-        onClick={() => slot.available && onSelect(slot)}
-        style={{
-            padding: '7px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: slot.available ? 'pointer' : 'not-allowed',
-            border: `2px solid ${selected ? '#2563eb' : slot.available ? '#e5e7eb' : '#f3f4f6'}`,
-            background: selected ? '#2563eb' : slot.available ? '#fff' : '#f9fafb',
-            color: selected ? '#fff' : slot.available ? '#374151' : '#9ca3af',
-            textDecoration: slot.isPast ? 'line-through' : 'none',
-        }}
-    >
-        {slot.startTime}
-        {!slot.available && <span style={{ fontSize: 10, marginLeft: 4 }}>{slot.isPast ? '(lewat)' : '(penuh)'}</span>}
-    </button>
-);
-
-const AppointmentCard = ({ appt, onCancel, onReschedule }) => {
-    const doc  = appt.doctorId;
-    const isActive = ['scheduled','checked_in'].includes(appt.status);
-    const showActions = appt.status === 'scheduled';
-    const canAct = showActions && canCancel(appt.scheduledAt);
-
-    return (
-        <div style={{
-            background: '#fff', border: `1px solid ${appt.status === 'checked_in' ? '#86efac' : '#e5e7eb'}`,
-            borderRadius: 12, padding: '16px 20px', marginBottom: 10,
-            borderLeft: `4px solid ${STATUS_CFG[appt.status]?.color || '#e5e7eb'}`,
-        }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                <div>
-                    <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {doc?.name}</div>
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>{doc?.specialization}</div>
-                </div>
-                <StatusBadge status={appt.status} />
-            </div>
-            <div style={{ fontSize: 13, color: '#374151', marginBottom: appt.complaint ? 8 : 0 }}>
-                📅 {fmtDT(appt.appointmentDate, appt.appointmentTime)}
-            </div>
-            {appt.complaint && <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>Keluhan: {appt.complaint}</div>}
-            {appt.doctorNotes && <div style={{ fontSize: 12, color: '#374151', background: '#f9fafb', padding: '6px 10px', borderRadius: 6 }}>📝 Catatan Dokter: {appt.doctorNotes}</div>}
-            {appt.cancelReason && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 6 }}>Alasan: {appt.cancelReason}</div>}
-
-            {/* Timer deadline — tampilkan selama jadwal belum lewat */}
-            {showActions && appt.scheduledAt && (
-                <div style={{
-                    marginTop: 10, padding: '8px 12px', borderRadius: 8,
-                    background: canAct ? '#f0fdf4' : '#fef2f2',
-                    border: `1px solid ${canAct ? '#bbf7d0' : '#fecaca'}`,
-                    fontSize: 12, color: canAct ? '#166534' : '#b91c1c',
-                }}>
-                    {canAct
-                        ? <>⏰ Anda dapat mengubah atau membatalkan jadwal ini hingga: <strong>{fmtDeadline(appt.scheduledAt)}</strong></>
-                        : <>🔒 Batas perubahan/pembatalan telah lewat ({fmtDeadline(appt.scheduledAt)})</>
-                    }
-                </div>
-            )}
-
-            {isActive && (onCancel || onReschedule) && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                    {onReschedule && showActions && canAct && (
-                        <button onClick={onReschedule}
-                            style={{ padding: '6px 14px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                            🔄 Reschedule
-                        </button>
-                    )}
-                    {onCancel && showActions && canAct && (
-                        <button onClick={onCancel}
-                            style={{ padding: '6px 14px', background: '#fff', color: '#ef4444', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                            ❌ Batalkan
-                        </button>
-                    )}
-                </div>
-            )}
-        </div>
-    );
+// ── Status Config ─────────────────────────────────────────────────────────────
+const STATUS_CFG = {
+    scheduled           : { label: '📅 Terjadwal',          color: '#1d4ed8', bg: '#eff6ff' },
+    checked_in          : { label: '✅ Hadir',              color: '#166534', bg: '#dcfce7' },
+    completed           : { label: '🏁 Selesai',            color: '#4b5563', bg: '#f3f4f6' },
+    no_show             : { label: '⚠️ Tidak Hadir',        color: '#9a3412', bg: '#fef3c7' },
+    cancelled_by_user   : { label: '❌ Batal (Pasien)',     color: '#b91c1c', bg: '#fef2f2' },
+    cancelled_by_doctor : { label: '❌ Batal (Dokter)',     color: '#b91c1c', bg: '#fef2f2' },
+    cancelled_by_admin  : { label: '❌ Batal (Admin)',      color: '#b91c1c', bg: '#fef2f2' },
+    doctor_no_show      : { label: '😔 Dokter Tdk Hadir',  color: '#b91c1c', bg: '#fef2f2' },
 };
 
-const Modal = ({ children, onClose, title }) => (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000066', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-        <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+// ── StarRating (display only) ─────────────────────────────────────────────────
+const StarRating = ({ value = 0 }) => {
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+        if (value >= i)            stars.push(<FaStar key={i} className="text-warning" />);
+        else if (value >= i - 0.5) stars.push(<FaStarHalfAlt key={i} className="text-warning" />);
+        else                       stars.push(<FaRegStar key={i} className="text-warning" />);
+    }
+    return <span>{stars}</span>;
+};
+
+// ── Reusable Modal ────────────────────────────────────────────────────────────
+const Modal = ({ children, onClose, title, maxWidth = 480 }) => (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        onClick={onClose}>
+        <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}
+            onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <span style={{ fontWeight: 700, fontSize: 16, color: '#111827' }}>{title}</span>
-                <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#6b7280' }}>×</button>
+                <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af' }}>×</button>
             </div>
             {children}
         </div>
     </div>
 );
+
+// ── Card wrapper ──────────────────────────────────────────────────────────────
+const Card = ({ children }) => (
+    <div className="card border-0 shadow-sm rounded-4 mb-4">
+        <div className="card-body p-4">{children}</div>
+    </div>
+);
+
+// ── RatingModal — hanya bintang, tanpa komentar ───────────────────────────────
+const RatingModal = ({ appointmentId, doctorName, onClose, onSuccess }) => {
+    const [rating, setRating]   = useState(0);
+    const [hovered, setHovered] = useState(0);
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSubmit = async () => {
+        if (!rating) { toast.error('Pilih rating terlebih dahulu'); return; }
+        setSubmitting(true);
+        try {
+            await api.post(`/api/appointments/${appointmentId}/rating`, { rating });
+            toast.success('Terima kasih atas rating Anda!');
+            onSuccess(); onClose();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Gagal kirim rating');
+        } finally { setSubmitting(false); }
+    };
+
+    return (
+        <Modal title="⭐ Beri Rating" onClose={onClose} maxWidth={380}>
+            <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>
+                Bagaimana pengalaman janji temu dengan dr. {doctorName}?
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 28 }}>
+                {[1,2,3,4,5].map(i => (
+                    <span key={i}
+                        onMouseEnter={() => setHovered(i)}
+                        onMouseLeave={() => setHovered(0)}
+                        onClick={() => setRating(i)}
+                        style={{ fontSize: 40, cursor: 'pointer', transition: 'transform 0.1s', transform: i <= (hovered || rating) ? 'scale(1.25)' : 'scale(1)' }}>
+                        {i <= (hovered || rating) ? '⭐' : '☆'}
+                    </span>
+                ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={onClose}
+                    style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>
+                    Batal
+                </button>
+                <button onClick={handleSubmit} disabled={!rating || submitting}
+                    style={{ flex: 1, padding: 10, borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#854d0e,#ca8a04)', color: '#fff', fontWeight: 700, cursor: rating ? 'pointer' : 'not-allowed', opacity: rating ? 1 : 0.5 }}>
+                    {submitting ? 'Mengirim...' : 'Kirim Rating'}
+                </button>
+            </div>
+        </Modal>
+    );
+};
+
+// ── ApptCard ──────────────────────────────────────────────────────────────────
+const ApptCard = ({ appt, onCancel, onReschedule, onRate, onPostCancel, showActions }) => {
+    const c = STATUS_CFG[appt.status] || { label: appt.status, color: '#6b7280', bg: '#f3f4f6' };
+    const canAct         = appt.status === 'scheduled';
+    const showDeadline   = appt.status === 'scheduled' && appt.scheduledAt;
+    const canActDeadline = showDeadline && canCancelOrReschedule(appt.scheduledAt);
+    const canRate        = appt.status === 'completed' && !appt.rating;
+    // Post-cancel: hanya reschedule, tanpa refund
+    const needsPostCancel = ['doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(appt.status)
+        && !appt.postCancelChoice;
+
+    return (
+        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e5e7eb', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* Header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, overflow: 'hidden', flexShrink: 0 }}>
+                        {appt.doctorId?.photo
+                            ? <img src={`${API_URL}${appt.doctorId.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : '🏥'}
+                    </div>
+                    <div>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {appt.doctorId?.name || '-'}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>{appt.doctorId?.specialization || 'Umum'}</div>
+                    </div>
+                </div>
+                <div style={{ background: c.bg, color: c.color, padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
+                    {c.label}
+                </div>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: 20, flex: 1 }}>
+                <div style={{ display: 'flex', gap: 24, marginBottom: 14 }}>
+                    <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', marginBottom: 4, textTransform: 'uppercase', letterSpacing: .5 }}>Jadwal</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
+                            {fmtDT(appt.appointmentDate, appt.appointmentTime)}
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', marginBottom: 4, textTransform: 'uppercase', letterSpacing: .5 }}>Keluhan</div>
+                    <div style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.5 }}>{appt.complaint || '—'}</div>
+                </div>
+
+                {/* Deadline cancel/reschedule */}
+                {showDeadline && (
+                    <div style={{
+                        marginBottom: 14, padding: '8px 12px', borderRadius: 8, fontSize: 12,
+                        background: canActDeadline ? '#f0fdf4' : '#fef2f2',
+                        border: `1px solid ${canActDeadline ? '#bbf7d0' : '#fecaca'}`,
+                        color: canActDeadline ? '#166534' : '#b91c1c',
+                    }}>
+                        {canActDeadline
+                            ? <>⏰ Dapat diubah/dibatalkan hingga: <strong>{fmtDeadline(appt.scheduledAt)}</strong></>
+                            : <>🔒 Batas perubahan/pembatalan telah lewat ({fmtDeadline(appt.scheduledAt)})</>}
+                    </div>
+                )}
+
+                {appt.cancelReason && (
+                    <div style={{ marginBottom: 14, padding: 10, background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca', fontSize: 12, color: '#991b1b' }}>
+                        <strong>Alasan batal:</strong> {appt.cancelReason}
+                    </div>
+                )}
+
+                {/* Rekam Medis */}
+                {appt.medicalRecord?.isCompleted && (
+                    <div style={{ marginTop: 4, paddingTop: 14, borderTop: '1px dashed #e5e7eb' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', marginBottom: 8, textTransform: 'uppercase', letterSpacing: .5 }}>
+                            📋 Rekam Medis & Catatan Dokter
+                        </div>
+                        <div style={{ fontSize: 13, color: '#374151', display: 'flex', flexDirection: 'column', gap: 8, background: '#f8fafc', padding: 12, borderRadius: 8 }}>
+                            {appt.medicalRecord.assessment && <div><span style={{ fontWeight: 600, color: '#111827' }}>Diagnosis:</span><br />{appt.medicalRecord.assessment}</div>}
+                            {appt.medicalRecord.plan && <div><span style={{ fontWeight: 600, color: '#111827' }}>Rencana Terapi:</span><br />{appt.medicalRecord.plan}</div>}
+                            {appt.medicalRecord.doctorNotes && <div><span style={{ fontWeight: 600, color: '#111827' }}>Catatan Tambahan:</span><br />{appt.medicalRecord.doctorNotes}</div>}
+                        </div>
+                    </div>
+                )}
+
+                {/* Surat Sakit */}
+                {appt.sickLetter && (
+                    <div style={{ marginTop: 12, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 13, color: '#166534', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div><strong>📄 Surat Keterangan Sakit</strong></div>
+                        <a href={`${API_URL}/api/appointments/${appt._id}/sick-letter/pdf`} target="_blank" rel="noreferrer"
+                            style={{ color: '#15803d', fontWeight: 700, textDecoration: 'none', background: '#dcfce7', padding: '4px 10px', borderRadius: 6 }}>
+                            ⬇ Download PDF
+                        </a>
+                    </div>
+                )}
+
+                {/* Rating yang sudah diberikan */}
+                {appt.rating && (
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: '#6b7280', fontSize: 12 }}>Rating Anda: </span>
+                        <StarRating value={appt.rating} />
+                    </div>
+                )}
+            </div>
+
+            {/* Action Bar */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', background: '#f9fafb', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {showActions && canAct && canActDeadline && (!appt.rescheduleCount || appt.rescheduleCount < 1) && onReschedule && (
+                    <button onClick={onReschedule}
+                        style={{ padding: '6px 14px', background: '#fff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        🔄 Reschedule
+                    </button>
+                )}
+                {showActions && canAct && canActDeadline && onCancel && (
+                    <button onClick={onCancel}
+                        style={{ padding: '6px 14px', background: '#fff', color: '#ef4444', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        ❌ Batalkan
+                    </button>
+                )}
+                {canRate && onRate && (
+                    <button onClick={onRate}
+                        style={{ background: 'linear-gradient(135deg,#854d0e,#ca8a04)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        ⭐ Beri Rating
+                    </button>
+                )}
+                {/* Post-cancel: hanya reschedule */}
+                {needsPostCancel && onPostCancel && (
+                    <button onClick={onPostCancel}
+                        style={{ background: 'linear-gradient(135deg,#1d4ed8,#2563eb)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        🔄 Reschedule Ulang
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+const Appointments = () => {
+    const { user } = useAuth();
+    const navigate = useNavigate();
+
+    const [activeTab, setActiveTab] = useState('aktif');
+
+    const [doctors, setDoctors]           = useState([]);
+    const [appointments, setAppointments] = useState([]);
+    const [loading, setLoading]           = useState(true);
+
+    // Modal states
+    const [modalLogin, setModalLogin]   = useState(false);
+    const [ratingModal, setRatingModal] = useState(null); // { id, doctorName }
+
+    // Booking
+    const [modalBook, setModalBook]         = useState(false);
+    const [bookDocId, setBookDocId]         = useState('');
+    const [bookDocInfo, setBookDocInfo]     = useState(null);
+    const [bookDate, setBookDate]           = useState('');
+    const [bookTime, setBookTime]           = useState('');
+    const [bookComplaint, setBookComplaint] = useState('');
+    const [slots, setSlots]                 = useState([]);
+    const [loadingSlots, setLoadingSlots]   = useState(false);
+    const [booking, setBooking]             = useState(false);
+
+    // Cancel
+    const [modalCancel, setModalCancel]     = useState(false);
+    const [cancelId, setCancelId]           = useState('');
+    const [cancelReason, setCancelReason]   = useState('');
+    const [cancelling, setCancelling]       = useState(false);
+
+    // Reschedule
+    const [modalReschedule, setModalReschedule] = useState(false);
+    const [resId, setResId]       = useState('');
+    const [resDate, setResDate]   = useState('');
+    const [resTime, setResTime]   = useState('');
+    const [resSlots, setResSlots] = useState([]);
+    const [rescheduling, setRescheduling] = useState(false);
+
+    // Post-cancel reschedule modal (no refund)
+    const [postCancelModal, setPostCancelModal]         = useState(null);
+    const [postCancelProcessing, setPostCancelProcessing] = useState(false);
+
+    // ── loadData ──────────────────────────────────────────────────────────────
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const docRes = await api.get('/api/appointments/doctors-with-slots');
+            setDoctors(docRes.data.doctors || []);
+
+            if (user) {
+                const apptRes = await api.get('/api/appointments/my');
+                setAppointments(apptRes.data.appointments || []);
+            }
+        } catch {
+            toast.error('Gagal memuat data');
+        } finally {
+            setLoading(false);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (!user) setActiveTab('buat_janji');
+        else setActiveTab('aktif');
+        loadData();
+    }, [user, loadData]);
+
+    // Auto-refresh 10 detik saat ada appointment scheduled
+    useEffect(() => {
+        const hasPending = appointments.some(a => a.status === 'scheduled');
+        if (!hasPending) return;
+        const interval = setInterval(loadData, 10000);
+        return () => clearInterval(interval);
+    }, [appointments, loadData]);
+
+    // Refresh saat window fokus
+    useEffect(() => {
+        if (!user) return;
+        const onFocus = () => loadData();
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [loadData, user]);
+
+    // Socket.IO real-time
+    useEffect(() => {
+        if (!user) return;
+        const sock = io(API_URL, {
+            auth: { token: localStorage.getItem('token') },
+            query: { userId: user.id },
+        });
+        sock.emit('join-user', user.id);
+        sock.on('new-notification', (n) => {
+            if (['appointment_confirmed', 'appointment_cancelled', 'appointment_completed'].includes(n.type)) {
+                loadData();
+            }
+        });
+        sock.on('appointment-status-update', () => loadData());
+        return () => sock.close();
+    }, [user, loadData]);
+
+    // ── Slot helpers ──────────────────────────────────────────────────────────
+    const fetchSlots = async (docId) => {
+        setLoadingSlots(true);
+        setBookTime('');
+        try {
+            const r = await api.get('/api/appointments/slots/' + docId);
+            const slotData = r.data.slots || [];
+            setSlots(slotData);
+            const dates = [...new Set(slotData.map(s => s.date))].sort();
+            setBookDate(dates.length > 0 ? dates[0] : '');
+        } catch {
+            toast.error('Gagal memuat jadwal dokter');
+            setSlots([]);
+        } finally {
+            setLoadingSlots(false);
+        }
+    };
+
+    const fetchSlotsRes = async (docId) => {
+        setLoadingSlots(true);
+        setResTime('');
+        try {
+            const r = await api.get('/api/appointments/slots/' + docId);
+            setResSlots(r.data.slots || []);
+            const dates = [...new Set((r.data.slots || []).map(s => s.date))].sort();
+            setResDate(dates.length > 0 ? dates[0] : '');
+        } catch {
+            toast.error('Gagal memuat slot reschedule');
+            setResSlots([]);
+        } finally {
+            setLoadingSlots(false);
+        }
+    };
+
+    // ── Handlers ──────────────────────────────────────────────────────────────
+    const handleBookStart = (doc) => {
+        if (!user) { setModalLogin(true); return; }
+        const docId = doc.doctor?.id || doc._id;
+        setBookDocId(docId);
+        setBookDocInfo(doc.doctor || doc);
+        setBookDate(''); setBookTime(''); setBookComplaint('');
+        setModalBook(true);
+        fetchSlots(docId);
+    };
+
+    const submitBooking = async () => {
+        if (!bookDate || !bookTime) return toast.error('Pilih tanggal dan waktu terlebih dahulu');
+        if (!bookComplaint.trim()) return toast.error('Mohon isi keluhan Anda');
+        setBooking(true);
+        try {
+            await api.post('/api/appointments/book', {
+                doctorId: bookDocId,
+                date: bookDate,
+                time: bookTime,
+                complaint: bookComplaint,
+            });
+            toast.success('Janji temu berhasil dibuat!');
+            setModalBook(false);
+            setActiveTab('aktif');
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Gagal membuat janji temu');
+        } finally {
+            setBooking(false);
+        }
+    };
+
+    const handleCancelStart = (appt) => {
+        setCancelId(appt._id);
+        setCancelReason('');
+        setModalCancel(true);
+    };
+
+    const submitCancel = async () => {
+        if (cancelReason.trim().length < 5) return toast.error('Alasan minimal 5 karakter');
+        setCancelling(true);
+        try {
+            await api.put(`/api/appointments/${cancelId}/cancel`, { reason: cancelReason });
+            toast.success('Janji temu dibatalkan');
+            setModalCancel(false);
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Gagal membatalkan janji');
+        } finally {
+            setCancelling(false);
+        }
+    };
+
+    const handleRescheduleStart = (appt) => {
+        setResId(appt._id);
+        const did = appt.doctorId?._id || appt.doctorId?.id || appt.doctorId;
+        setResDate(''); setResTime('');
+        setModalReschedule(true);
+        fetchSlotsRes(did);
+    };
+
+    const submitReschedule = async () => {
+        if (!resDate || !resTime) return toast.error('Pilih tanggal dan waktu baru');
+        setRescheduling(true);
+        try {
+            await api.put(`/api/appointments/${resId}/reschedule`, { date: resDate, time: resTime });
+            toast.success('Jadwal berhasil diubah!');
+            setModalReschedule(false);
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Gagal mengubah jadwal');
+        } finally {
+            setRescheduling(false);
+        }
+    };
+
+    // Post-cancel: langsung reschedule, tanpa pilihan refund
+    const handlePostCancelReschedule = async () => {
+        if (!postCancelModal) return;
+        setPostCancelProcessing(true);
+        try {
+            const did = postCancelModal.doctorId?._id || postCancelModal.doctorId;
+            navigate(`/appointments/book/${did}?rescheduleId=${postCancelModal._id}`);
+        } catch {
+            toast.error('Gagal memproses reschedule');
+        } finally {
+            setPostCancelProcessing(false);
+        }
+    };
+
+    // ── Derived ───────────────────────────────────────────────────────────────
+    const activeAppts = user ? appointments.filter(a => ['scheduled', 'checked_in'].includes(a.status)) : [];
+    const needsAction = user ? appointments.filter(a =>
+        ['doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(a.status) && !a.postCancelChoice
+    ) : [];
+    const pastAppts = user ? appointments.filter(a =>
+        !['scheduled', 'checked_in'].includes(a.status) &&
+        !needsAction.find(n => n._id === a._id)
+    ) : [];
+
+    const groupedBookSlots = groupByDate(slots);
+    const bookDates        = Object.keys(groupedBookSlots).sort();
+    const groupedResSlots  = groupByDate(resSlots);
+    const resDates         = Object.keys(groupedResSlots).sort();
+
+    // ── RENDER ────────────────────────────────────────────────────────────────
+    return (
+        <div className="container py-4" style={{ maxWidth: 1000, fontFamily: "'Inter', sans-serif" }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                    <h4 style={{ color: '#111827', fontWeight: 800, marginBottom: 2 }}>Janji Temu Klinik</h4>
+                    <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>Buat janji temu offline dan hindari antrean panjang di klinik.</p>
+                </div>
+            </div>
+
+            {/* Tab Nav */}
+            {user && (
+                <div className="d-flex border-bottom mb-4" style={{ gap: '1.5rem', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                    {[
+                        { id: 'aktif',      label: '🕒 Janji Aktif' },
+                        { id: 'buat_janji', label: '➕ Buat Janji Baru' },
+                        { id: 'riwayat',    label: '📖 Riwayat & Rekam Medis' },
+                    ].map(t => (
+                        <button key={t.id} onClick={() => setActiveTab(t.id)}
+                            className="bg-transparent border-0 pb-2 px-1"
+                            style={{
+                                borderBottom: activeTab === t.id ? '2px solid #2563eb' : '2px solid transparent',
+                                color: activeTab === t.id ? '#2563eb' : '#6b7280',
+                                fontWeight: 600, fontSize: '0.95rem', transition: 'color 0.2s, border-color 0.2s',
+                            }}>
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {loading ? (
+                <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
+                        <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="text-muted mt-3">Memuat data...</p>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+                    {/* ── TAB 1: JANJI AKTIF ── */}
+                    {user && activeTab === 'aktif' && (
+                        <div>
+                            {/* Perlu tindakan (reschedule only) */}
+                            {needsAction.length > 0 && (
+                                <div style={{ marginBottom: 24 }}>
+                                    <h5 style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 }}>
+                                        ⚠️ Perlu Tindakan ({needsAction.length})
+                                    </h5>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                                        {needsAction.map(a => (
+                                            <ApptCard key={a._id} appt={a}
+                                                showActions={false}
+                                                onRate={() => setRatingModal({ id: a._id, doctorName: a.doctorId?.name })}
+                                                onPostCancel={() => setPostCancelModal(a)}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Aktif */}
+                            {activeAppts.length > 0 && (
+                                <div>
+                                    <h5 style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 }}>
+                                        ⚡ Aktif ({activeAppts.length})
+                                    </h5>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                                        {activeAppts.map(a => (
+                                            <ApptCard key={a._id} appt={a}
+                                                showActions={true}
+                                                onCancel={() => handleCancelStart(a)}
+                                                onReschedule={() => handleRescheduleStart(a)}
+                                                onRate={() => setRatingModal({ id: a._id, doctorName: a.doctorId?.name })}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {needsAction.length === 0 && activeAppts.length === 0 && (
+                                <Card>
+                                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                                        <div style={{ fontSize: 40, marginBottom: 12 }}>📅</div>
+                                        <h3 style={{ color: '#111827', fontSize: 16, marginBottom: 8 }}>Belum Ada Janji Temu Aktif</h3>
+                                        <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 20 }}>Anda belum membuat janji temu dengan dokter untuk waktu mendatang.</p>
+                                        <button onClick={() => setActiveTab('buat_janji')}
+                                            style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                                            Buat Janji Sekarang
+                                        </button>
+                                    </div>
+                                </Card>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── TAB 2: BUAT JANJI (juga muncul untuk guest) ── */}
+                    {(!user || activeTab === 'buat_janji') && (
+                        <div>
+                            {user && <h5 style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Pilih Dokter</h5>}
+
+                            {/* Banner info untuk guest */}
+                            {!user && (
+                                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                                    <span style={{ fontSize: 18 }}>ℹ️</span>
+                                    <span style={{ color: '#1e40af' }}>
+                                        Pilih dokter dan klik <strong>Pilih Jadwal</strong> untuk mulai — perlu login terlebih dahulu.
+                                    </span>
+                                </div>
+                            )}
+
+                            {doctors.length === 0 ? (
+                                <Card>
+                                    <p style={{ textAlign: 'center', color: '#6b7280', margin: 0, padding: '20px 0' }}>
+                                        Belum ada dokter yang membuka jadwal untuk minggu ini.
+                                    </p>
+                                </Card>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+                                    {doctors.map(d => {
+                                        const doc = d.doctor || d;
+                                        const docId = doc.id || doc._id;
+                                        const rating = doc.rating;
+                                        return (
+                                            <div key={docId} style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
+                                                <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
+                                                    {/* Foto dengan fallback emoji */}
+                                                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>
+                                                        {doc.photo
+                                                            ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            : '👨‍⚕️'}
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {doc.name}</div>
+                                                        <div style={{ fontSize: 13, color: '#6b7280' }}>{doc.specialization}</div>
+                                                        {/* Rating angka (misal ★ 4.7) */}
+                                                        {rating != null && (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                                                                <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>★</span>
+                                                                <span style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>
+                                                                    {Number(rating).toFixed(1)}
+                                                                </span>
+                                                                {doc.totalReviews != null && (
+                                                                    <span style={{ fontSize: 11, color: '#9ca3af' }}>({doc.totalReviews})</span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {/* Tahun pengalaman di bawah rating */}
+                                                        {doc.experience != null && (
+                                                            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                                                                {doc.experience} tahun pengalaman
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'auto' }}>
+                                                    <button onClick={() => handleBookStart(d)}
+                                                        style={{ padding: '8px 16px', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'background .2s' }}
+                                                        onMouseEnter={e => e.target.style.background = '#dbeafe'}
+                                                        onMouseLeave={e => e.target.style.background = '#eff6ff'}>
+                                                        Pilih Jadwal
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── TAB 3: RIWAYAT & REKAM MEDIS ── */}
+                    {user && activeTab === 'riwayat' && (
+                        <div>
+                            {pastAppts.length > 0 ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                                    {pastAppts.map(a => (
+                                        <ApptCard key={a._id} appt={a}
+                                            showActions={false}
+                                            onRate={() => setRatingModal({ id: a._id, doctorName: a.doctorId?.name })}
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <Card>
+                                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                                        <div style={{ fontSize: 40, marginBottom: 12 }}>📖</div>
+                                        <h3 style={{ color: '#111827', fontSize: 16, marginBottom: 8 }}>Belum Ada Riwayat</h3>
+                                        <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 0 }}>Riwayat janji temu dan rekam medis Anda akan muncul di sini setelah sesi selesai.</p>
+                                    </div>
+                                </Card>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════
+                MODALS
+            ══════════════════════════════════════════════════════════ */}
+
+            {/* Modal Login (guest) */}
+            {modalLogin && (
+                <Modal title="🔐 Login Diperlukan" onClose={() => setModalLogin(false)} maxWidth={400}>
+                    <div style={{ textAlign: 'center', padding: '10px 0 20px' }}>
+                        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+                        <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
+                            Silakan login atau daftar akun untuk melihat jadwal dan membuat janji temu.
+                        </p>
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                            <button onClick={() => setModalLogin(false)}
+                                style={{ padding: '10px 20px', background: '#f3f4f6', color: '#4b5563', borderRadius: 8, border: 'none', fontWeight: 600, cursor: 'pointer' }}>
+                                Batal
+                            </button>
+                            <button onClick={() => navigate('/login')}
+                                style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', borderRadius: 8, border: 'none', fontWeight: 700, cursor: 'pointer' }}>
+                                Login Sekarang
+                            </button>
+                        </div>
+                        <button onClick={() => navigate('/register')}
+                            style={{ marginTop: 10, background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                            Belum punya akun? Daftar Gratis →
+                        </button>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Modal Booking */}
+            {modalBook && (
+                <Modal title="📅 Buat Janji Temu Baru" onClose={() => setModalBook(false)}>
+                    {/* Info dokter */}
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f3f4f6' }}>
+                        <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
+                            {bookDocInfo?.photo
+                                ? <img src={`${API_URL}${bookDocInfo.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : '👨‍⚕️'}
+                        </div>
+                        <div>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {bookDocInfo?.name}</div>
+                            <div style={{ fontSize: 13, color: '#6b7280' }}>{bookDocInfo?.specialization}</div>
+                        </div>
+                    </div>
+
+                    {/* Pills Tanggal */}
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#374151' }}>Pilih Tanggal</label>
+                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+                            {loadingSlots ? (
+                                <div style={{ fontSize: 13, color: '#6b7280' }}>Memuat jadwal...</div>
+                            ) : bookDates.length === 0 ? (
+                                <div style={{ fontSize: 13, color: '#ef4444' }}>Tidak ada jadwal tersedia minggu ini.</div>
+                            ) : bookDates.map(d => (
+                                <button key={d} onClick={() => { setBookDate(d); setBookTime(''); }}
+                                    style={{
+                                        padding: '8px 14px', borderRadius: 10, flexShrink: 0,
+                                        border: `1px solid ${bookDate === d ? '#2563eb' : '#e5e7eb'}`,
+                                        background: bookDate === d ? '#eff6ff' : '#fff',
+                                        color: bookDate === d ? '#1d4ed8' : '#4b5563',
+                                        fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s',
+                                    }}>
+                                    {fmtDateLabel(d)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Grid Waktu */}
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#374151' }}>Pilih Waktu (WIB)</label>
+                        {loadingSlots ? (
+                            <div style={{ fontSize: 13, color: '#6b7280' }}>Memuat waktu...</div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
+                                {(groupedBookSlots[bookDate] || []).length === 0 ? (
+                                    <div style={{ fontSize: 13, color: '#6b7280', gridColumn: '1/-1' }}>
+                                        {bookDate ? 'Tidak ada slot tersedia di tanggal ini.' : 'Pilih tanggal terlebih dahulu.'}
+                                    </div>
+                                ) : (groupedBookSlots[bookDate] || []).map(s => (
+                                    <button key={s.startTime} disabled={!s.available} onClick={() => setBookTime(s.startTime)}
+                                        style={{
+                                            padding: '10px 0', borderRadius: 10, textAlign: 'center',
+                                            border: `1px solid ${bookTime === s.startTime ? '#3b82f6' : s.available ? '#d1d5db' : '#f3f4f6'}`,
+                                            background: bookTime === s.startTime ? '#eff6ff' : s.available ? '#fff' : '#f9fafb',
+                                            color: bookTime === s.startTime ? '#2563eb' : s.available ? '#374151' : '#9ca3af',
+                                            fontWeight: 600, fontSize: 13,
+                                            cursor: s.available ? 'pointer' : 'not-allowed', transition: 'all .2s',
+                                        }}>
+                                        {s.startTime}
+                                        {!s.available && <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 400 }}>Penuh</div>}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Keluhan */}
+                    <div style={{ marginBottom: 24 }}>
+                        <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#374151' }}>
+                            Keluhan Utama <span style={{ color: '#b91c1c' }}>*</span>
+                        </label>
+                        <textarea value={bookComplaint} onChange={e => setBookComplaint(e.target.value)} rows={3}
+                            placeholder="Sebutkan keluhan yang Anda rasakan..."
+                            style={{ width: '100%', padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+
+                    <button onClick={submitBooking} disabled={!bookDate || !bookTime || !bookComplaint.trim() || booking}
+                        style={{
+                            width: '100%', padding: 14, borderRadius: 12, border: 'none', fontSize: 14, fontWeight: 700,
+                            background: (!bookDate || !bookTime || !bookComplaint.trim() || booking) ? '#9ca3af' : 'linear-gradient(135deg,#1d4ed8,#2563eb)',
+                            color: '#fff', cursor: (!bookDate || !bookTime || !bookComplaint.trim() || booking) ? 'not-allowed' : 'pointer',
+                        }}>
+                        {booking ? 'Memproses...' : 'Konfirmasi Janji Temu ✓'}
+                    </button>
+                </Modal>
+            )}
+
+            {/* Modal Cancel */}
+            {modalCancel && (
+                <Modal title="❌ Batalkan Janji Temu" onClose={() => setModalCancel(false)}>
+                    <div style={{ background: '#fef2f2', padding: 14, borderRadius: 10, marginBottom: 18, fontSize: 13, color: '#991b1b' }}>
+                        Apakah Anda yakin ingin membatalkan janji temu ini? <strong>Tindakan ini tidak dapat diurungkan.</strong>
+                    </div>
+                    <div style={{ marginBottom: 24 }}>
+                        <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#374151' }}>Alasan Pembatalan</label>
+                        <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={3}
+                            placeholder="Mengapa Anda membatalkan janji ini?"
+                            style={{
+                                width: '100%', padding: '10px 14px',
+                                border: `1px solid ${cancelReason.trim().length > 0 && cancelReason.trim().length < 5 ? '#ef4444' : '#d1d5db'}`,
+                                borderRadius: 10, fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box',
+                            }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        <button onClick={() => setModalCancel(false)}
+                            style={{ flex: 1, padding: 12, background: '#fff', color: '#4b5563', border: '1px solid #d1d5db', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                            Kembali
+                        </button>
+                        <button onClick={submitCancel} disabled={cancelReason.trim().length < 5 || cancelling}
+                            style={{
+                                flex: 1, padding: 12,
+                                background: (cancelReason.trim().length < 5 || cancelling) ? '#fca5a5' : '#ef4444',
+                                color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700,
+                                cursor: (cancelReason.trim().length < 5 || cancelling) ? 'not-allowed' : 'pointer',
+                            }}>
+                            {cancelling ? 'Memproses...' : 'Ya, Batalkan'}
+                        </button>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Modal Reschedule */}
+            {modalReschedule && (
+                <Modal title="🔄 Ubah Jadwal Janji Temu" onClose={() => setModalReschedule(false)}>
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#374151' }}>Pilih Tanggal Baru</label>
+                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+                            {loadingSlots ? (
+                                <div style={{ fontSize: 13, color: '#6b7280' }}>Memuat tanggal...</div>
+                            ) : resDates.length === 0 ? (
+                                <div style={{ fontSize: 13, color: '#ef4444' }}>Tidak ada jadwal tersedia.</div>
+                            ) : resDates.map(d => (
+                                <button key={d} onClick={() => { setResDate(d); setResTime(''); }}
+                                    style={{
+                                        padding: '8px 14px', borderRadius: 10, flexShrink: 0,
+                                        border: `1px solid ${resDate === d ? '#2563eb' : '#e5e7eb'}`,
+                                        background: resDate === d ? '#eff6ff' : '#fff',
+                                        color: resDate === d ? '#1d4ed8' : '#4b5563',
+                                        fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s',
+                                    }}>
+                                    {fmtDateLabel(d)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: 24 }}>
+                        <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#374151' }}>Pilih Waktu Baru (WIB)</label>
+                        {loadingSlots ? (
+                            <div style={{ fontSize: 13, color: '#6b7280' }}>Memuat waktu...</div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
+                                {(groupedResSlots[resDate] || []).length === 0 ? (
+                                    <div style={{ fontSize: 13, color: '#6b7280', gridColumn: '1/-1' }}>
+                                        {resDate ? 'Tidak ada slot tersedia.' : 'Pilih tanggal terlebih dahulu.'}
+                                    </div>
+                                ) : (groupedResSlots[resDate] || []).map(s => (
+                                    <button key={s.startTime} disabled={!s.available} onClick={() => setResTime(s.startTime)}
+                                        style={{
+                                            padding: '10px 0', borderRadius: 10, textAlign: 'center',
+                                            border: `1px solid ${resTime === s.startTime ? '#3b82f6' : s.available ? '#d1d5db' : '#f3f4f6'}`,
+                                            background: resTime === s.startTime ? '#eff6ff' : s.available ? '#fff' : '#f9fafb',
+                                            color: resTime === s.startTime ? '#2563eb' : s.available ? '#374151' : '#9ca3af',
+                                            fontWeight: 600, fontSize: 13,
+                                            cursor: s.available ? 'pointer' : 'not-allowed', transition: 'all .2s',
+                                        }}>
+                                        {s.startTime}
+                                        {!s.available && <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 400 }}>Penuh</div>}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        <button onClick={() => setModalReschedule(false)}
+                            style={{ flex: 1, padding: 12, background: '#fff', color: '#4b5563', border: '1px solid #d1d5db', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                            Kembali
+                        </button>
+                        <button onClick={submitReschedule} disabled={!resDate || !resTime || rescheduling}
+                            style={{
+                                flex: 1, padding: 12,
+                                background: (!resDate || !resTime || rescheduling) ? '#9ca3af' : '#2563eb',
+                                color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700,
+                                cursor: (!resDate || !resTime || rescheduling) ? 'not-allowed' : 'pointer',
+                            }}>
+                            {rescheduling ? 'Memproses...' : 'Simpan Perubahan'}
+                        </button>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Modal Post-Cancel — Reschedule Only (tanpa refund) */}
+            {postCancelModal && (
+                <Modal
+                    title={postCancelModal.status === 'doctor_no_show' ? '😔 Dokter Tidak Hadir' : '🚫 Janji Dibatalkan'}
+                    onClose={() => setPostCancelModal(null)}>
+                    <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                        <div style={{ fontSize: 48, marginBottom: 16 }}>🔄</div>
+                        <p style={{ fontSize: 14, color: '#374151', marginBottom: 8, lineHeight: 1.6 }}>
+                            Maaf, janji temu Anda dengan <strong>dr. {postCancelModal.doctorId?.name}</strong> tidak dapat dilanjutkan.
+                        </p>
+                        <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>
+                            Anda dapat melakukan reschedule untuk memilih jadwal baru dengan dokter yang sama tanpa biaya tambahan.
+                        </p>
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            <button onClick={() => setPostCancelModal(null)}
+                                style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', fontWeight: 600, cursor: 'pointer' }}>
+                                Nanti
+                            </button>
+                            <button onClick={handlePostCancelReschedule} disabled={postCancelProcessing}
+                                style={{
+                                    flex: 2, padding: 12, borderRadius: 8, border: 'none',
+                                    background: 'linear-gradient(135deg,#1d4ed8,#2563eb)',
+                                    color: '#fff', fontWeight: 700, cursor: 'pointer',
+                                    opacity: postCancelProcessing ? 0.6 : 1,
+                                }}>
+                                {postCancelProcessing ? 'Memproses...' : 'Pilih Jadwal Baru →'}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Modal Rating — hanya bintang */}
+            {ratingModal && (
+                <RatingModal
+                    appointmentId={ratingModal.id}
+                    doctorName={ratingModal.doctorName}
+                    onClose={() => setRatingModal(null)}
+                    onSuccess={loadData}
+                />
+            )}
+        </div>
+    );
+};
 
 export default Appointments;

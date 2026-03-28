@@ -154,10 +154,24 @@ const SectionJanjiTemu = ({ socketRef }) => {
                             <tbody>
                                 {appointments.map((a, i) => {
                                     const proc = processing[a._id];
+                                    
+                                    // ── LOGIKA VALIDASI WAKTU CHECK-IN ──
+                                    let isTime = true;
+                                    if (a.appointmentDate && a.appointmentTime) {
+                                        const dt = new Date(a.appointmentDate);
+                                        const [h, m] = a.appointmentTime.split(':').map(Number);
+                                        dt.setHours(h, m, 0, 0);
+                                        // Mencegah check-in jika jadwal > 30 menit dari sekarang
+                                        if ((dt.getTime() - Date.now()) > 30 * 60000) {
+                                            isTime = false;
+                                        }
+                                    }
+
                                     const canCI    = a.status === 'scheduled';
                                     const canComp  = a.status === 'checked_in';
                                     const canCancl = a.status === 'scheduled' && (new Date(a.scheduledAt || a.appointmentDate).getTime() - Date.now() > 24 * 3600000);
                                     const accent   = APPT_STATUS[a.status]?.color || colors.border;
+                                    
                                     return (
                                         <tr key={a._id} style={{ borderBottom: `1px solid #f8fafc`, background: i % 2 ? '#fafafa' : '#fff', borderLeft: `3px solid ${accent}` }}>
                                             <td style={TD}>
@@ -173,7 +187,14 @@ const SectionJanjiTemu = ({ socketRef }) => {
                                             <td style={TD}><SBadge status={a.status} map={APPT_STATUS} /></td>
                                             <td style={TD}>
                                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                                    {canCI   && <Btn size="sm" variant="success" disabled={!!proc} onClick={() => doCheckin(a._id)}>{proc === 'ci' ? '…' : '✅ Check-in'}</Btn>}
+                                                    {canCI && (
+                                                        <Btn size="sm" variant="success" 
+                                                             disabled={!!proc || !isTime} 
+                                                             onClick={() => doCheckin(a._id)}
+                                                             title={!isTime ? "Hanya bisa check-in 30 menit sebelum jadwal" : "Mulai sesi"}>
+                                                            {proc === 'ci' ? '…' : '✅ Check-in'}
+                                                        </Btn>
+                                                    )}
                                                     {canComp && <Btn size="sm" variant="primary" onClick={() => { setCompleteTarget(a); setCompleteNotes(''); setCompleteAssessment(''); setCompletePlan(''); }}>🏁 Selesai</Btn>}
                                                     {canCancl && <Btn size="sm" variant="red_outline" onClick={() => { setCancelTarget(a); setCancelReason(''); }}>❌ Batal</Btn>}
                                                 </div>
@@ -246,6 +267,5 @@ const SectionJanjiTemu = ({ socketRef }) => {
         </div>
     );
 };
-
 
 export default SectionJanjiTemu;

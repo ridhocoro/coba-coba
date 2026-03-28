@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema({
     userId: { 
-        type: mongoose.Schema.Types.ObjectId, 
+        type: String, 
         ref: 'User', 
         required: true 
     },
@@ -39,12 +39,12 @@ const notificationSchema = new mongoose.Schema({
     title: { type: String, required: true },
     message: { type: String, required: true },
     data: {
-        consultationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Consultation' },
-        paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' },
-        orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
-        appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
-        sickLetterId: { type: mongoose.Schema.Types.ObjectId, ref: 'SickLetter' },
-        doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },
+        consultationId: { type: String, ref: 'Consultation' },
+        paymentId: { type: String, ref: 'Payment' },
+        orderId: { type: String, ref: 'Order' },
+        appointmentId: { type: String, ref: 'Appointment' },
+        sickLetterId: { type: String, ref: 'SickLetter' },
+        doctorId: { type: String, ref: 'Doctor' },
         url: String
     },
     isRead: { type: Boolean, default: false },

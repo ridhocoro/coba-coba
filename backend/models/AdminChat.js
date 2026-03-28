@@ -5,7 +5,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
-    senderId   : { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    senderId   : { type: String, ref: 'User', required: true },
     senderRole : { type: String, enum: ['admin','doctor'], required: true },
     text       : { type: String, default: '' },
     fileUrl    : { type: String },             // URL file/foto yang dikirim
@@ -16,9 +16,9 @@ const messageSchema = new mongoose.Schema({
 }, { _id: true });
 
 const adminChatSchema = new mongoose.Schema({
-    doctorId     : { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true, unique: true },
-    doctorUserId : { type: mongoose.Schema.Types.ObjectId, ref: 'User',   required: true },
-    adminId      : { type: mongoose.Schema.Types.ObjectId, ref: 'User'   },  // admin yang terakhir chat
+    doctorId     : { type: String, ref: 'Doctor', required: true, unique: true },
+    doctorUserId : { type: String, ref: 'User',   required: true },
+    adminId      : { type: String, ref: 'User'   },  // admin yang terakhir chat
     messages     : [messageSchema],
     lastMessage  : { type: String, default: '' },
     lastAt       : { type: Date },

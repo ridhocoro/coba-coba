@@ -4,15 +4,16 @@ const { body, validationResult } = require('express-validator');
 const jwt        = require('jsonwebtoken');
 const crypto     = require('crypto');
 const nodemailer = require('nodemailer');
-const User       = require('../models/User');
+const { User }   = require('../models/mysql');
+const { Op }     = require('sequelize');
 const auth       = require('../middleware/auth');
 const { sendWhatsApp } = require('../utils/fonnte');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const OTP_EXPIRES_MIN   = 5;           // OTP berlaku 5 menit
-const RESEND_COOLDOWN_S = 60;          // jeda antar resend (detik)
-const RESEND_MAX        = 3;           // max resend per jam per email/IP
-const RESEND_WINDOW_MS  = 60 * 60 * 1000; // 1 jam
+const OTP_EXPIRES_MIN   = 5;
+const RESEND_COOLDOWN_S = 60;
+const RESEND_MAX        = 3;
+const RESEND_WINDOW_MS  = 60 * 60 * 1000;
 
 // ─── Nodemailer ──────────────────────────────────────────────────────────────
 const createTransporter = () => nodemailer.createTransport({
@@ -23,14 +24,11 @@ const createTransporter = () => nodemailer.createTransport({
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-/** Generate 6-digit OTP */
 function generateOtp() {
     return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-/** Normalise phone → +62xxx  (hapus spasi, dash, pastikan +62) */
 function normalisePhone(raw) {
-    // Hapus semua non-digit kecuali leading +
     let p = String(raw).replace(/[\s\-]/g, '').replace(/[^\d+]/g, '');
     if (p.startsWith('+62')) return p;
     if (p.startsWith('62'))  return '+' + p;
@@ -38,12 +36,10 @@ function normalisePhone(raw) {
     return '+62' + p;
 }
 
-/** XSS-safe: strip tag HTML dari string */
 function stripHtml(str) {
     return String(str).replace(/<[^>]*>/g, '').replace(/[<>]/g, '').trim();
 }
 
-/** Kirim OTP email */
 async function sendOtpEmail(email, name, otp) {
     const transporter = createTransporter();
     await transporter.sendMail({
@@ -78,19 +74,10 @@ async function sendOtpEmail(email, name, otp) {
     });
 }
 
-/**
- * Cek & update rate-limit resend OTP.
- * Menggunakan field di DB (otpResendCount, otpResendWindowStart) agar bisa tie ke email.
- * IP juga dicek via in-memory map.
- * Return { allowed, cooldownSeconds }
- */
-const ipResendMap = new Map(); // key: IP, value: { count, windowStart, lastSent }
-
-// ── Rate limit: OTP verify (brute force protection) ───────────────────────────
-// Max 5 percobaan per email per 15 menit
-const otpVerifyMap = new Map(); // key: email, value: { count, windowStart }
+const ipResendMap   = new Map();
+const otpVerifyMap  = new Map();
 const OTP_VERIFY_MAX    = 5;
-const OTP_VERIFY_WINDOW = 15 * 60 * 1000; // 15 menit
+const OTP_VERIFY_WINDOW = 15 * 60 * 1000;
 
 function checkOtpVerifyLimit(email) {
     const now = Date.now();
@@ -112,11 +99,9 @@ function resetOtpVerifyLimit(email) {
     otpVerifyMap.delete(email);
 }
 
-// ── Rate limit: Login (brute force protection) ────────────────────────────────
-// Max 10 percobaan per IP per 15 menit
-const loginLimitMap = new Map(); // key: IP, value: { count, windowStart }
+const loginLimitMap = new Map();
 const LOGIN_MAX    = 10;
-const LOGIN_WINDOW = 15 * 60 * 1000; // 15 menit
+const LOGIN_WINDOW = 15 * 60 * 1000;
 
 function checkLoginLimit(ip) {
     const now = Date.now();
@@ -142,7 +127,6 @@ function checkIpResend(ip) {
     const now = Date.now();
     const rec = ipResendMap.get(ip) || { count: 0, windowStart: now, lastSent: 0 };
     if (now - rec.windowStart > RESEND_WINDOW_MS) {
-        // reset window
         ipResendMap.set(ip, { count: 1, windowStart: now, lastSent: now });
         return { allowed: true };
     }
@@ -175,30 +159,25 @@ router.post('/register', [
 
         let { name, email, password, confirmPassword, phone, dateOfBirth, gender } = req.body;
 
-        // XSS guard pada name
         name = stripHtml(name);
         if (!name) return res.status(400).json({ message: 'Nama tidak valid' });
 
-        // Konfirmasi password
         if (password !== confirmPassword)
             return res.status(400).json({ message: 'Password dan konfirmasi password tidak cocok' });
 
-        // Normalise phone
         phone = normalisePhone(phone);
         const digits = phone.replace(/\D/g, '');
         if (digits.length < 10)
             return res.status(400).json({ message: 'NoHP minimal 10 digit' });
 
-        // Cek duplikat email & phone
-        const existingEmail = await User.findOne({ email });
+        const existingEmail = await User.findOne({ where: { email } });
         if (existingEmail) {
             if (existingEmail.isVerified) {
                 return res.status(400).json({ message: 'Email sudah digunakan' });
             }
-            // Unverified → timpa OTP & data lama (user daftar ulang)
             const otp = generateOtp();
             existingEmail.name              = name;
-            existingEmail.password          = password; // akan di-hash oleh pre-save
+            existingEmail.password          = password;
             existingEmail.phone             = phone;
             existingEmail.dateOfBirth       = dateOfBirth;
             existingEmail.gender            = gender;
@@ -217,16 +196,14 @@ router.post('/register', [
             });
         }
 
-        const existingPhone = await User.findOne({ phone, isVerified: true });
+        const existingPhone = await User.findOne({ where: { phone, isVerified: true } });
         if (existingPhone)
             return res.status(400).json({ message: 'Nomor HP sudah digunakan' });
 
-        // Role berdasarkan email domain
         const role = email.toLowerCase().endsWith('@apps.ipb.ac.id') ? 'mahasiswa' : 'user';
 
-        // Buat user unverified
         const otp  = generateOtp();
-        const user = new User({
+        const user = User.build({
             name, email, password, phone, dateOfBirth, gender, role,
             isVerified           : false,
             emailOtp             : otp,
@@ -260,7 +237,6 @@ router.post('/verify-otp', [
 
         const { email, otp } = req.body;
 
-        // ── Rate limit: max 5 percobaan per email per 15 menit ────────────────
         const rl = checkOtpVerifyLimit(email);
         if (!rl.allowed) {
             return res.status(429).json({
@@ -269,24 +245,18 @@ router.post('/verify-otp', [
             });
         }
 
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ where: { email } });
 
         if (!user || user.isVerified)
             return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
 
-        // Cek invalidasi (resend → OTP lama hangus)
         if (user.emailOtpInvalidated)
             return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku. Gunakan kode terbaru dari email.' });
 
-        // Cek expiry
         if (!user.emailOtpExpires || new Date() > user.emailOtpExpires) {
-            return res.status(400).json({
-                message   : 'Kode OTP sudah kedaluwarsa.',
-                expired   : true,
-            });
+            return res.status(400).json({ message: 'Kode OTP sudah kedaluwarsa.', expired: true });
         }
 
-        // Cek kode
         if (user.emailOtp !== otp) {
             const remaining = rl.remaining;
             return res.status(400).json({
@@ -296,16 +266,15 @@ router.post('/verify-otp', [
             });
         }
 
-        // Verifikasi berhasil — reset rate limit
         resetOtpVerifyLimit(email);
         user.isVerified          = true;
-        user.emailOtp            = undefined;
-        user.emailOtpExpires     = undefined;
+        user.emailOtp            = null;
+        user.emailOtpExpires     = null;
         user.emailOtpInvalidated = false;
         await user.save();
 
         const token = jwt.sign(
-            { userId: user._id, role: user.role },
+            { userId: user.id, role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRE || '24h' }
         );
@@ -313,7 +282,7 @@ router.post('/verify-otp', [
         res.json({
             message : 'Verifikasi berhasil! Selamat datang.',
             token,
-            user    : { id: user._id, name: user.name, email: user.email, role: user.role },
+            user    : { id: user.id, name: user.name, email: user.email, role: user.role },
         });
     } catch (err) {
         console.error('[auth] verify-otp:', err);
@@ -331,14 +300,13 @@ router.post('/resend-otp', [
 
         const { email } = req.body;
         const ip        = req.ip || req.connection?.remoteAddress || 'unknown';
-        const user      = await User.findOne({ email });
+        const user      = await User.findOne({ where: { email } });
 
         if (!user || user.isVerified)
             return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
 
         const now = Date.now();
 
-        // ── Cooldown: jeda 60 detik sejak OTP terakhir dikirim ───────────────
         if (user.emailOtpExpires) {
             const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
             const elapsed    = now - lastSentAt;
@@ -351,7 +319,6 @@ router.post('/resend-otp', [
             }
         }
 
-        // ── Rate-limit per email (DB) ─────────────────────────────────────────
         if (user.otpResendWindowStart && (now - user.otpResendWindowStart.getTime()) < RESEND_WINDOW_MS) {
             if ((user.otpResendCount || 0) >= RESEND_MAX) {
                 return res.status(429).json({
@@ -360,12 +327,10 @@ router.post('/resend-otp', [
                 });
             }
         } else {
-            // Reset window
             user.otpResendCount       = 0;
             user.otpResendWindowStart = new Date();
         }
 
-        // ── Rate-limit per IP (in-memory) ────────────────────────────────────
         const ipCheck = checkIpResend(ip);
         if (!ipCheck.allowed) {
             return res.status(429).json({
@@ -374,11 +339,10 @@ router.post('/resend-otp', [
             });
         }
 
-        // ── Generate OTP baru, hanguskan yang lama ────────────────────────────
         const newOtp = generateOtp();
         user.emailOtp            = newOtp;
         user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
-        user.emailOtpInvalidated = false;          // OTP baru aktif
+        user.emailOtpInvalidated = false;
         user.otpResendCount      = (user.otpResendCount || 0) + 1;
         await user.save();
 
@@ -396,13 +360,23 @@ router.post('/resend-otp', [
 
 // ─── POST /login ──────────────────────────────────────────────────────────────
 router.post('/login', [
-    body('email').isEmail().normalizeEmail(),
-    body('password').notEmpty(),
+    // FIX-1: validasi harus benar-benar memeriksa format email dan password tidak kosong
+    body('email')
+        .notEmpty().withMessage('Email harus diisi')
+        .isEmail().withMessage('Format email tidak valid')
+        .normalizeEmail(),
+    body('password')
+        .notEmpty().withMessage('Password harus diisi'),
 ], async (req, res) => {
     try {
+        // FIX-2: jalankan validasi DULU sebelum rate-limit agar error message jelas
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) {
+            return res.status(400).json({ message: errs.array()[0].msg });
+        }
+
         const ip = req.ip || req.connection?.remoteAddress || 'unknown';
 
-        // ── Rate limit: max 10 percobaan login per IP per 15 menit ───────────
         const rl = checkLoginLimit(ip);
         if (!rl.allowed) {
             return res.status(429).json({
@@ -412,28 +386,37 @@ router.post('/login', [
         }
 
         const { email, password } = req.body;
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ where: { email } });
 
         if (!user) return res.status(400).json({ message: 'Email atau password salah' });
-        // user.isVerified === undefined artinya user lama (dibuat sebelum fitur OTP)
-        // → tetap izinkan login, anggap sudah verified
+
+        // user.isVerified === undefined artinya user lama (sebelum fitur OTP) → izinkan login
         if (user.isVerified === false)
-            return res.status(403).json({ message: 'Akun belum diverifikasi. Cek email Anda.', needsVerification: true, email });
+            return res.status(403).json({
+                message: 'Akun belum diverifikasi. Cek email Anda.',
+                needsVerification: true,
+                email,
+            });
+
+        // FIX-3: isActive bisa null/undefined pada user lama, pastikan hanya blokir jika eksplisit false
         if (user.isActive === false)
             return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
 
         const isMatch = await user.comparePassword(password);
         if (!isMatch) return res.status(400).json({ message: 'Email atau password salah' });
 
-        // Login berhasil — reset rate limit
         resetLoginLimit(ip);
 
         const token = jwt.sign(
-            { userId: user._id, role: user.role },
+            { userId: user.id, role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRE || '24h' }
         );
-        res.json({ token, user: { id: user._id, name: user.name, email, role: user.role } });
+
+        res.json({
+            token,
+            user: { id: user.id, name: user.name, email, role: user.role },
+        });
     } catch (err) {
         console.error('[auth] login:', err);
         res.status(500).json({ message: 'Server error' });
@@ -443,7 +426,9 @@ router.post('/login', [
 // ─── GET /me ──────────────────────────────────────────────────────────────────
 router.get('/me', auth, async (req, res) => {
     try {
-        const user = await User.findById(req.userId).select('-password -emailOtp');
+        const user = await User.findByPk(req.userId, {
+            attributes: { exclude: ['password', 'emailOtp'] }
+        });
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
         res.json(user);
     } catch (err) {
@@ -451,7 +436,7 @@ router.get('/me', auth, async (req, res) => {
     }
 });
 
-// ─── POST /forgot-email  (cari email lewat NoHP, OTP via WA) ─────────────────
+// ─── POST /forgot-email ───────────────────────────────────────────────────────
 router.post('/forgot-email', [
     body('phone').notEmpty().withMessage('Nomor HP harus diisi'),
 ], async (req, res) => {
@@ -462,17 +447,17 @@ router.post('/forgot-email', [
         let { phone } = req.body;
         phone = normalisePhone(phone);
 
-        // Cari user dengan berbagai kemungkinan format phone:
-        // user lama mungkin simpan "081234...", "6281234...", atau "+6281234..."
-        const digits = phone.replace(/\D/g, ''); // e.g. "6281234567"
+        const digits = phone.replace(/\D/g, '');
         const altFormats = [
-            phone,                          // +6281234567
-            digits,                         // 6281234567
-            '0' + digits.slice(2),          // 081234567 (buang 62, tambah 0)
+            phone,
+            digits,
+            '0' + digits.slice(2),
         ];
         const user = await User.findOne({
-            phone: { $in: altFormats },
-            isVerified: { $ne: false },     // undefined atau true = OK
+            where: {
+                phone: { [Op.in]: altFormats },
+                isVerified: { [Op.ne]: false },
+            }
         });
         if (!user)
             return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
@@ -480,7 +465,6 @@ router.post('/forgot-email', [
         const ip  = req.ip || req.connection?.remoteAddress || 'unknown';
         const now = Date.now();
 
-        // Cooldown 60 detik
         if (user.emailOtpExpires) {
             const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
             const elapsed    = now - lastSentAt;
@@ -490,7 +474,6 @@ router.post('/forgot-email', [
             }
         }
 
-        // Rate-limit per IP
         const ipCheck = checkIpResend(ip + ':forgot-email');
         if (!ipCheck.allowed)
             return res.status(429).json({ message: 'Terlalu banyak permintaan. Coba lagi nanti.' });
@@ -498,7 +481,7 @@ router.post('/forgot-email', [
         const otp = generateOtp();
         user.emailOtp            = otp;
         user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
-        user.emailOtpInvalidated = false; // reset agar tidak terblokir dari sesi lama
+        user.emailOtpInvalidated = false;
         await user.save();
 
         await sendWhatsApp(phone,
@@ -527,13 +510,14 @@ router.post('/forgot-email/verify', [
         const digits2 = phone.replace(/\D/g, '');
         const altFormats2 = [phone, digits2, '0' + digits2.slice(2)];
         const user = await User.findOne({
-            phone: { $in: altFormats2 },
-            isVerified: { $ne: false },
+            where: {
+                phone: { [Op.in]: altFormats2 },
+                isVerified: { [Op.ne]: false },
+            }
         });
         if (!user)
             return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
 
-        // Cek invalidasi hanya jika OTP masih ada (bukan sisa sesi lama)
         if (user.emailOtp && user.emailOtpInvalidated)
             return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku.' });
         if (!user.emailOtp || !user.emailOtpExpires || new Date() > user.emailOtpExpires)
@@ -541,13 +525,11 @@ router.post('/forgot-email/verify', [
         if (user.emailOtp !== otp)
             return res.status(400).json({ message: 'Kode OTP salah, silakan coba lagi' });
 
-        // Hanguskan OTP setelah berhasil
-        user.emailOtp            = undefined;
-        user.emailOtpExpires     = undefined;
+        user.emailOtp            = null;
+        user.emailOtpExpires     = null;
         user.emailOtpInvalidated = false;
         await user.save();
 
-        // Sensor email: a*****@domain.com
         const [localPart, domain] = user.email.split('@');
         const masked = localPart.length <= 2
             ? localPart[0] + '***'
@@ -561,7 +543,7 @@ router.post('/forgot-email/verify', [
     }
 });
 
-// ─── Forgot Password & Reset (pertahankan dari versi lama) ───────────────────
+// ─── Forgot Password & Reset ──────────────────────────────────────────────────
 const rateLimitStore = new Map();
 const checkRateLimit = (key) => {
     const now = Date.now(), WINDOW = 15 * 60 * 1000, MAX = 3;
@@ -587,15 +569,14 @@ router.post('/forgot-password', [
         const rl = checkRateLimit(email);
         if (!rl.allowed)
             return res.status(429).json({ message: `Terlalu banyak permintaan. Coba lagi dalam ${rl.waitMin} menit.` });
-        const user = await User.findOne({ email });
-        // isVerified===undefined = user lama sebelum fitur OTP → anggap sudah verified
+        const user = await User.findOne({ where: { email } });
         if (!user || user.isVerified === false)
             return res.json({ message: 'Jika email terdaftar, link reset password akan dikirim ke email Anda.' });
         if (!user.isActive)
             return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan.' });
         const resetToken  = crypto.randomBytes(32).toString('hex');
         user.resetPasswordToken   = crypto.createHash('sha256').update(resetToken).digest('hex');
-        user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+        user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
         await user.save();
         const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
         const transporter = createTransporter();
@@ -605,7 +586,10 @@ router.post('/forgot-password', [
             html: `<p>Klik link berikut untuk reset password (berlaku 15 menit):</p><p><a href="${resetLink}">${resetLink}</a></p>`,
         });
         res.json({ message: 'Jika email terdaftar, link reset password akan dikirim ke email Anda.' });
-    } catch (err) { res.status(500).json({ message: 'Gagal mengirim email.' }); }
+    } catch (err) {
+        console.error('[auth] forgot-password:', err);
+        res.status(500).json({ message: 'Gagal mengirim email.' });
+    }
 });
 
 router.get('/reset-password/validate', async (req, res) => {
@@ -613,15 +597,29 @@ router.get('/reset-password/validate', async (req, res) => {
         const { token, email } = req.query;
         if (!token || !email) return res.status(400).json({ message: 'Token atau email tidak valid.' });
         const hashed = crypto.createHash('sha256').update(token).digest('hex');
-        const user = await User.findOne({ email: decodeURIComponent(email), resetPasswordToken: hashed, resetPasswordExpires: { $gt: Date.now() } });
+        const user = await User.findOne({
+            where: {
+                email: decodeURIComponent(email),
+                resetPasswordToken: hashed,
+                resetPasswordExpires: { [Op.gt]: new Date() }
+            }
+        });
         if (!user) return res.status(400).json({ message: 'Link tidak valid atau sudah kedaluwarsa.' });
         res.json({ valid: true, name: user.name });
-    } catch { res.status(500).json({ message: 'Server error' }); }
+    } catch (err) {
+        console.error('[auth] reset-password/validate:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
 });
 
 router.post('/reset-password', [
-    body('token').notEmpty(), body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 8 }).matches(/[A-Z]/).matches(/[a-z]/).matches(/[0-9]/),
+    body('token').notEmpty(),
+    body('email').isEmail().normalizeEmail(),
+    body('password')
+        .isLength({ min: 8 }).withMessage('Password minimal 8 karakter')
+        .matches(/[A-Z]/).withMessage('Password harus mengandung huruf besar')
+        .matches(/[a-z]/).withMessage('Password harus mengandung huruf kecil')
+        .matches(/[0-9]/).withMessage('Password harus mengandung angka'),
     body('confirmPassword').notEmpty(),
 ], async (req, res) => {
     try {
@@ -631,14 +629,23 @@ router.post('/reset-password', [
         if (password !== confirmPassword)
             return res.status(400).json({ message: 'Konfirmasi password tidak cocok.' });
         const hashed = crypto.createHash('sha256').update(token).digest('hex');
-        const user   = await User.findOne({ email, resetPasswordToken: hashed, resetPasswordExpires: { $gt: Date.now() } });
+        const user   = await User.findOne({
+            where: {
+                email,
+                resetPasswordToken: hashed,
+                resetPasswordExpires: { [Op.gt]: new Date() }
+            }
+        });
         if (!user) return res.status(400).json({ message: 'Link tidak valid atau sudah kedaluwarsa.' });
         user.password             = password;
-        user.resetPasswordToken   = undefined;
-        user.resetPasswordExpires = undefined;
+        user.resetPasswordToken   = null;
+        user.resetPasswordExpires = null;
         await user.save();
         res.json({ message: 'Password berhasil diubah.' });
-    } catch { res.status(500).json({ message: 'Server error' }); }
+    } catch (err) {
+        console.error('[auth] reset-password:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
 });
 
 module.exports = router;

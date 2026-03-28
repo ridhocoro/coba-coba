@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
-    senderId:   { type: mongoose.Schema.Types.ObjectId },
+    senderId:   { type: String },
     senderName: String,
     senderRole: { type: String, enum: ['user', 'doctor'] },
     message:    String,
@@ -19,7 +19,7 @@ const refundSchema = new mongoose.Schema({
     requestedAt:    { type: Date },
     processedAt:    { type: Date },
     failReason:     { type: String },
-    adminId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    adminId:        { type: String, ref: 'User' },
     notes:          { type: String },
     // Xendit refund / disbursement
     xenditRefundId:        { type: String },  // untuk invoice <7 hari (Refund API)
@@ -66,10 +66,10 @@ const medicalRecordSchema = new mongoose.Schema({
 }, { _id: false });
 
 const consultationSchema = new mongoose.Schema({
-    userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User',   required: true },
-    doctorId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
-    paymentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'ManualPayment' },
-    sickLetter: { type: mongoose.Schema.Types.ObjectId, ref: 'SickLetter' },
+    userId:    { type: String, ref: 'User',   required: true },
+    doctorId:  { type: String, ref: 'Doctor', required: true },
+    paymentId:  { type: String, ref: 'ManualPayment' },
+    sickLetter: { type: String, ref: 'SickLetter' },
     // medicalRecord & prescriptionData disimpan sebagai embedded subdocument (lihat bawah)
     // prescriptionDoc & medicalRecord sebagai ObjectId REF dihapus untuk menghindari schema conflict
 
@@ -121,7 +121,7 @@ const consultationSchema = new mongoose.Schema({
     transferDate:     Date,
     paymentVerified:  { type: Boolean, default: false },
     verifiedAt:       Date,
-    verifiedBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    verifiedBy:       { type: String, ref: 'User' },
     rejectedAt:       Date,
     rejectionReason:  String,
 

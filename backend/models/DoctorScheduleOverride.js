@@ -5,10 +5,10 @@
 const mongoose = require('mongoose');
 
 const doctorScheduleOverrideSchema = new mongoose.Schema({
-    doctorId  : { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
+    doctorId  : { type: String, ref: 'Doctor', required: true },
     date      : { type: String, required: true }, // 'YYYY-MM-DD'
     reason    : { type: String, default: '' },
-    blockedBy : { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // admin
+    blockedBy : { type: String, ref: 'User' }, // admin
     createdAt : { type: Date, default: Date.now },
 });
 

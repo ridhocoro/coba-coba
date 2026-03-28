@@ -6,18 +6,18 @@
  * GET  /slots/:id   → user lihat slot tersedia
  *
  * Aturan mingguan:
- *   - Jadwal berlaku dari Senin s.d. Sabtu dalam 1 minggu kalender
- *   - weekStart = Senin terdekat ke depan, weekEnd = Sabtu 23:59:59 WIB
- *   - Jika weekEnd sudah lewat → expired → pasien tidak bisa booking
- *   - Dokter wajib set ulang setiap minggu
- *   - Hari Minggu (dow=0) tidak diizinkan
+ * - Jadwal berlaku dari Senin s.d. Sabtu dalam 1 minggu kalender
+ * - weekStart = Senin terdekat ke depan, weekEnd = Sabtu 23:59:59 WIB
+ * - Jika weekEnd sudah lewat → expired → pasien tidak bisa booking
+ * - Dokter wajib set ulang setiap minggu
+ * - Hari Minggu (dow=0) tidak diizinkan
  */
 
 const express            = require('express');
+const { Doctor } = require('../models/mysql');
 const router             = express.Router();
 const auth               = require('../middleware/auth');
 const doctorAuth         = require('../middleware/doctorAuth');
-const Doctor             = require('../models/Doctor');
 const DoctorAvailability = require('../models/DoctorAvailability');
 const Consultation       = require('../models/Consultation');
 
@@ -40,16 +40,10 @@ const utcToWibHHMM = (utcDate) => {
     return `${String(w.getUTCHours()).padStart(2,'0')}:${String(w.getUTCMinutes()).padStart(2,'0')}`;
 };
 
-/**
- * Hitung weekStart (Senin terdekat) dan weekEnd (Sabtu minggu itu 23:59:59 WIB).
- * Jika hari ini Minggu → weekStart = Senin besok.
- * Jika hari ini Senin–Sabtu → weekStart = Senin minggu ini.
- */
 const calcWeekRange = () => {
     const nowWIB = nowAsWIB();
-    const dow    = wibDay(nowWIB); // 0=Min,1=Sen,...,6=Sab
+    const dow    = wibDay(nowWIB);
 
-    // BUG-12 fix: 8-dow points to NEXT Monday for Tue-Sat; correct is 1-dow (negative = go back)
     const daysToMonday = dow === 0 ? 1 : (1 - dow);
 
     const monWIB     = new Date(nowWIB.getTime() + daysToMonday * 24 * 60 * 60 * 1000);
@@ -58,13 +52,11 @@ const calcWeekRange = () => {
 
     const satWIB     = new Date(monWIB.getTime() + 5 * 24 * 60 * 60 * 1000);
     const satDateStr = wibDateStr(satWIB);
-    // weekEnd = Sabtu 23:59:59 WIB
     const weekEnd    = new Date(wibToUtcDate(satDateStr, '23:59').getTime() + 59 * 1000);
 
     return { weekStart, weekEnd, monDateStr, satDateStr };
 };
 
-/** Normalise schedule: key '1'–'6' saja, buang key '0' (Minggu) */
 const normaliseSchedule = (raw) => {
     const result = { '1':[],'2':[],'3':[],'4':[],'5':[],'6':[] };
     if (!raw || typeof raw !== 'object') return result;
@@ -79,10 +71,10 @@ const normaliseSchedule = (raw) => {
 // ── GET /my ───────────────────────────────────────────────────────────────────
 router.get('/my', auth, doctorAuth, async (req, res) => {
     try {
-        const doctor = await Doctor.findOne({ userId: req.userId });
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ message: 'Data dokter tidak ditemukan' });
 
-        const avail = await DoctorAvailability.findOne({ doctorId: doctor._id });
+        const avail = await DoctorAvailability.findOne({ doctorId: doctor.id });
         const defaultSchedule = { '1':[],'2':[],'3':[],'4':[],'5':[],'6':[] };
 
         if (!avail) {
@@ -106,7 +98,7 @@ router.get('/my', auth, doctorAuth, async (req, res) => {
         res.json({
             success:      true,
             availability: {
-                _id:          avail._id,
+                _id:          avail.id,
                 schedule:     scheduleObj,
                 isActive:     avail.isActive,
                 allowedSlots: ALLOWED_SLOTS,
@@ -125,7 +117,7 @@ router.get('/my', auth, doctorAuth, async (req, res) => {
 // ── PUT /my ───────────────────────────────────────────────────────────────────
 router.put('/my', auth, doctorAuth, async (req, res) => {
     try {
-        const doctor = await Doctor.findOne({ userId: req.userId });
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ message: 'Data dokter tidak ditemukan' });
 
         const { schedule, isActive } = req.body;
@@ -134,7 +126,6 @@ router.put('/my', auth, doctorAuth, async (req, res) => {
             return res.status(400).json({ message: 'Format schedule tidak valid.' });
         }
 
-        // Tolak hari Minggu
         if (Array.isArray(schedule['0']) && schedule['0'].length > 0) {
             return res.status(400).json({ message: 'Hari Minggu tidak diizinkan sebagai hari praktik.' });
         }
@@ -145,9 +136,8 @@ router.put('/my', auth, doctorAuth, async (req, res) => {
             return res.status(400).json({ message: 'Pilih minimal satu slot pada salah satu hari' });
         }
 
-        // Cek overlap dengan janji temu offline (hanya jika jadwal janji temu masih aktif)
         const AppointmentAvailability = require('../models/AppointmentAvailability');
-        const offlineAvail = await AppointmentAvailability.findOne({ doctorId: doctor._id });
+        const offlineAvail = await AppointmentAvailability.findOne({ doctorId: doctor.id });
         if (offlineAvail && offlineAvail.isWeekActive()) {
             const conflicts = [];
             for (let d = 1; d <= 6; d++) {
@@ -167,7 +157,7 @@ router.put('/my', auth, doctorAuth, async (req, res) => {
         const { weekStart, weekEnd, monDateStr, satDateStr } = calcWeekRange();
 
         const avail = await DoctorAvailability.findOneAndUpdate(
-            { doctorId: doctor._id },
+            { doctorId: doctor.id },
             { $set: { schedule: cleanSchedule, isActive: isActive !== false, weekStart, weekEnd, updatedAt: new Date() } },
             { upsert: true, new: true }
         );
@@ -192,7 +182,7 @@ router.get('/slots/:doctorId', async (req, res) => {
         const { doctorId } = req.params;
         const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
 
-        const doctor = await Doctor.findById(doctorId);
+        const doctor = await Doctor.findByPk(doctorId);
         if (!doctor || !doctor.isActive)
             return res.status(404).json({ message: 'Dokter tidak ditemukan' });
 
@@ -207,7 +197,6 @@ router.get('/slots/:doctorId', async (req, res) => {
             });
         }
 
-        // Ambil tanggal yang diblokir admin (override)
         const overrides = await DoctorScheduleOverride.find({ doctorId }).lean();
         const blockedDates = new Set(overrides.map(o => o.date));
 
@@ -215,19 +204,16 @@ router.get('/slots/:doctorId', async (req, res) => {
         const result   = [];
         const msPerDay = 24 * 60 * 60 * 1000;
 
-        // BUG-21 fix: single query for entire week instead of one per day (N+1)
-        // BUG-19 fix: exclude expired pending_payment slots (paymentDeadline < now)
+        // PERBAIKAN: Tambah 'completed' dan 'no_show' ke dalam status block
         const weekBookings = await Consultation.find({
             doctorId,
             scheduledAt: { $gte: avail.weekStart, $lte: avail.weekEnd },
             $or: [
-                { status: { $in: ['waiting_verification','confirmed','in_progress'] } },
-                // pending_payment only valid if paymentDeadline hasn't passed
+                { status: { $in: ['waiting_verification','confirmed','in_progress', 'completed', 'no_show'] } },
                 { status: 'pending_payment', paymentDeadline: { $gt: nowUTC } },
             ],
         }).select('scheduledAt').lean();
 
-        // Group booked slots by WIB date string for O(1) lookup
         const bookedByDate = {};
         for (const c of weekBookings) {
             const dateKey = wibDateStr(new Date(new Date(c.scheduledAt).getTime() + WIB_OFFSET));
@@ -248,9 +234,7 @@ router.get('/slots/:doctorId', async (req, res) => {
 
             const dateStr = wibDateStr(cursorWIB);
 
-            // Jika tanggal diblokir admin — semua slot tidak tersedia
             const isBlocked = blockedDates.has(dateStr);
-
             const bookedSet = bookedByDate[dateStr] || new Set();
 
             for (const slot of activeSlots) {

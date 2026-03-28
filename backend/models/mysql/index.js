@@ -43,7 +43,8 @@ const User = sequelize.define('User', {
     resetPasswordToken  : { type: DataTypes.STRING(255), field: 'reset_password_token'   },
     resetPasswordExpires: { type: DataTypes.DATE,        field: 'reset_password_expires' },
 }, {
-    tableName : 'users',
+    tableName  : 'users',
+    underscored: true,
     hooks: {
         beforeSave: async (user) => {
             if (user.changed('password')) {
@@ -78,7 +79,7 @@ const Doctor = sequelize.define('Doctor', {
     signatureUrl    : { type: DataTypes.STRING(500), field: 'signature_url' },
     allowChat       : { type: DataTypes.BOOLEAN, defaultValue: true,  field: 'allow_chat'       },
     allowVideoCall  : { type: DataTypes.BOOLEAN, defaultValue: true,  field: 'allow_video_call' },
-}, { tableName: 'doctors' });
+}, { tableName: 'doctors', underscored: true });
 
 // ============================================================
 // MEDICINE MODEL
@@ -103,7 +104,8 @@ const Medicine = sequelize.define('Medicine', {
     manufacturer              : { type: DataTypes.STRING(200) },
     isActive                  : { type: DataTypes.BOOLEAN, defaultValue: true, field: 'is_active' },
 }, {
-    tableName: 'medicines',
+    tableName  : 'medicines',
+    underscored: true,
     getterMethods: {
         availableStock() { return Math.max(0, (this.stock || 0) - (this.lockedStock || 0)); }
     }
@@ -173,7 +175,8 @@ const Order = sequelize.define('Order', {
     notes           : { type: DataTypes.TEXT },
     stockLockExpiry : { type: DataTypes.DATE, field: 'stock_lock_expiry' },
 }, {
-    tableName: 'orders',
+    tableName  : 'orders',
+    underscored: true,
     hooks: {
         beforeCreate: async (order) => {
             if (!order.orderNumber) {
@@ -222,7 +225,7 @@ const Payment = sequelize.define('Payment', {
     xenditPaymentUrl    : { type: DataTypes.STRING(500), field: 'xendit_payment_url'  },
     paidAt              : { type: DataTypes.DATE,        field: 'paid_at'             },
     expiredAt           : { type: DataTypes.DATE,        field: 'expired_at'          },
-}, { tableName: 'payments' });
+}, { tableName: 'payments', underscored: true });
 
 // ============================================================
 // ASOSIASI
@@ -237,7 +240,7 @@ const DoctorSchedule = sequelize.define('DoctorSchedule', {
     startTime  : { type: DataTypes.TIME, allowNull: false, field: 'start_time' },
     endTime    : { type: DataTypes.TIME, allowNull: false, field: 'end_time'   },
     isAvailable: { type: DataTypes.BOOLEAN, defaultValue: true, field: 'is_available' },
-}, { tableName: 'doctor_schedules', updatedAt: false });
+}, { tableName: 'doctor_schedules', underscored: true, updatedAt: false });
 
 Doctor.hasMany(DoctorSchedule, { foreignKey: 'doctorId', as: 'schedules' });
 DoctorSchedule.belongsTo(Doctor, { foreignKey: 'doctorId' });

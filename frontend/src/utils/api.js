@@ -22,12 +22,17 @@ api.interceptors.request.use((config) => {
 });
 
 // Interceptor: handle 401 global (token expired)
+// ONLY redirect to /login if the request had a token (real session expiry).
+// If no token was sent, the user is a guest — do NOT force redirect.
 api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = '/login';
+            const hadToken = !!error.config?.headers?.Authorization;
+            if (hadToken) {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }

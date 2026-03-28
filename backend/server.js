@@ -29,6 +29,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// ── Hybrid Populate Middleware ────────────────────────────────────────────────
+const { hybridPopulateMiddleware } = require('./utils/hybridPopulateInterceptor');
+app.use(hybridPopulateMiddleware);
+
 // ── MongoDB ──────────────────────────────────────────────────────────────────
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/klinik-ipb')
   .then(() => console.log('✅ MongoDB Connected'))

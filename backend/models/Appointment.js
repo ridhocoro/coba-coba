@@ -15,8 +15,8 @@ const mongoose = require('mongoose');
 
 const appointmentSchema = new mongoose.Schema({
     // ── Relasi ────────────────────────────────────────────────────
-    userId   : { type: mongoose.Schema.Types.ObjectId, ref: 'User',   required: true },
-    doctorId : { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
+    userId   : { type: String, ref: 'User',   required: true },
+    doctorId : { type: String, ref: 'Doctor', required: true },
 
     // ── Waktu ─────────────────────────────────────────────────────
     appointmentDate : { type: Date,   required: true }, // UTC midnight tanggal janji

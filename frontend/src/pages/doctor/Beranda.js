@@ -181,8 +181,8 @@ const SectionBeranda = () => {
         { label: 'Janji Temu Upcoming',        val: stats.apptUpcoming,  icon: '📅', color: '#0891b2', bg: '#ecfeff' },
         { label: 'Janji Temu Dibatalkan',      val: stats.apptCancelled, icon: '❌', color: '#b45309', bg: '#fffbeb' },
         {
-            label: `⭐ ${stats.rating?.toFixed(1) || '0.0'} (${stats.totalReviews} review)`,
-            val: stats.rating?.toFixed(1) || '—', icon: '⭐', color: '#ca8a04', bg: '#fefce8', isRating: true,
+            label: `⭐ ${Number(stats.rating || 0).toFixed(1)} (${stats.totalReviews} review)`,
+            val: Number(stats.rating || 0).toFixed(1), icon: '⭐', color: '#ca8a04', bg: '#fefce8', isRating: true,
         },
     ] : [];
 

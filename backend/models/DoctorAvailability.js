@@ -15,7 +15,7 @@ const ALLOWED_SLOTS = ['08:30','09:30','10:30','11:30','13:30','14:30','15:30'];
 
 const doctorAvailabilitySchema = new mongoose.Schema({
     doctorId: {
-        type:     mongoose.Schema.Types.ObjectId,
+        type:     String,       // UUID dari MySQL — bukan ObjectId
         ref:      'Doctor',
         required: true,
         unique:   true,
@@ -55,9 +55,21 @@ doctorAvailabilitySchema.statics.ALLOWED_SLOTS = ALLOWED_SLOTS;
  * Kembalikan slot aktif untuk hari tertentu (1–6).
  */
 doctorAvailabilitySchema.methods.getSlotsForDay = function (dayOfWeek) {
-    const key  = String(dayOfWeek);
+    const key   = String(dayOfWeek);
     const slots = this.schedule?.get ? this.schedule.get(key) : (this.schedule?.[key] || []);
     return (slots || []).filter(s => ALLOWED_SLOTS.includes(s));
+};
+
+/**
+ * Kembalikan semua slot aktif dari seluruh hari (flatten).
+ * Contoh hasil: [ { day: 1, slot: '08:30' }, { day: 1, slot: '09:30' }, ... ]
+ */
+doctorAvailabilitySchema.methods.getAllActiveSlots = function () {
+    const all = [];
+    for (let d = 1; d <= 6; d++) {
+        this.getSlotsForDay(d).forEach(s => all.push({ day: d, slot: s }));
+    }
+    return all;
 };
 
 /**
