@@ -222,7 +222,7 @@ router.get('/doctors-with-slots', async (req, res) => {
         const availList = await AppointmentAvailability.find({ isActive: true });
         const populated = await populateFromMySQL(
             availList.map(a => a.toObject()),
-            'doctorId', 'Doctor', 'name specialization photo rating isActive'
+            'doctorId', 'Doctor', 'name specialization photo rating experience isActive'
         );
 
         const doctors = availList
@@ -1098,6 +1098,61 @@ router.get('/:id', auth, async (req, res) => {
         res.json({ success: true, appointment: appt });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
+    }
+});
+// ── POST /:id/rating — Memberikan rating janji temu ──────────────────────────
+router.post('/:id/rating', auth, async (req, res) => {
+    try {
+        const { rating } = req.body;
+        
+        // Validasi input rating (harus 1 sampai 5)
+        if (!rating || rating < 1 || rating > 5) {
+            return res.status(400).json({ message: 'Rating harus berupa angka antara 1 dan 5' });
+        }
+
+        // Cari appointment di MongoDB
+        const appointment = await Appointment.findById(req.params.id);
+        if (!appointment) return res.status(404).json({ message: 'Janji tidak ditemukan' });
+
+        // Pastikan hanya pasien yang bersangkutan yang bisa memberi rating
+        if (appointment.userId.toString() !== req.userId) {
+            return res.status(403).json({ message: 'Akses ditolak' });
+        }
+
+        // Pastikan statusnya valid untuk diberi rating
+        const allowedStatus = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'];
+        if (!allowedStatus.includes(appointment.status)) {
+            return res.status(400).json({ message: 'Janji temu ini belum bisa diberikan rating' });
+        }
+
+        // Pastikan belum pernah diberi rating sebelumnya
+        if (appointment.rating) {
+            return res.status(400).json({ message: 'Anda sudah memberikan rating untuk janji temu ini' });
+        }
+
+        // 1. Simpan rating ke dokumen Appointment
+        appointment.rating = rating;
+        await appointment.save();
+
+        // 2. Update rata-rata rating & total ulasan Dokter di MySQL
+        const doc = await Doctor.findByPk(appointment.doctorId);
+        if (doc) {
+            const currentRating = parseFloat(doc.rating) || 0;
+            const currentTotalReviews = parseInt(doc.totalReviews) || 0;
+            
+            const newTotalReviews = currentTotalReviews + 1;
+            // Rumus incremental average
+            const newRating = ((currentRating * currentTotalReviews) + rating) / newTotalReviews;
+
+            doc.rating = newRating.toFixed(2); // Simpan 2 angka desimal
+            doc.totalReviews = newTotalReviews;
+            await doc.save();
+        }
+
+        res.json({ success: true, message: 'Rating berhasil disimpan', appointment });
+    } catch (err) {
+        console.error('[POST /appointments/:id/rating]', err);
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 

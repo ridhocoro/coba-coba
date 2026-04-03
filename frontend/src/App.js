@@ -24,7 +24,6 @@ import Consultations from './pages/Consultations';
 import ConsultationChat from './pages/Consultations/ConsultationChat';
 import Pharmacy from './pages/Pharmacy';
 import PaymentHistory from './pages/PaymentHistory';
-import UserDashboard from './pages/user/Dashboard';
 import Profile from './pages/user/Profile';
 import BookingSlot from './pages/user/BookingSlot';
 import PaymentResult from './pages/user/PaymentResult';
@@ -49,7 +48,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     if (allowedRoles && !allowedRoles.includes(user.role)) {
         if (user.role === 'admin')  return <Navigate to="/admin" />;
         if (user.role === 'doctor') return <Navigate to="/doctor" />;
-        return <Navigate to="/dashboard" />;
+        return <Navigate to="/" />;
     }
     return children;
 };
@@ -61,15 +60,6 @@ const HomeRouter = () => {
     if (user?.role === 'admin')  return <Navigate to="/admin" replace />;
     if (user?.role === 'doctor') return <Navigate to="/doctor" replace />;
     return <Home />;
-};
-
-// ─── Dashboard redirect ───────────────────────────────────────────────────────
-const DashboardRouter = () => {
-    const { user } = useAuth();
-    if (!user) return <Navigate to="/login" />;
-    if (user.role === 'admin')  return <Navigate to="/admin" />;
-    if (user.role === 'doctor') return <Navigate to="/doctor" />;
-    return <UserDashboard />;
 };
 
 // ─── App content ──────────────────────────────────────────────────────────────
@@ -99,8 +89,7 @@ function AppContent() {
                     <Route path="/health-check/calories"    element={<CalorieCalculator />} />
                     <Route path="/health-check/blood-pressure" element={<BloodPressureChecker />} />
 
-                    {/* ===== DASHBOARD ===== */}
-                    <Route path="/dashboard" element={<ProtectedRoute><DashboardRouter /></ProtectedRoute>} />
+                    {/* ===== USER PROFILE ===== */}
                     <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
                     {/* ===== USER ===== */}

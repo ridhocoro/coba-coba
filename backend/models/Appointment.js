@@ -91,6 +91,9 @@ const appointmentSchema = new mongoose.Schema({
     // ── Reminder ─────────────────────────────────────────────────
     reminderSent : { type: Boolean, default: false },
 
+    // ── Rating ───────────────────────────────────────────────────
+    rating: { type: Number },
+
     createdAt : { type: Date, default: Date.now },
 });
 

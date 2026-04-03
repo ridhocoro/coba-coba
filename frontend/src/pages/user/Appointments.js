@@ -1,9 +1,5 @@
 /**
  * frontend/src/pages/user/Appointments.js
- * Updated:
- * - Hapus fitur refund (post-cancel = reschedule only)
- * - Rating tanpa komentar (hanya bintang)
- * - Tampilkan tahun pengalaman di bawah rating bintang pada card dokter
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
@@ -149,15 +145,14 @@ const RatingModal = ({ appointmentId, doctorName, onClose, onSuccess }) => {
 };
 
 // ── ApptCard ──────────────────────────────────────────────────────────────────
-const ApptCard = ({ appt, onCancel, onReschedule, onRate, onPostCancel, showActions }) => {
+const ApptCard = ({ appt, onCancel, onReschedule, onRate, showActions }) => {
     const c = STATUS_CFG[appt.status] || { label: appt.status, color: '#6b7280', bg: '#f3f4f6' };
     const canAct         = appt.status === 'scheduled';
     const showDeadline   = appt.status === 'scheduled' && appt.scheduledAt;
     const canActDeadline = showDeadline && canCancelOrReschedule(appt.scheduledAt);
-    const canRate        = appt.status === 'completed' && !appt.rating;
-    // Post-cancel: hanya reschedule, tanpa refund
-    const needsPostCancel = ['doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(appt.status)
-        && !appt.postCancelChoice;
+    
+    // Rating terbuka untuk Selesai dan pembatalan sepihak (dokter/admin/no show)
+    const canRate = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(appt.status) && !appt.rating;
 
     return (
         <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e5e7eb', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -269,13 +264,6 @@ const ApptCard = ({ appt, onCancel, onReschedule, onRate, onPostCancel, showActi
                         ⭐ Beri Rating
                     </button>
                 )}
-                {/* Post-cancel: hanya reschedule */}
-                {needsPostCancel && onPostCancel && (
-                    <button onClick={onPostCancel}
-                        style={{ background: 'linear-gradient(135deg,#1d4ed8,#2563eb)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                        🔄 Reschedule Ulang
-                    </button>
-                )}
             </div>
         </div>
     );
@@ -323,9 +311,6 @@ const Appointments = () => {
     const [resSlots, setResSlots] = useState([]);
     const [rescheduling, setRescheduling] = useState(false);
 
-    // Post-cancel reschedule modal (no refund)
-    const [postCancelModal, setPostCancelModal]         = useState(null);
-    const [postCancelProcessing, setPostCancelProcessing] = useState(false);
 
     // ── loadData ──────────────────────────────────────────────────────────────
     const loadData = useCallback(async () => {
@@ -375,7 +360,15 @@ const Appointments = () => {
             query: { userId: user.id },
         });
         sock.emit('join-user', user.id);
+        
         sock.on('new-notification', (n) => {
+            // Notifikasi Batal, Selesai, Dikonfirmasi
+            if (n.type === 'appointment_cancelled') {
+                toast.error(n.message || 'Janji temu dibatalkan', { icon: '🚫' });
+            } else if (n.message) {
+                toast.success(n.message);
+            }
+
             if (['appointment_confirmed', 'appointment_cancelled', 'appointment_completed'].includes(n.type)) {
                 loadData();
             }
@@ -495,29 +488,13 @@ const Appointments = () => {
         }
     };
 
-    // Post-cancel: langsung reschedule, tanpa pilihan refund
-    const handlePostCancelReschedule = async () => {
-        if (!postCancelModal) return;
-        setPostCancelProcessing(true);
-        try {
-            const did = postCancelModal.doctorId?._id || postCancelModal.doctorId;
-            navigate(`/appointments/book/${did}?rescheduleId=${postCancelModal._id}`);
-        } catch {
-            toast.error('Gagal memproses reschedule');
-        } finally {
-            setPostCancelProcessing(false);
-        }
-    };
-
     // ── Derived ───────────────────────────────────────────────────────────────
+    
+    // Status aktif yang tampil di tab Janji Aktif
     const activeAppts = user ? appointments.filter(a => ['scheduled', 'checked_in'].includes(a.status)) : [];
-    const needsAction = user ? appointments.filter(a =>
-        ['doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(a.status) && !a.postCancelChoice
-    ) : [];
-    const pastAppts = user ? appointments.filter(a =>
-        !['scheduled', 'checked_in'].includes(a.status) &&
-        !needsAction.find(n => n._id === a._id)
-    ) : [];
+    
+    // Status selain aktif masuk ke tab Riwayat & Rekam Medis
+    const pastAppts = user ? appointments.filter(a => !['scheduled', 'checked_in'].includes(a.status)) : [];
 
     const groupedBookSlots = groupByDate(slots);
     const bookDates        = Object.keys(groupedBookSlots).sort();
@@ -570,30 +547,9 @@ const Appointments = () => {
                     {/* ── TAB 1: JANJI AKTIF ── */}
                     {user && activeTab === 'aktif' && (
                         <div>
-                            {/* Perlu tindakan (reschedule only) */}
-                            {needsAction.length > 0 && (
-                                <div style={{ marginBottom: 24 }}>
-                                    <h5 style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 }}>
-                                        ⚠️ Perlu Tindakan ({needsAction.length})
-                                    </h5>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                                        {needsAction.map(a => (
-                                            <ApptCard key={a._id} appt={a}
-                                                showActions={false}
-                                                onRate={() => setRatingModal({ id: a._id, doctorName: a.doctorId?.name })}
-                                                onPostCancel={() => setPostCancelModal(a)}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
                             {/* Aktif */}
                             {activeAppts.length > 0 && (
                                 <div>
-                                    <h5 style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 }}>
-                                        ⚡ Aktif ({activeAppts.length})
-                                    </h5>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
                                         {activeAppts.map(a => (
                                             <ApptCard key={a._id} appt={a}
@@ -607,7 +563,7 @@ const Appointments = () => {
                                 </div>
                             )}
 
-                            {needsAction.length === 0 && activeAppts.length === 0 && (
+                            {activeAppts.length === 0 && (
                                 <Card>
                                     <div style={{ textAlign: 'center', padding: '40px 0' }}>
                                         <div style={{ fontSize: 40, marginBottom: 12 }}>📅</div>
@@ -944,38 +900,6 @@ const Appointments = () => {
                             }}>
                             {rescheduling ? 'Memproses...' : 'Simpan Perubahan'}
                         </button>
-                    </div>
-                </Modal>
-            )}
-
-            {/* Modal Post-Cancel — Reschedule Only (tanpa refund) */}
-            {postCancelModal && (
-                <Modal
-                    title={postCancelModal.status === 'doctor_no_show' ? '😔 Dokter Tidak Hadir' : '🚫 Janji Dibatalkan'}
-                    onClose={() => setPostCancelModal(null)}>
-                    <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                        <div style={{ fontSize: 48, marginBottom: 16 }}>🔄</div>
-                        <p style={{ fontSize: 14, color: '#374151', marginBottom: 8, lineHeight: 1.6 }}>
-                            Maaf, janji temu Anda dengan <strong>dr. {postCancelModal.doctorId?.name}</strong> tidak dapat dilanjutkan.
-                        </p>
-                        <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>
-                            Anda dapat melakukan reschedule untuk memilih jadwal baru dengan dokter yang sama tanpa biaya tambahan.
-                        </p>
-                        <div style={{ display: 'flex', gap: 10 }}>
-                            <button onClick={() => setPostCancelModal(null)}
-                                style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', color: '#6b7280', fontWeight: 600, cursor: 'pointer' }}>
-                                Nanti
-                            </button>
-                            <button onClick={handlePostCancelReschedule} disabled={postCancelProcessing}
-                                style={{
-                                    flex: 2, padding: 12, borderRadius: 8, border: 'none',
-                                    background: 'linear-gradient(135deg,#1d4ed8,#2563eb)',
-                                    color: '#fff', fontWeight: 700, cursor: 'pointer',
-                                    opacity: postCancelProcessing ? 0.6 : 1,
-                                }}>
-                                {postCancelProcessing ? 'Memproses...' : 'Pilih Jadwal Baru →'}
-                            </button>
-                        </div>
                     </div>
                 </Modal>
             )}
