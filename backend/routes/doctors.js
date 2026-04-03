@@ -2,22 +2,22 @@
  * routes/doctors.js
  *
  * Endpoint dokter:
- *   GET  /my/profile        → profil dokter yang login
- *   PUT  /my/profile        → update profil sendiri
- *   POST /my/photo          → upload foto profil
- *   GET  /my/stats          → statistik dashboard
- *   GET  /my/schedule-today → jadwal gabungan hari ini
- *   PUT  /my/settings       → update pengaturan konsultasi (dokter)
- *   POST /admin/link-user   → hubungkan dokter ke akun user (admin)
- *   GET  /                  → semua dokter aktif (public)
- *   GET  /:id/schedule      → jadwal dokter (public)
- *   GET  /:id               → detail dokter (public)
- *   POST /                  → tambah dokter (admin)
- *   PUT  /:id               → update dokter (admin)
- *   PUT  /:id/schedule      → update jadwal (admin)
- *   PUT  /:id/settings      → update pengaturan konsultasi (admin)
- *   PUT  /:id/online-status → toggle online/offline (admin)
- *   DELETE /:id             → nonaktifkan dokter (admin)
+ * GET  /my/profile        → profil dokter yang login
+ * PUT  /my/profile        → update profil sendiri
+ * POST /my/photo          → upload foto profil
+ * GET  /my/stats          → statistik dashboard
+ * GET  /my/schedule-today → jadwal gabungan hari ini
+ * PUT  /my/settings       → update pengaturan konsultasi (dokter)
+ * POST /admin/link-user   → hubungkan dokter ke akun user (admin)
+ * GET  /                  → semua dokter aktif (public)
+ * GET  /:id/schedule      → jadwal dokter (public)
+ * GET  /:id               → detail dokter (public)
+ * POST /                  → tambah dokter (admin)
+ * PUT  /:id               → update dokter (admin)
+ * PUT  /:id/schedule      → update jadwal (admin)
+ * PUT  /:id/settings      → update pengaturan konsultasi (admin)
+ * PUT  /:id/online-status → toggle online/offline (admin)
+ * DELETE /:id             → nonaktifkan dokter (admin)
  *
  * Dependency: npm install multer
  */
@@ -255,8 +255,8 @@ router.post('/my/signature', auth, doctorAuth, photoUpload.single('signature'), 
  * Statistik untuk dashboard beranda.
  *
  * Response menyertakan DUA format sekaligus:
- *   - nested  (appointments.today, consultations.today, dst.)
- *   - flat    (apptToday, consToday, dst.) — dipakai DoctorDashboard.jsx
+ * - nested  (appointments.today, consultations.today, dst.)
+ * - flat    (apptToday, consToday, dst.) — dipakai DoctorDashboard.jsx
  */
 router.get('/my/stats', auth, doctorAuth, async (req, res) => {
     try {
@@ -524,17 +524,47 @@ router.get('/', async (req, res) => {
                 { model: DoctorSchedule, as: 'schedules' }
             ]
         });
+
+        // Ambil data jadwal konsultasi online dari MongoDB
+        const DoctorAvailability = require('../models/DoctorAvailability');
+        const availList = await DoctorAvailability.find({ isActive: true });
+        const availMap = {};
+        
+        // Cek aman: pastikan doctorId ada
+        availList.forEach(a => { 
+            if (a && a.doctorId) {
+                availMap[a.doctorId.toString()] = a; 
+            }
+        });
+
         const doctors = docsRecords.map(d => {
             const doc = d.toJSON();
             doc.userId = doc.user;
             if (doc.userId) doc.userId.id = doc.user.id;
-            doc.availableDays = buildAvailableDays(doc.schedules);
+            
+            // Cek aman untuk fungsi buildAvailableDays
+            if (typeof buildAvailableDays === 'function') {
+                doc.availableDays = buildAvailableDays(doc.schedules);
+            } else {
+                doc.availableDays = [];
+            }
+            
+            // Cek ketersediaan di MongoDB untuk status offline
+            const docIdStr = doc.id ? doc.id.toString() : '';
+            const avail = availMap[docIdStr];
+            
+            let isOffline = true;
+            if (avail && typeof avail.isWeekActive === 'function') {
+                isOffline = !avail.isWeekActive();
+            }
+            doc.isOffline = isOffline; // ← Flag isOffline
+            
             return doc;
         });
         res.json(doctors);
     } catch (error) {
         console.error('GET /doctors error:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 

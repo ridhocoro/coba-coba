@@ -3,6 +3,7 @@
  * Konstanta, helper, dan komponen UI yang digunakan bersama
  * oleh semua section di Doctor Dashboard.
  */
+import React from 'react';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 export const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
@@ -18,7 +19,16 @@ export const toMin  = (t) => { const [h, m] = (t || '00:00').split(':').map(Numb
 export const toHHMM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 // ─── Schedule ─────────────────────────────────────────────────────────────────
-export const CONS_SLOTS = ['08:30','09:30','10:30','11:30','13:30','14:30','15:30'];
+// Generator untuk slot 00:30 s.d 23:30 (Konsultasi Online)
+const generateConsSlots = () => {
+    const slots = [];
+    for (let i = 0; i <= 23; i++) {
+        slots.push(`${String(i).padStart(2, '0')}:30`);
+    }
+    return slots;
+};
+
+export const CONS_SLOTS = generateConsSlots();
 export const APPT_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00'];
 
 export const DAYS_INFO = [
@@ -58,7 +68,6 @@ export const APPT_STATUS = {
 };
 
 // ─── Shared UI Primitives ─────────────────────────────────────────────────────
-import React from 'react';
 
 export const colors = {
     primary : '#2563eb', primaryDark: '#1d4ed8',

@@ -1,9 +1,5 @@
 /**
  * routes/appointments.js — Janji Temu Offline
- *
- * FIX-3: Tambah alias route GET /my-appointments → /my agar frontend tidak 500
- * FIX-4: Hapus panggilan .toObject() pada dokumen hasil .lean()
- * FIX-5: Hapus .lean() pada query AppointmentAvailability yang butuh method instance
  */
 
 const express  = require('express');
@@ -219,36 +215,62 @@ router.put('/doctor/availability', auth, doctorAuth, async (req, res) => {
 
 router.get('/doctors-with-slots', async (req, res) => {
     try {
-        const availList = await AppointmentAvailability.find({ isActive: true });
-        const populated = await populateFromMySQL(
-            availList.map(a => a.toObject()),
-            'doctorId', 'Doctor', 'name specialization photo rating experience isActive'
-        );
+        // 1. Ambil SEMUA dokter yang aktif dari MySQL
+        const activeDoctors = await Doctor.findAll({
+            where: { isActive: true },
+            attributes: ['id', 'name', 'specialization', 'photo', 'rating', 'experience', 'isActive', 'consultationFee'],
+            include: [{ model: User, as: 'user', attributes: ['name'] }]
+        });
 
-        const doctors = availList
-            .map((a, i) => ({ avail: a, doctorData: populated[i]?.doctorId }))
-            .filter(({ avail, doctorData }) => doctorData && doctorData.isActive && avail.isWeekActive())
-            .map(({ avail, doctorData }) => {
-                const scheduleObj = {};
-                for (let d = 1; d <= 6; d++) scheduleObj[String(d)] = avail.getSlotsForDay(d);
-                return {
-                    doctor: doctorData,
-                    availability: {
-                        schedule: scheduleObj,
-                        allowedSlots: APPT_ALLOWED_SLOTS,
-                        weekStart: avail.weekStart,
-                        weekEnd: avail.weekEnd,
-                    },
-                };
-            });
+        // 2. Ambil ketersediaan jadwal mingguan dari MongoDB
+        const availList = await AppointmentAvailability.find({ isActive: true });
+        const availMap = {};
+        
+        // Cek aman: pastikan doctorId ada sebelum diubah ke string
+        availList.forEach(a => { 
+            if (a && a.doctorId) {
+                availMap[a.doctorId.toString()] = a; 
+            }
+        });
+
+        // 3. Gabungkan data dan beri penanda (flag) isOffline
+        const doctors = activeDoctors.map(docRecord => {
+            const docData = docRecord.toJSON();
+            const docIdStr = docData.id ? docData.id.toString() : '';
+            const avail = availMap[docIdStr];
+            
+            // Dokter dianggap offline jika jadwal mingguannya belum dibuat/expired
+            let isOffline = true;
+            if (avail && typeof avail.isWeekActive === 'function') {
+                isOffline = !avail.isWeekActive();
+            }
+
+            const scheduleObj = {};
+            if (avail && typeof avail.getSlotsForDay === 'function') {
+                for (let d = 1; d <= 6; d++) {
+                    scheduleObj[String(d)] = avail.getSlotsForDay(d);
+                }
+            }
+
+            return {
+                doctor: docData,
+                availability: {
+                    schedule: scheduleObj,
+                    allowedSlots: typeof APPT_ALLOWED_SLOTS !== 'undefined' ? APPT_ALLOWED_SLOTS : [],
+                    weekStart: avail ? avail.weekStart : null,
+                    weekEnd: avail ? avail.weekEnd : null,
+                },
+                isOffline // ← Flag yang digunakan oleh Frontend
+            };
+        });
 
         res.json({ success: true, doctors });
     } catch (err) {
+        console.error('[GET /doctors-with-slots] Error:', err);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// PERBAIKAN BESAR: Get Slots kini membaca seluruh minggu sekaligus
 router.get('/slots/:doctorId', async (req, res) => {
     try {
         const { doctorId } = req.params;

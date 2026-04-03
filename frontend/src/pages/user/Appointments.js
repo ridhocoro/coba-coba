@@ -602,12 +602,22 @@ const Appointments = () => {
                                 </Card>
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+                                    {/* ── MODIFIKASI: Penambahan isOffline pada Janji Temu ── */}
                                     {doctors.map(d => {
                                         const doc = d.doctor || d;
                                         const docId = doc.id || doc._id;
                                         const rating = doc.rating;
+                                        
+                                        // Pengecekan offline: periksa availableDays ATAU schedules dari API
+                                        const isOffline = d.isOffline === true;
+
                                         return (
-                                            <div key={docId} style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
+                                            <div key={docId} style={{ 
+                                                background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb', 
+                                                display: 'flex', flexDirection: 'column',
+                                                opacity: isOffline ? 0.6 : 1, filter: isOffline ? 'grayscale(40%)' : 'none',
+                                                transition: 'all 0.2s'
+                                            }}>
                                                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
                                                     {/* Foto dengan fallback emoji */}
                                                     <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>
@@ -618,8 +628,18 @@ const Appointments = () => {
                                                     <div>
                                                         <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {doc.name}</div>
                                                         <div style={{ fontSize: 13, color: '#6b7280' }}>{doc.specialization}</div>
+                                                        
+                                                        {/* Badge Offline / Jadwal Belum Tersedia */}
+                                                        {isOffline && (
+                                                            <div style={{ marginTop: 4 }}>
+                                                                <span style={{ fontSize: 10, background: '#fecaca', color: '#b91c1c', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
+                                                                    Jadwal Belum Tersedia
+                                                                </span>
+                                                            </div>
+                                                        )}
+
                                                         {/* Rating angka (misal ★ 4.7) */}
-                                                        {rating != null && (
+                                                        {rating != null && !isOffline && (
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                                                                 <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>★</span>
                                                                 <span style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>
@@ -631,7 +651,7 @@ const Appointments = () => {
                                                             </div>
                                                         )}
                                                         {/* Tahun pengalaman di bawah rating */}
-                                                        {doc.experience != null && (
+                                                        {doc.experience != null && !isOffline && (
                                                             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
                                                                 {doc.experience} tahun pengalaman
                                                             </div>
@@ -639,16 +659,25 @@ const Appointments = () => {
                                                     </div>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'auto' }}>
-                                                    <button onClick={() => handleBookStart(d)}
-                                                        style={{ padding: '8px 16px', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'background .2s' }}
-                                                        onMouseEnter={e => e.target.style.background = '#dbeafe'}
-                                                        onMouseLeave={e => e.target.style.background = '#eff6ff'}>
-                                                        Pilih Jadwal
+                                                    <button 
+                                                        disabled={isOffline}
+                                                        onClick={() => !isOffline && handleBookStart(d)}
+                                                        style={{ 
+                                                            padding: '8px 16px', 
+                                                            background: isOffline ? '#f3f4f6' : '#eff6ff', 
+                                                            color: isOffline ? '#9ca3af' : '#2563eb', 
+                                                            border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, 
+                                                            cursor: isOffline ? 'not-allowed' : 'pointer', transition: 'background .2s' 
+                                                        }}
+                                                        onMouseEnter={e => { if(!isOffline) e.target.style.background = '#dbeafe' }}
+                                                        onMouseLeave={e => { if(!isOffline) e.target.style.background = '#eff6ff' }}>
+                                                        {isOffline ? 'Offline' : 'Pilih Jadwal'}
                                                     </button>
                                                 </div>
                                             </div>
                                         );
                                     })}
+                                    {/* ── AKHIR MODIFIKASI ── */}
                                 </div>
                             )}
                         </div>

@@ -2,7 +2,7 @@
  * DoctorAvailability — jadwal konsultasi online per hari
  *
  * Slot fixed yang tersedia:
- *   08:30  09:30  10:30  11:30  13:30  14:30  15:30
+ * Mulai dari 00:30 hingga 23:30 (interval 1 jam).
  *
  * Dokter memilih per hari slot mana yang aktif (Senin–Sabtu, key '1'–'6').
  * Jadwal berlaku 1 minggu: dari Senin terdekat ke depan sampai Sabtu minggu itu.
@@ -10,8 +10,18 @@
  */
 const mongoose = require('mongoose');
 
-// Slot yang diizinkan untuk konsultasi online (FIXED — tidak bisa ditambah)
-const ALLOWED_SLOTS = ['08:30','09:30','10:30','11:30','13:30','14:30','15:30'];
+// Fungsi untuk meng-generate slot dari jam 00:30 hingga 23:30
+const generateSlots = () => {
+    const slots = [];
+    for (let i = 0; i <= 23; i++) {
+        const hour = String(i).padStart(2, '0');
+        slots.push(`${hour}:30`);
+    }
+    return slots;
+};
+
+// Slot yang diizinkan untuk konsultasi online (sekarang 00:30 - 23:30)
+const ALLOWED_SLOTS = generateSlots();
 
 const doctorAvailabilitySchema = new mongoose.Schema({
     doctorId: {
