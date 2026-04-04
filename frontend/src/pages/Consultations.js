@@ -117,6 +117,139 @@ const Countdown = ({ deadline, onExpired }) => {
     );
 };
 
+// ── Helper: cek apakah dokter konsultasi sedang online berdasarkan jam WIB ─────
+// availableDays: [{ day: 'Senin', slots: [{ startTime: '08:00', endTime: '10:00', isAvailable }] }]
+const DAY_NAME_TO_DOW = { 'Minggu':0,'Senin':1,'Selasa':2,'Rabu':3,'Kamis':4,'Jumat':5,'Sabtu':6 };
+
+const isConsultDocOnlineNow = (doc) => {
+    try {
+        const availableDays = doc?.availableDays;
+        if (!availableDays || !availableDays.length) return false;
+
+        const nowWIB  = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const dow     = nowWIB.getUTCDay();
+        const nowMins = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
+
+        const todayEntry = availableDays.find(d => DAY_NAME_TO_DOW[d.day] === dow);
+        if (!todayEntry) return false;
+
+        return (todayEntry.slots || []).some(slot => {
+            if (slot.isAvailable === false) return false;
+            const [sh, sm] = slot.startTime.split(':').map(Number);
+            const [eh, em] = slot.endTime.split(':').map(Number);
+            const startMin = sh * 60 + sm;
+            const endMin   = eh * 60 + em;
+            return nowMins >= startMin && nowMins < endMin;
+        });
+    } catch { return false; }
+};
+
+// ── Animasi popup ─────────────────────────────────────────────────────────────
+const POPUP_STYLE = `
+@keyframes cons-backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@keyframes cons-card-in {
+    from { opacity: 0; transform: translateY(28px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.cons-popup-backdrop { animation: cons-backdrop-in 0.22s ease forwards; }
+.cons-popup-card     { animation: cons-card-in     0.28s cubic-bezier(.22,.68,0,1.2) forwards; }
+`;
+
+// ── DoctorProfileModal (Konsultasi) ──────────────────────────────────────────
+const DoctorProfileModal = ({ doc, onClose }) => {
+    const online = isConsultDocOnlineNow(doc);
+    const isOffline = doc?.isOffline === true;
+    const showOnline = !isOffline && online;
+
+    return (
+        <>
+            <style>{POPUP_STYLE}</style>
+            <div className="cons-popup-backdrop"
+                 style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999,
+                           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+                 onClick={onClose}>
+            <div className="cons-popup-card"
+                 style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400,
+                           maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,.25)' }}
+                 onClick={e => e.stopPropagation()}>
+
+                {/* Header foto */}
+                <div style={{ position: 'relative', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)',
+                              borderRadius: '20px 20px 0 0', padding: '32px 24px 24px', textAlign: 'center' }}>
+                    <button onClick={onClose}
+                        style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(255,255,255,0.8)',
+                                 border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 18,
+                                 cursor: 'pointer', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        ×
+                    </button>
+
+                    {/* Foto besar */}
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                        <div style={{ width: 96, height: 96, borderRadius: '50%', background: '#e5e7eb',
+                                      overflow: 'hidden', margin: '0 auto', border: '4px solid #fff',
+                                      boxShadow: '0 4px 16px rgba(0,0,0,.12)', display: 'flex',
+                                      alignItems: 'center', justifyContent: 'center', fontSize: 42 }}>
+                            {doc?.photo
+                                ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : '👨‍⚕️'}
+                        </div>
+                        {/* Badge online/offline */}
+                        <span style={{
+                            position: 'absolute', bottom: 4, right: 4,
+                            background: showOnline ? '#22c55e' : '#ef4444',
+                            color: '#fff', fontSize: 10, fontWeight: 700,
+                            padding: '2px 7px', borderRadius: 20,
+                            border: '2px solid #fff', whiteSpace: 'nowrap',
+                        }}>
+                            {showOnline ? '● Online' : '● Offline'}
+                        </span>
+                    </div>
+
+                    <div style={{ marginTop: 14 }}>
+                        <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>dr. {doc?.name}</div>
+                        <div style={{ fontSize: 14, color: '#2563eb', fontWeight: 600, marginTop: 4 }}>Dokter {doc?.specialization}</div>
+                    </div>
+                </div>
+
+                {/* Body info */}
+                <div style={{ padding: '20px 24px 28px' }}>
+                    {/* Rating */}
+                    {doc?.rating != null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                            <span style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>★</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>{Number(doc.rating).toFixed(1)}</span>
+                        </div>
+                    )}
+
+                    {/* Pengalaman */}
+                    {doc?.experience != null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                                      background: '#f9fafb', borderRadius: 10, marginBottom: 10 }}>
+                            <span style={{ fontSize: 20 }}>🏥</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>PENGALAMAN</div>
+                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.experience} tahun</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Bio */}
+                    {doc?.bio && (
+                        <div style={{ padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                            <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, marginBottom: 6 }}>TENTANG DOKTER</div>
+                            <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{doc.bio}</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+            </div>
+        </>
+    );
+};
+
 // ── Modal Wrapper ─────────────────────────────────────────────────────────────
 const Modal = ({ children, onClose, title, maxWidth = 480 }) => (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
@@ -297,7 +430,7 @@ const ConsultationCard = ({
                     </div>
                     <div>
                         <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {cons.doctorId?.name || '-'}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>{cons.doctorId?.specialization || 'Umum'}</div>
+                        <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 600 }}>Dokter {cons.doctorId?.specialization || 'Umum'}</div>
                     </div>
                 </div>
                 <div style={{ background: c.bg, color: c.color, padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
@@ -505,6 +638,7 @@ const Consultations = () => {
     const [loading, setLoading]             = useState(true);
 
     const [modalLogin, setModalLogin]   = useState(false);
+    const [doctorProfileModal, setDoctorProfileModal] = useState(null); // doc yang diklik
     const [payModal, setPayModal]       = useState(null);
     const [ratingModal, setRatingModal] = useState(null);
     const [refundModal, setRefundModal] = useState(null);
@@ -841,7 +975,10 @@ const Consultations = () => {
                                                 transition: 'all 0.2s' 
                                             }}>
                                                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
-                                                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>
+                                                    <div onClick={() => setDoctorProfileModal(doc)}
+                                                        style={{ width: 56, height: 56, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+                                                        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(37,99,235,0.18)'; }}
+                                                        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}>
                                                         {doc.photo
                                                             ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                             : '👨‍⚕️'}
@@ -850,7 +987,7 @@ const Consultations = () => {
                                                         <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>
                                                             dr. {doc.name}
                                                         </div>
-                                                        <div style={{ fontSize: 13, color: '#2563eb', marginTop: 2 }}>{doc.specialization}</div>
+                                                        <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600, marginTop: 2 }}>Dokter {doc.specialization}</div>
                                                         
                                                         {/* Badge Offline / Jadwal Belum Tersedia */}
                                                         {isOffline && (
@@ -943,7 +1080,7 @@ const Consultations = () => {
 
             {/* ══ MODAL BOOKING ══ */}
             {modalBook && (
-                <Modal title="📅 Buat Konsultasi Baru" onClose={() => setModalBook(false)}>
+                <Modal title="📅 Buat Konsultasi Baru" onClose={() => setModalBook(false)} maxWidth={560}>
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f3f4f6' }}>
                         <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
                             {selectedDoc?.photo
@@ -952,7 +1089,7 @@ const Consultations = () => {
                         </div>
                         <div>
                             <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {selectedDoc?.name}</div>
-                            <div style={{ fontSize: 13, color: '#6b7280' }}>{selectedDoc?.specialization}</div>
+                            <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>Dokter {selectedDoc?.specialization}</div>
                             <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 700, marginTop: 2 }}>{fmtRupiah(selectedDoc?.consultationFee)}</div>
                         </div>
                     </div>
@@ -984,28 +1121,57 @@ const Consultations = () => {
                         </div>
                     </div>
 
-                    {/* Pills Tanggal */}
+                    {/* Grid Hari Senin–Sabtu */}
                     <div style={{ marginBottom: 16 }}>
-                        <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#374151' }}>Pilih Tanggal</label>
-                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
-                            {loadingSlots ? (
-                                <div style={{ fontSize: 13, color: '#6b7280' }}>Memuat jadwal...</div>
-                            ) : bookDates.length === 0 ? (
-                                <div style={{ fontSize: 13, color: '#ef4444' }}>Tidak ada jadwal tersedia minggu ini.</div>
-                            ) : bookDates.map(d => (
-                                <button key={d} onClick={() => { setBookDate(d); setBookTime(''); setBookSlotUtc(null); }}
-                                    style={{
-                                        padding: '8px 14px', borderRadius: 10, flexShrink: 0,
-                                        border: `1px solid ${bookDate === d ? '#2563eb' : '#e5e7eb'}`,
-                                        background: bookDate === d ? '#eff6ff' : '#fff',
-                                        color: bookDate === d ? '#1d4ed8' : '#4b5563',
-                                        fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                                        whiteSpace: 'nowrap', transition: 'all 0.2s'
-                                    }}>
-                                    {fmtDateLabel(d)}
-                                </button>
-                            ))}
-                        </div>
+                        <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#374151' }}>Pilih Hari</label>
+                        {loadingSlots ? (
+                            <div style={{ fontSize: 13, color: '#6b7280' }}>Memuat jadwal...</div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+                                {[
+                                    { label: 'Sen' }, { label: 'Sel' }, { label: 'Rab' },
+                                    { label: 'Kam' }, { label: 'Jum' }, { label: 'Sab' },
+                                ].map(({ label }, i) => {
+                                    const targetDow = i + 1;
+                                    const matchDate = bookDates.find(d => {
+                                        const [y, m, day] = d.split('-');
+                                        const wib = new Date(Date.UTC(+y, +m - 1, +day) + 7 * 60 * 60 * 1000);
+                                        return wib.getUTCDay() === targetDow;
+                                    });
+                                    const isSelected = matchDate && bookDate === matchDate;
+                                    const hasSlot    = !!matchDate;
+                                    const dateNum    = matchDate ? matchDate.slice(8).replace(/^0/, '') : null;
+                                    const monthAbbr  = matchDate ? ['','Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][+matchDate.slice(5,7)] : null;
+                                    return (
+                                        <button key={label}
+                                            disabled={!hasSlot}
+                                            onClick={() => { if (hasSlot) { setBookDate(matchDate); setBookTime(''); setBookSlotUtc(null); } }}
+                                            style={{
+                                                padding: '12px 4px 10px',
+                                                borderRadius: 12,
+                                                textAlign: 'center',
+                                                border: `2px solid ${isSelected ? '#2563eb' : hasSlot ? '#e5e7eb' : '#f3f4f6'}`,
+                                                background: isSelected ? 'linear-gradient(135deg,#eff6ff,#dbeafe)' : hasSlot ? '#fff' : '#f9fafb',
+                                                color: isSelected ? '#1d4ed8' : hasSlot ? '#374151' : '#cbd5e1',
+                                                fontWeight: 700, fontSize: 13,
+                                                cursor: hasSlot ? 'pointer' : 'not-allowed',
+                                                transition: 'all 0.15s',
+                                                boxShadow: isSelected ? '0 2px 8px rgba(37,99,235,0.15)' : 'none',
+                                                lineHeight: 1.3,
+                                            }}>
+                                            <div>{label}</div>
+                                            {hasSlot ? (
+                                                <div style={{ fontSize: 10, fontWeight: 500, color: isSelected ? '#2563eb' : '#9ca3af', marginTop: 3 }}>
+                                                    {dateNum} {monthAbbr}
+                                                </div>
+                                            ) : (
+                                                <div style={{ fontSize: 9, color: '#cbd5e1', marginTop: 3 }}>—</div>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     {/* Grid Waktu */}
@@ -1014,7 +1180,7 @@ const Consultations = () => {
                         {loadingSlots ? (
                             <div style={{ fontSize: 13, color: '#6b7280' }}>Memuat waktu...</div>
                         ) : (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 8 }}>
                                 {(groupedBookSlots[bookDate] || []).length === 0 ? (
                                     <div style={{ fontSize: 13, color: '#6b7280', gridColumn: '1/-1' }}>
                                         {bookDate ? 'Tidak ada slot tersedia di tanggal ini.' : 'Pilih tanggal terlebih dahulu.'}
@@ -1022,16 +1188,21 @@ const Consultations = () => {
                                 ) : (groupedBookSlots[bookDate] || []).map(s => (
                                     <button key={s.startTime} disabled={!s.available} onClick={() => { setBookTime(s.startTime); setBookSlotUtc(s); }}
                                         style={{
-                                            padding: '10px 0', borderRadius: 10, textAlign: 'center',
-                                            border: `1px solid ${bookTime === s.startTime ? '#3b82f6' : s.available ? '#d1d5db' : '#f3f4f6'}`,
-                                            background: bookTime === s.startTime ? '#eff6ff' : s.available ? '#fff' : '#f9fafb',
-                                            color: bookTime === s.startTime ? '#2563eb' : s.available ? '#374151' : '#9ca3af',
-                                            fontWeight: 600, fontSize: 13,
-                                            cursor: s.available ? 'pointer' : 'not-allowed', transition: 'all .2s'
+                                            padding: '10px 4px', borderRadius: 10, textAlign: 'center',
+                                            border: `2px solid ${bookTime === s.startTime ? '#2563eb' : s.available ? '#e5e7eb' : '#f3f4f6'}`,
+                                            background: bookTime === s.startTime ? 'linear-gradient(135deg,#eff6ff,#dbeafe)' : s.available ? '#fff' : '#f9fafb',
+                                            color: bookTime === s.startTime ? '#1d4ed8' : s.available ? '#374151' : '#9ca3af',
+                                            fontWeight: 700, fontSize: 13,
+                                            cursor: s.available ? 'pointer' : 'not-allowed',
+                                            transition: 'all 0.15s',
+                                            boxShadow: bookTime === s.startTime ? '0 2px 8px rgba(37,99,235,0.15)' : 'none',
+                                            lineHeight: 1.3,
                                         }}>
-                                        {s.startTime}
-                                        {!s.available && <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 400 }}>Penuh</div>}
-                                        {s.available && bookTime === s.startTime && <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 400 }}>s/d {s.endTime}</div>}
+                                        <div>{s.startTime}</div>
+                                        <div style={{ fontSize: 9, fontWeight: 500, marginTop: 2,
+                                            color: bookTime === s.startTime ? '#2563eb' : s.available ? '#9ca3af' : '#d1d5db' }}>
+                                            {!s.available ? 'Penuh' : `s/d ${s.endTime}`}
+                                        </div>
                                     </button>
                                 ))}
                             </div>
@@ -1096,6 +1267,14 @@ const Consultations = () => {
                         {booking ? 'Memproses...' : 'Lanjut ke Pembayaran 💳'}
                     </button>
                 </Modal>
+            )}
+
+            {/* Modal Profil Dokter */}
+            {doctorProfileModal && (
+                <DoctorProfileModal
+                    doc={doctorProfileModal}
+                    onClose={() => setDoctorProfileModal(null)}
+                />
             )}
 
             {/* Modal Login */}

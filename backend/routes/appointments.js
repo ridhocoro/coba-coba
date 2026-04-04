@@ -218,7 +218,7 @@ router.get('/doctors-with-slots', async (req, res) => {
         // 1. Ambil SEMUA dokter yang aktif dari MySQL
         const activeDoctors = await Doctor.findAll({
             where: { isActive: true },
-            attributes: ['id', 'name', 'specialization', 'photo', 'rating', 'experience', 'isActive', 'consultationFee'],
+            attributes: ['id', 'name', 'specialization', 'photo', 'rating', 'experience', 'isActive', 'consultationFee', 'bio'],
             include: [{ model: User, as: 'user', attributes: ['name'] }]
         });
 

@@ -35,11 +35,9 @@ const connectMySQL = async () => {
         await sequelize.authenticate();
         console.log('✅ MySQL Connected');
 
-        // Sync models di development saja (bukan production)
-        if (process.env.NODE_ENV === 'development') {
-            await sequelize.sync({ alter: true });
-            console.log('✅ MySQL Models synced');
-        }
+        // CATATAN: sync({ alter: true }) dihapus karena menyebabkan
+        // index menumpuk di MySQL setiap restart server hingga melewati
+        // batas 64 keys. Perubahan skema dilakukan manual via migration.
     } catch (err) {
         console.error('❌ MySQL Connection Error:', err.message);
         process.exit(1);
