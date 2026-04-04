@@ -234,15 +234,61 @@ router.get('/doctors-with-slots', async (req, res) => {
         });
 
         // 3. Gabungkan data dan beri penanda (flag) isOffline
+        // Ambil semua booking aktif minggu ini untuk cek slot penuh
+        const nowUTC = new Date();
+        const allBookings = await Appointment.find({
+            status: { $in: ['scheduled', 'checked_in', 'completed', 'no_show'] },
+        }).select('doctorId appointmentDate appointmentTime').lean();
+
+        // Kelompokkan booking per doctorId
+        const bookingsByDoctor = {};
+        for (const b of allBookings) {
+            const did = b.doctorId ? b.doctorId.toString() : null;
+            if (!did) continue;
+            if (!bookingsByDoctor[did]) bookingsByDoctor[did] = [];
+            bookingsByDoctor[did].push(b);
+        }
+
         const doctors = activeDoctors.map(docRecord => {
             const docData = docRecord.toJSON();
             const docIdStr = docData.id ? docData.id.toString() : '';
             const avail = availMap[docIdStr];
             
-            // Dokter dianggap offline jika jadwal mingguannya belum dibuat/expired
+            // Dokter dianggap offline jika:
+            // 1. Jadwal mingguannya belum dibuat/expired, ATAU
+            // 2. Semua slot yang ada sudah booked/lewat/diblokir
             let isOffline = true;
-            if (avail && typeof avail.isWeekActive === 'function') {
-                isOffline = !avail.isWeekActive();
+            if (avail && typeof avail.isWeekActive === 'function' && avail.isWeekActive()) {
+                // Jadwal masih berlaku — cek apakah masih ada slot available
+                const APPT_CUTOFF_MS = 30 * 60 * 1000;
+                const docBookings = bookingsByDoctor[docIdStr] || [];
+                const bookedSet = new Set(docBookings.map(b => {
+                    const dateKey = new Date(b.appointmentDate.getTime() + WIB_OFFSET).toISOString().slice(0, 10);
+                    return `${dateKey}|${b.appointmentTime}`;
+                }));
+
+                let hasAnyAvailable = false;
+                const msPerDay = 24 * 60 * 60 * 1000;
+                let cursor = new Date(avail.weekStart.getTime());
+
+                while (cursor <= avail.weekEnd && !hasAnyAvailable) {
+                    const cursorWIB = new Date(cursor.getTime() + WIB_OFFSET);
+                    const dow = cursorWIB.getUTCDay();
+                    if (dow !== 0) {
+                        const activeSlots = typeof avail.getSlotsForDay === 'function' ? avail.getSlotsForDay(dow) : [];
+                        const dateStr = cursorWIB.toISOString().slice(0, 10);
+                        for (const slot of activeSlots) {
+                            const [sh, sm] = slot.split(':').map(Number);
+                            const [y, mo, d] = dateStr.split('-').map(Number);
+                            const slotUTC = new Date(Date.UTC(y, mo - 1, d, sh, sm, 0) - WIB_OFFSET);
+                            const isPast = (slotUTC.getTime() - APPT_CUTOFF_MS) <= nowUTC.getTime();
+                            const isBooked = bookedSet.has(`${dateStr}|${slot}`);
+                            if (!isPast && !isBooked) { hasAnyAvailable = true; break; }
+                        }
+                    }
+                    cursor = new Date(cursor.getTime() + msPerDay);
+                }
+                isOffline = !hasAnyAvailable;
             }
 
             const scheduleObj = {};

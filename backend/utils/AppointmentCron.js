@@ -1,33 +1,20 @@
 /**
  * AppointmentCron.js
  *
- * Dijalankan setiap menit. Dua tugas:
- *
- * 1. AUTO NO-SHOW
- *    Appointment status 'scheduled' & scheduledAt + 30 menit sudah lewat
- *    → status: no_show, noShowAt dicatat
- *    → notif ke user & dokter
- *
- * 2. REMINDER H-24 JAM
- *    Appointment status 'scheduled' & belum dikirim reminder
- *    & scheduledAt antara 23–25 jam dari sekarang
- *    → notif ke user
- *    → reminderSent = true
+ * FIX: Appointment.userId & doctorId adalah UUID string dari MySQL —
+ * tidak bisa di-populate via Mongoose (MongoDB expect ObjectId).
+ * Solusi: query .lean() lalu lookup manual ke MySQL dengan findByPk().
  */
 
 const Appointment = require('../models/Appointment');
-const User        = require('../models/User');
-const Doctor      = require('../models/Doctor');
+const { User, Doctor } = require('../models/mysql');
 const { createNotification } = require('./notificationHelper');
 const { waReminderJanjiTemu } = require('./fonnte');
 
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
-const fmtWIB = (d) =>
-    new Date(d.getTime() + WIB_OFFSET)
-        .toISOString().replace('T', ' ').slice(0, 16) + ' WIB';
 
 const fmtTgl = (d) =>
-    new Date(d.getTime() + WIB_OFFSET)
+    new Date(new Date(d).getTime() + WIB_OFFSET)
         .toLocaleDateString('id-ID', {
             day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'
         });
@@ -37,19 +24,16 @@ let _timer = null;
 
 // ── 1. Auto No-Show ────────────────────────────────────────────────────────
 async function runAutoNoShow() {
-    const now        = new Date();
-    const threshold  = new Date(now.getTime() - 30 * 60 * 1000); // -30 menit
+    const now       = new Date();
+    const threshold = new Date(now.getTime() - 30 * 60 * 1000);
 
     try {
         const stale = await Appointment.find({
             status      : 'scheduled',
             scheduledAt : { $lte: threshold },
-        })
-        .populate('userId',   'name')
-        .populate('doctorId', 'name userId');
+        }).lean();
 
         for (const appt of stale) {
-            // Atomic update — cegah double processing
             const updated = await Appointment.findOneAndUpdate(
                 { _id: appt._id, status: 'scheduled' },
                 { $set: { status: 'no_show', noShowAt: now } },
@@ -57,25 +41,30 @@ async function runAutoNoShow() {
             );
             if (!updated) continue;
 
-            console.log(`[AppointmentCron] No-show: ${appt._id} | ${appt.appointmentTime} | ${appt.userId?.name}`);
+            const [user, doctor] = await Promise.all([
+                User.findByPk(appt.userId,    { attributes: ['id', 'name'] }),
+                Doctor.findByPk(appt.doctorId, { attributes: ['id', 'name', 'userId'] }),
+            ]);
 
-            // Notif user
-            await createNotification({
-                userId  : appt.userId._id,
-                type    : 'appointment_reminder',
-                title   : 'Janji Temu: Tidak Hadir',
-                message : `Anda tidak hadir pada janji temu ${fmtTgl(appt.scheduledAt)} pukul ${appt.appointmentTime} WIB. Status tercatat sebagai Tidak Hadir.`,
-                data    : { appointmentId: appt._id },
-                io      : _io,
-            });
+            console.log(`[AppointmentCron] No-show: ${appt._id} | ${appt.appointmentTime} | ${user?.name || appt.userId}`);
 
-            // Notif dokter (via userId dokter)
-            if (appt.doctorId?.userId) {
+            if (user?.id) {
                 await createNotification({
-                    userId  : appt.doctorId.userId,
+                    userId  : user.id,
+                    type    : 'appointment_reminder',
+                    title   : 'Janji Temu: Tidak Hadir',
+                    message : `Anda tidak hadir pada janji temu ${fmtTgl(appt.scheduledAt)} pukul ${appt.appointmentTime} WIB. Status tercatat sebagai Tidak Hadir.`,
+                    data    : { appointmentId: appt._id },
+                    io      : _io,
+                });
+            }
+
+            if (doctor?.userId) {
+                await createNotification({
+                    userId  : doctor.userId,
                     type    : 'appointment_reminder',
                     title   : 'Pasien Tidak Hadir',
-                    message : `Pasien ${appt.userId?.name || '-'} tidak hadir pada janji pukul ${appt.appointmentTime} WIB.`,
+                    message : `Pasien ${user?.name || '-'} tidak hadir pada janji pukul ${appt.appointmentTime} WIB.`,
                     data    : { appointmentId: appt._id },
                     io      : _io,
                 });
@@ -97,9 +86,7 @@ async function runReminder() {
             status       : 'scheduled',
             reminderSent : false,
             scheduledAt  : { $gte: in23h, $lte: in25h },
-        })
-        .populate('userId',   'name phone')
-        .populate('doctorId', 'name');
+        }).lean();
 
         for (const appt of upcoming) {
             const marked = await Appointment.findOneAndUpdate(
@@ -109,44 +96,47 @@ async function runReminder() {
             );
             if (!marked) continue;
 
-            // Notifikasi in-app
-            await createNotification({
-                userId  : appt.userId._id,
-                type    : 'appointment_reminder',
-                title   : '⏰ Pengingat Janji Temu',
-                message : `Ingat! Anda memiliki janji temu dengan dr. ${appt.doctorId?.name || '-'} besok pukul ${appt.appointmentTime} WIB. Harap datang tepat waktu.`,
-                data    : { appointmentId: appt._id },
-                io      : _io,
-            });
+            const [user, doctor] = await Promise.all([
+                User.findByPk(appt.userId,    { attributes: ['id', 'name', 'phone'] }),
+                Doctor.findByPk(appt.doctorId, { attributes: ['id', 'name'] }),
+            ]);
 
-            // WhatsApp reminder
+            if (user?.id) {
+                await createNotification({
+                    userId  : user.id,
+                    type    : 'appointment_reminder',
+                    title   : '⏰ Pengingat Janji Temu',
+                    message : `Ingat! Anda memiliki janji temu dengan dr. ${doctor?.name || '-'} besok pukul ${appt.appointmentTime} WIB. Harap datang tepat waktu.`,
+                    data    : { appointmentId: appt._id },
+                    io      : _io,
+                });
+            }
+
             try {
-                if (appt.userId?.phone) {
-                    await waReminderJanjiTemu(appt.userId, appt.doctorId, appt);
+                if (user?.phone) {
+                    await waReminderJanjiTemu(user, doctor, appt);
                 }
             } catch (waErr) {
                 console.error('[AppointmentCron] WA reminder error:', waErr.message);
             }
 
-            console.log(`[AppointmentCron] Reminder sent: ${appt._id} | ${appt.userId?.name}`);
+            console.log(`[AppointmentCron] Reminder sent: ${appt._id} | ${user?.name || appt.userId}`);
         }
     } catch (err) {
         console.error('[AppointmentCron] Reminder error:', err.message);
     }
 }
 
-// ── Tick ─────────────────────────────────────────────────────────────────
 async function tick() {
     await runAutoNoShow();
     await runReminder();
 }
 
-// ── Export ────────────────────────────────────────────────────────────────
 function startCron(io) {
     _io = io;
-    if (_timer) return; // jangan double-start
-    tick(); // langsung jalankan saat start
-    _timer = setInterval(tick, 60 * 1000); // setiap menit
+    if (_timer) return;
+    tick();
+    _timer = setInterval(tick, 60 * 1000);
     console.log('[AppointmentCron] Started ✅');
 }
 

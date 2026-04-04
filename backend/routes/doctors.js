@@ -537,27 +537,80 @@ router.get('/', async (req, res) => {
             }
         });
 
+        // Ambil semua booking konsultasi aktif untuk cek slot penuh
+        const nowUTC = new Date();
+        const allConsBookings = await Consultation.find({
+            $or: [
+                { status: { $in: ['waiting_verification','confirmed','in_progress','completed','no_show'] } },
+                { status: 'pending_payment', paymentDeadline: { $gt: nowUTC } },
+            ],
+        }).select('doctorId scheduledAt').lean();
+
+        const consBookingsByDoctor = {};
+        for (const c of allConsBookings) {
+            const did = c.doctorId ? c.doctorId.toString() : null;
+            if (!did || !c.scheduledAt) continue;
+            const scheduledMs = new Date(c.scheduledAt).getTime();
+            if (isNaN(scheduledMs)) continue;
+            if (!consBookingsByDoctor[did]) consBookingsByDoctor[did] = new Set();
+            // Simpan sebagai "YYYY-MM-DD|HH:MM" dalam WIB
+            const wib = new Date(scheduledMs + 7 * 60 * 60 * 1000);
+            const dateKey = wib.toISOString().slice(0, 10);
+            const timeKey = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')}`;
+            consBookingsByDoctor[did].add(`${dateKey}|${timeKey}`);
+        }
+
         const doctors = docsRecords.map(d => {
             const doc = d.toJSON();
             doc.userId = doc.user;
             if (doc.userId) doc.userId.id = doc.user.id;
             
-            // Cek aman untuk fungsi buildAvailableDays
             if (typeof buildAvailableDays === 'function') {
                 doc.availableDays = buildAvailableDays(doc.schedules);
             } else {
                 doc.availableDays = [];
             }
             
-            // Cek ketersediaan di MongoDB untuk status offline
             const docIdStr = doc.id ? doc.id.toString() : '';
             const avail = availMap[docIdStr];
             
+            // Dokter dianggap offline jika:
+            // 1. Jadwal belum dibuat/expired, ATAU
+            // 2. Semua slot yang ada sudah booked/lewat
             let isOffline = true;
-            if (avail && typeof avail.isWeekActive === 'function') {
-                isOffline = !avail.isWeekActive();
+            if (avail && typeof avail.isWeekActive === 'function' && avail.isWeekActive() && avail.weekStart && avail.weekEnd) {
+                const CUTOFF_MS = 20 * 60 * 1000;
+                const bookedSet = consBookingsByDoctor[docIdStr] || new Set();
+                let hasAnyAvailable = false;
+                const msPerDay = 24 * 60 * 60 * 1000;
+                const weekStartMs = new Date(avail.weekStart).getTime();
+                const weekEndMs   = new Date(avail.weekEnd).getTime();
+                if (isNaN(weekStartMs) || isNaN(weekEndMs)) {
+                    isOffline = true;
+                } else {
+                let cursor = new Date(weekStartMs);
+
+                while (cursor.getTime() <= weekEndMs && !hasAnyAvailable) {
+                    const cursorWIB = new Date(cursor.getTime() + 7 * 60 * 60 * 1000);
+                    const dow = cursorWIB.getUTCDay();
+                    if (dow !== 0) {
+                        const activeSlots = typeof avail.getSlotsForDay === 'function' ? avail.getSlotsForDay(dow) : [];
+                        const dateStr = cursorWIB.toISOString().slice(0, 10);
+                        for (const slot of activeSlots) {
+                            const [sh, sm] = slot.split(':').map(Number);
+                            const [y, mo, dy] = dateStr.split('-').map(Number);
+                            const slotUTC = new Date(Date.UTC(y, mo - 1, dy, sh, sm, 0) - 7 * 60 * 60 * 1000);
+                            const isPast = (slotUTC.getTime() - CUTOFF_MS) <= nowUTC.getTime();
+                            const isBooked = bookedSet.has(`${dateStr}|${slot}`);
+                            if (!isPast && !isBooked) { hasAnyAvailable = true; break; }
+                        }
+                    }
+                    cursor = new Date(cursor.getTime() + msPerDay);
+                }
+                isOffline = !hasAnyAvailable;
+                } // end else isNaN guard
             }
-            doc.isOffline = isOffline; // ← Flag isOffline
+            doc.isOffline = isOffline;
             
             return doc;
         });

@@ -74,27 +74,80 @@ const StarRating = ({ value = 0 }) => {
     return <span>{stars}</span>;
 };
 
-// ── Helper: cek apakah dokter sedang online berdasarkan jam WIB sekarang ──────
-// Slot Janji Temu format "HH:mm", durasi 1 jam.
-// Online jika: nowMinutes >= slotStart && nowMinutes < slotStart + 60
+// ── Helpers: status online/offline dokter janji temu ─────────────────────────
+// schedule format: { "1": ["08:30","09:30",...], "2": [...], ... }  (key = DOW string)
+const DOW_TO_DAY_NAME_APPT = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const MONTH_ABBR_APPT      = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+/**
+ * Cek apakah dokter janji temu sedang online (ada jadwal hari ini).
+ */
 const isDocOnlineNow = (doctorEntry) => {
     try {
-        const schedule = doctorEntry?.availability?.schedule; // { "1": ["08:00","09:00",...], ... }
+        const schedule = doctorEntry?.availability?.schedule;
         if (!schedule) return false;
-
-        const nowWIB  = new Date(Date.now() + 7 * 60 * 60 * 1000);
-        const dow     = nowWIB.getUTCDay(); // 0=Minggu,1=Senin,...,6=Sabtu
-        if (dow === 0) return false;        // Minggu tidak ada jadwal
-
+        const nowWIB = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const dow    = nowWIB.getUTCDay();
+        if (dow === 0) return false;
         const todaySlots = schedule[String(dow)] || [];
-        const nowMins    = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
-
-        return todaySlots.some(slot => {
-            const [h, m]   = slot.split(':').map(Number);
-            const startMin = h * 60 + m;
-            return nowMins >= startMin && nowMins < startMin + 60;
-        });
+        return todaySlots.length > 0;
     } catch { return false; }
+};
+
+/**
+ * Apakah dokter janji temu punya setidaknya satu hari dengan slot aktif.
+ */
+const apptDocHasAnySchedule = (doctorEntry) => {
+    try {
+        const schedule = doctorEntry?.availability?.schedule;
+        if (!schedule) return false;
+        return Object.values(schedule).some(slots => Array.isArray(slots) && slots.length > 0);
+    } catch { return false; }
+};
+
+/**
+ * Cari jadwal terdekat dokter janji temu setelah sekarang.
+ * Mencakup hari ini (slot yang belum lewat) dan 6 hari ke depan.
+ * Return: { label: "Senin, 7 Apr 2025, 08:30 WIB" } atau null.
+ */
+const getApptNextAvailable = (doctorEntry) => {
+    try {
+        const schedule = doctorEntry?.availability?.schedule;
+        if (!schedule) return null;
+
+        const nowWIB   = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const todayDow = nowWIB.getUTCDay();
+        const nowMins  = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
+
+        for (let delta = 0; delta <= 6; delta++) {
+            const targetDow = (todayDow + delta) % 7;
+            if (targetDow === 0) continue;
+
+            const slots = (schedule[String(targetDow)] || [])
+                .slice().sort((a, b) => {
+                    const [ah, am] = a.split(':').map(Number);
+                    const [bh, bm] = b.split(':').map(Number);
+                    return (ah * 60 + am) - (bh * 60 + bm);
+                });
+
+            for (const slot of slots) {
+                const [sh, sm] = slot.split(':').map(Number);
+                const slotMins = sh * 60 + sm;
+                if (delta === 0 && slotMins <= nowMins) continue;
+
+                const targetDate = new Date(nowWIB);
+                targetDate.setUTCDate(targetDate.getUTCDate() + delta);
+
+                const tgl  = targetDate.getUTCDate();
+                const bln  = MONTH_ABBR_APPT[targetDate.getUTCMonth()];
+                const thn  = targetDate.getUTCFullYear();
+                const hari = DOW_TO_DAY_NAME_APPT[targetDow];
+
+                return { label: `${hari}, ${tgl} ${bln} ${thn}, ${slot} WIB` };
+            }
+        }
+        return null;
+    } catch { return null; }
 };
 
 // ── Animasi popup ─────────────────────────────────────────────────────────────
@@ -113,10 +166,12 @@ const POPUP_STYLE = `
 
 // ── DoctorProfileModal (Janji Temu) ───────────────────────────────────────────
 const DoctorProfileModal = ({ doctorEntry, onClose }) => {
-    const doc        = doctorEntry?.doctor || doctorEntry;
-    const online     = isDocOnlineNow(doctorEntry);
-    const isOffline  = doctorEntry?.isOffline === true;
-    const showOnline = !isOffline && online;
+    const doc            = doctorEntry?.doctor || doctorEntry;
+    const hasAnySchedule = apptDocHasAnySchedule(doctorEntry);
+    const noSchedule     = doctorEntry?.isOffline === true || !hasAnySchedule;
+    const onlineToday    = isDocOnlineNow(doctorEntry);
+    const showOnline     = !noSchedule && onlineToday;
+    const nextAvail      = (!showOnline && !noSchedule) ? getApptNextAvailable(doctorEntry) : null;
 
     return (
         <>
@@ -165,11 +220,23 @@ const DoctorProfileModal = ({ doctorEntry, onClose }) => {
                     <div style={{ marginTop: 14 }}>
                         <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>dr. {doc?.name}</div>
                         <div style={{ fontSize: 14, color: '#2563eb', fontWeight: 600, marginTop: 4 }}>Dokter {doc?.specialization}</div>
+
                     </div>
                 </div>
 
                 {/* Body info */}
                 <div style={{ padding: '20px 24px 28px' }}>
+                    {/* Keterangan tersedia lagi */}
+                    {!showOnline && nextAvail && (
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 16 }}>🕐</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700, textTransform: 'uppercase', letterSpacing: .4 }}>Tersedia lagi</div>
+                                <div style={{ fontSize: 13, color: '#78350f', fontWeight: 600 }}>{nextAvail.label}</div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Rating */}
                     {doc?.rating != null && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
@@ -733,24 +800,30 @@ const Appointments = () => {
                                 </Card>
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-                                    {/* ── MODIFIKASI: Penambahan isOffline pada Janji Temu ── */}
                                     {doctors.map(d => {
-                                        const doc = d.doctor || d;
+                                        const doc   = d.doctor || d;
                                         const docId = doc.id || doc._id;
                                         const rating = doc.rating;
-                                        
-                                        // Pengecekan offline: periksa availableDays ATAU schedules dari API
-                                        const isOffline = d.isOffline === true;
+
+                                        // noSchedule = true  → belum buat jadwal / expired
+                                        // noSchedule = false → punya jadwal minggu ini
+                                        const hasAnySchedule = apptDocHasAnySchedule(d);
+                                        const noSchedule     = d.isOffline === true || !hasAnySchedule;
+                                        const onlineToday    = !noSchedule && isDocOnlineNow(d);
+                                        // Keterangan "Tersedia lagi" → hanya jika punya jadwal tapi hari ini kosong
+                                        const nextAvail      = (!onlineToday && !noSchedule) ? getApptNextAvailable(d) : null;
+                                        // Tombol aktif jika punya jadwal (meski offline hari ini)
+                                        const canBook        = !noSchedule;
 
                                         return (
-                                            <div key={docId} style={{ 
-                                                background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb', 
+                                            <div key={docId} style={{
+                                                background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb',
                                                 display: 'flex', flexDirection: 'column',
-                                                opacity: isOffline ? 0.6 : 1, filter: isOffline ? 'grayscale(40%)' : 'none',
+                                                opacity: noSchedule ? 0.6 : 1, filter: noSchedule ? 'grayscale(40%)' : 'none',
                                                 transition: 'all 0.2s'
                                             }}>
                                                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
-                                                    {/* Foto dengan fallback emoji — klik untuk lihat profil */}
+                                                    {/* Foto — klik untuk lihat profil */}
                                                     <div onClick={() => setDoctorProfileModal(d)}
                                                         style={{ width: 56, height: 56, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
                                                         onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(37,99,235,0.18)'; }}
@@ -759,21 +832,32 @@ const Appointments = () => {
                                                             ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                             : '👨‍⚕️'}
                                                     </div>
-                                                    <div>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
                                                         <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {doc.name}</div>
                                                         <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>Dokter {doc.specialization}</div>
-                                                        
-                                                        {/* Badge Offline / Jadwal Belum Tersedia */}
-                                                        {isOffline && (
-                                                            <div style={{ marginTop: 4 }}>
-                                                                <span style={{ fontSize: 10, background: '#fecaca', color: '#b91c1c', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
-                                                                    Jadwal Belum Tersedia
-                                                                </span>
+
+                                                        {/* Badge Online / Offline */}
+                                                        <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                            <span style={{
+                                                                fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+                                                                background: onlineToday ? '#dcfce7' : '#fee2e2',
+                                                                color: onlineToday ? '#166534' : '#b91c1c',
+                                                                border: `1px solid ${onlineToday ? '#bbf7d0' : '#fecaca'}`,
+                                                            }}>
+                                                                {onlineToday ? '● Online' : '● Offline'}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Keterangan tersedia berikutnya */}
+                                                        {nextAvail && (
+                                                            <div style={{ marginTop: 5, fontSize: 11, color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                <span>🕐</span>
+                                                                <span>Tersedia lagi {nextAvail.label}</span>
                                                             </div>
                                                         )}
 
-                                                        {/* Rating angka (misal ★ 4.7) */}
-                                                        {rating != null && !isOffline && (
+                                                        {/* Rating */}
+                                                        {rating != null && (
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                                                                 <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>★</span>
                                                                 <span style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>
@@ -784,8 +868,8 @@ const Appointments = () => {
                                                                 )}
                                                             </div>
                                                         )}
-                                                        {/* Tahun pengalaman di bawah rating */}
-                                                        {doc.experience != null && !isOffline && (
+                                                        {/* Pengalaman */}
+                                                        {doc.experience != null && (
                                                             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
                                                                 {doc.experience} tahun pengalaman
                                                             </div>
@@ -793,25 +877,24 @@ const Appointments = () => {
                                                     </div>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'auto' }}>
-                                                    <button 
-                                                        disabled={isOffline}
-                                                        onClick={() => !isOffline && handleBookStart(d)}
-                                                        style={{ 
-                                                            padding: '8px 16px', 
-                                                            background: isOffline ? '#f3f4f6' : '#eff6ff', 
-                                                            color: isOffline ? '#9ca3af' : '#2563eb', 
-                                                            border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, 
-                                                            cursor: isOffline ? 'not-allowed' : 'pointer', transition: 'background .2s' 
+                                                    <button
+                                                        disabled={!canBook}
+                                                        onClick={() => canBook && handleBookStart(d)}
+                                                        style={{
+                                                            padding: '8px 16px',
+                                                            background: noSchedule ? '#f3f4f6' : '#eff6ff',
+                                                            color: noSchedule ? '#9ca3af' : '#2563eb',
+                                                            border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                                                            cursor: canBook ? 'pointer' : 'not-allowed', transition: 'background .2s'
                                                         }}
-                                                        onMouseEnter={e => { if(!isOffline) e.target.style.background = '#dbeafe' }}
-                                                        onMouseLeave={e => { if(!isOffline) e.target.style.background = '#eff6ff' }}>
-                                                        {isOffline ? 'Offline' : 'Pilih Jadwal'}
+                                                        onMouseEnter={e => { if (canBook) e.target.style.background = '#dbeafe'; }}
+                                                        onMouseLeave={e => { if (canBook) e.target.style.background = '#eff6ff'; }}>
+                                                        {noSchedule ? 'Offline' : 'Pilih Jadwal'}
                                                     </button>
                                                 </div>
                                             </div>
                                         );
                                     })}
-                                    {/* ── AKHIR MODIFIKASI ── */}
                                 </div>
                             )}
                         </div>

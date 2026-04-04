@@ -117,10 +117,16 @@ const Countdown = ({ deadline, onExpired }) => {
     );
 };
 
-// ── Helper: cek apakah dokter konsultasi sedang online berdasarkan jam WIB ─────
+// ── Helpers: status online/offline dokter konsultasi ─────────────────────────
 // availableDays: [{ day: 'Senin', slots: [{ startTime: '08:00', endTime: '10:00', isAvailable }] }]
 const DAY_NAME_TO_DOW = { 'Minggu':0,'Senin':1,'Selasa':2,'Rabu':3,'Kamis':4,'Jumat':5,'Sabtu':6 };
+const DOW_TO_DAY_NAME = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const MONTH_ABBR      = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 
+/**
+ * Cek apakah dokter konsultasi sedang online sekarang.
+ * Online = ada slot hari ini (jam sekarang berada dalam salah satu slot aktif).
+ */
 const isConsultDocOnlineNow = (doc) => {
     try {
         const availableDays = doc?.availableDays;
@@ -137,11 +143,72 @@ const isConsultDocOnlineNow = (doc) => {
             if (slot.isAvailable === false) return false;
             const [sh, sm] = slot.startTime.split(':').map(Number);
             const [eh, em] = slot.endTime.split(':').map(Number);
-            const startMin = sh * 60 + sm;
-            const endMin   = eh * 60 + em;
-            return nowMins >= startMin && nowMins < endMin;
+            return nowMins >= sh * 60 + sm && nowMins < eh * 60 + em;
         });
     } catch { return false; }
+};
+
+/**
+ * Apakah dokter punya setidaknya satu hari dengan jadwal aktif (tidak harus hari ini).
+ * Digunakan untuk membedakan "belum buat jadwal" vs "jadwal ada tapi bukan hari ini".
+ */
+const consultDocHasAnySchedule = (doc) => {
+    try {
+        const availableDays = doc?.availableDays;
+        if (!availableDays || !availableDays.length) return false;
+        return availableDays.some(d =>
+            (d.slots || []).some(s => s.isAvailable !== false)
+        );
+    } catch { return false; }
+};
+
+/**
+ * Cari jadwal terdekat dokter konsultasi setelah sekarang.
+ * Return: { label: "Senin, 7 Apr 2025, 08:00 WIB" } atau null.
+ */
+const getConsultNextAvailable = (doc) => {
+    try {
+        const availableDays = doc?.availableDays;
+        if (!availableDays || !availableDays.length) return null;
+
+        const nowWIB  = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const todayDow = nowWIB.getUTCDay();
+        const nowMins  = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
+
+        // Coba dalam 7 hari ke depan (termasuk hari ini setelah jam sekarang)
+        for (let delta = 0; delta <= 6; delta++) {
+            const targetDow = (todayDow + delta) % 7;
+            const entry = availableDays.find(d => DAY_NAME_TO_DOW[d.day] === targetDow);
+            if (!entry) continue;
+
+            const activeSlots = (entry.slots || [])
+                .filter(s => s.isAvailable !== false)
+                .sort((a, b) => {
+                    const [ah, am] = a.startTime.split(':').map(Number);
+                    const [bh, bm] = b.startTime.split(':').map(Number);
+                    return (ah * 60 + am) - (bh * 60 + bm);
+                });
+
+            for (const slot of activeSlots) {
+                const [sh, sm] = slot.startTime.split(':').map(Number);
+                const slotMins = sh * 60 + sm;
+                // Hari ini: hanya slot yang belum lewat
+                if (delta === 0 && slotMins <= nowMins) continue;
+
+                // Hitung tanggal target
+                const targetDate = new Date(nowWIB);
+                targetDate.setUTCDate(targetDate.getUTCDate() + delta);
+
+                const tgl  = targetDate.getUTCDate();
+                const bln  = MONTH_ABBR[targetDate.getUTCMonth()];
+                const thn  = targetDate.getUTCFullYear();
+                const hari = DOW_TO_DAY_NAME[targetDow];
+
+                return { label: `${hari}, ${tgl} ${bln} ${thn}, ${slot.startTime} WIB` };
+            }
+        }
+        return null;
+    } catch { return null; }
 };
 
 // ── Animasi popup ─────────────────────────────────────────────────────────────
@@ -160,9 +227,12 @@ const POPUP_STYLE = `
 
 // ── DoctorProfileModal (Konsultasi) ──────────────────────────────────────────
 const DoctorProfileModal = ({ doc, onClose }) => {
-    const online = isConsultDocOnlineNow(doc);
-    const isOffline = doc?.isOffline === true;
-    const showOnline = !isOffline && online;
+    const online        = isConsultDocOnlineNow(doc);
+    const hasAnySchedule = consultDocHasAnySchedule(doc);
+    // isOffline dari backend = belum buat jadwal sama sekali / jadwal expired
+    const noSchedule    = doc?.isOffline === true || !hasAnySchedule;
+    const showOnline    = !noSchedule && online;
+    const nextAvail     = (!showOnline && !noSchedule) ? getConsultNextAvailable(doc) : null;
 
     return (
         <>
@@ -216,6 +286,16 @@ const DoctorProfileModal = ({ doc, onClose }) => {
 
                 {/* Body info */}
                 <div style={{ padding: '20px 24px 28px' }}>
+                    {/* Keterangan tersedia lagi */}
+                    {!showOnline && nextAvail && (
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 16 }}>🕐</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700, textTransform: 'uppercase', letterSpacing: .4 }}>Tersedia lagi</div>
+                                <div style={{ fontSize: 13, color: '#78350f', fontWeight: 600 }}>{nextAvail.label}</div>
+                            </div>
+                        </div>
+                    )}
                     {/* Rating */}
                     {doc?.rating != null && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
@@ -962,16 +1042,22 @@ const Consultations = () => {
                                 <Card><p style={{ textAlign: 'center', color: '#6b7280', margin: 0, padding: '20px 0' }}>Belum ada dokter yang tersedia.</p></Card>
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-                                    {/* ── MODIFIKASI DIMULAI DARI SINI: Pengecekan isOffline ── */}
                                     {doctors.map(doc => {
-                                        // Dokter dianggap offline jika availableDays kosong (tidak ada jadwal sama sekali)
-                                        const isOffline = doc.isOffline === true;
+                                        const online         = isConsultDocOnlineNow(doc);
+                                        const hasAnySchedule = consultDocHasAnySchedule(doc);
+                                        // isOffline dari backend: belum buat jadwal / jadwal expired
+                                        const noSchedule     = doc.isOffline === true || !hasAnySchedule;
+                                        const showOnline     = !noSchedule && online;
+                                        // Bisa diklik jika ada jadwal (meski hari ini offline)
+                                        const canBook        = !noSchedule;
+                                        // Keterangan "Tersedia lagi" hanya jika ada jadwal tapi tidak online sekarang
+                                        const nextAvail      = (!showOnline && !noSchedule) ? getConsultNextAvailable(doc) : null;
 
                                         return (
                                             <div key={doc._id} style={{ 
                                                 background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb', 
                                                 display: 'flex', flexDirection: 'column', 
-                                                opacity: isOffline ? 0.6 : 1, filter: isOffline ? 'grayscale(40%)' : 'none',
+                                                opacity: noSchedule ? 0.6 : 1, filter: noSchedule ? 'grayscale(40%)' : 'none',
                                                 transition: 'all 0.2s' 
                                             }}>
                                                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
@@ -989,17 +1075,29 @@ const Consultations = () => {
                                                         </div>
                                                         <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600, marginTop: 2 }}>Dokter {doc.specialization}</div>
                                                         
-                                                        {/* Badge Offline / Jadwal Belum Tersedia */}
-                                                        {isOffline && (
-                                                            <div style={{ marginTop: 4 }}>
-                                                                <span style={{ fontSize: 10, background: '#fecaca', color: '#b91c1c', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
-                                                                    Jadwal Belum Tersedia
-                                                                </span>
+                                                        {/* Badge Online / Offline */}
+                                                        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                            <span style={{
+                                                                fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+                                                                background: showOnline ? '#dcfce7' : '#fee2e2',
+                                                                color: showOnline ? '#166534' : '#b91c1c',
+                                                                border: `1px solid ${showOnline ? '#bbf7d0' : '#fecaca'}`,
+                                                                whiteSpace: 'nowrap',
+                                                            }}>
+                                                                {showOnline ? 'Online' : 'Offline'}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Keterangan "Tersedia lagi" */}
+                                                        {nextAvail && (
+                                                            <div style={{ marginTop: 4, fontSize: 11, color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                <span>🕐</span>
+                                                                <span>Tersedia lagi {nextAvail.label}</span>
                                                             </div>
                                                         )}
 
-                                                        {/* Rating angka (★ 4.7) — bukan 5 bintang penuh */}
-                                                        {doc.rating != null && !isOffline && (
+                                                        {/* Rating angka (★ 4.7) */}
+                                                        {doc.rating != null && (
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                                                                 <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>★</span>
                                                                 <span style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>
@@ -1010,8 +1108,8 @@ const Consultations = () => {
                                                                 )}
                                                             </div>
                                                         )}
-                                                        {/* Tahun pengalaman di bawah rating */}
-                                                        {doc.experience != null && !isOffline && (
+                                                        {/* Tahun pengalaman */}
+                                                        {doc.experience != null && (
                                                             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
                                                                 {doc.experience} tahun pengalaman
                                                             </div>
@@ -1019,29 +1117,28 @@ const Consultations = () => {
                                                     </div>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                                                    <span style={{ color: isOffline ? '#9ca3af' : '#2563eb', fontWeight: 700, fontSize: 14 }}>
+                                                    <span style={{ color: noSchedule ? '#9ca3af' : '#2563eb', fontWeight: 700, fontSize: 14 }}>
                                                         {fmtRupiah(doc.consultationFee)}
                                                     </span>
                                                     <button 
-                                                        disabled={isOffline}
-                                                        onClick={() => !isOffline && handleBookStart(doc)}
+                                                        disabled={!canBook}
+                                                        onClick={() => canBook && handleBookStart(doc)}
                                                         style={{ 
                                                             padding: '8px 16px', 
-                                                            background: isOffline ? '#f3f4f6' : '#eff6ff', 
-                                                            color: isOffline ? '#9ca3af' : '#2563eb', 
+                                                            background: noSchedule ? '#f3f4f6' : '#eff6ff', 
+                                                            color: noSchedule ? '#9ca3af' : '#2563eb', 
                                                             border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, 
-                                                            cursor: isOffline ? 'not-allowed' : 'pointer', 
+                                                            cursor: canBook ? 'pointer' : 'not-allowed', 
                                                             transition: 'background .2s' 
                                                         }}
-                                                        onMouseEnter={e => { if(!isOffline) e.target.style.background = '#dbeafe' }}
-                                                        onMouseLeave={e => { if(!isOffline) e.target.style.background = '#eff6ff' }}>
-                                                        {isOffline ? 'Offline' : 'Pilih Jadwal'}
+                                                        onMouseEnter={e => { if(canBook) e.target.style.background = '#dbeafe' }}
+                                                        onMouseLeave={e => { if(canBook) e.target.style.background = '#eff6ff' }}>
+                                                        {noSchedule ? 'Offline' : 'Pilih Jadwal'}
                                                     </button>
                                                 </div>
                                             </div>
                                         );
                                     })}
-                                    {/* ── AKHIR MODIFIKASI ── */}
                                 </div>
                             )}
                         </div>
