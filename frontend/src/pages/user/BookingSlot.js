@@ -13,11 +13,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { fmtDoctorName } from '../../utils/format';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
 
 const fmtRupiah = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
+
 
 const toWIBDate = (utcStr) => new Date(new Date(utcStr).getTime() + WIB_OFFSET);
 
@@ -237,7 +239,7 @@ const BookingSlot = () => {
                             👨‍⚕️
                         </div>
                         <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, fontSize: 17, color: '#111827' }}>dr. {doctor.name}</div>
+                            <div style={{ fontWeight: 700, fontSize: 17, color: '#111827' }}>{fmtDoctorName(doctor)}</div>
                             <div style={{ fontSize: 13, color: '#6b7280' }}>{doctor.specialization}</div>
                             <div style={{ fontSize: 14, fontWeight: 600, color: '#059669', marginTop: 4 }}>
                                 {fmtRupiah(doctor.consultationFee)} / sesi
@@ -398,7 +400,7 @@ const BookingSlot = () => {
                             <div style={S.title}>{rescheduleId ? 'Ringkasan Reschedule' : 'Ringkasan Booking'}</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14, color: '#374151', marginBottom: 16 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>Dokter</span><strong>dr. {doctor?.name}</strong>
+                                    <span>Dokter</span><strong>{fmtDoctorName(doctor)}</strong>
                                 </div>
                                 {!rescheduleId && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>

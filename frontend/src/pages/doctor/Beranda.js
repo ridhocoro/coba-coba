@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { fmtDoctorName } from '../../utils/format';
 import {
-    colors, fmtDate, fmtDT,
+    colors,
     CONS_STATUS, APPT_STATUS,
-    Card, Btn, Spinner, Empty, SBadge, SectionHeader,
+    Card, Btn, Spinner, Empty, SBadge,
 } from './shared';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ const isThisWeek = (d) => {
 // SECTION: BERANDA
 // ═══════════════════════════════════════════════════════════════════════════════
 const SectionBeranda = () => {
-    const { user }   = useAuth();
+    const { user, doctorProfile } = useAuth();
     const navigate   = useNavigate();
     const [stats,    setStats]    = useState(null);
     const [allItems, setAllItems] = useState([]); // semua jadwal gabungan
@@ -216,7 +217,11 @@ const SectionBeranda = () => {
                     }}>🩺</div>
                     <div>
                         <div style={{ fontSize: 13, color: '#93c5fd' }}>{greeting()},</div>
-                        <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>dr. {user?.name}</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>
+                            {doctorProfile
+                                ? fmtDoctorName(doctorProfile)
+                                : user?.name}
+                        </div>
                     </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>

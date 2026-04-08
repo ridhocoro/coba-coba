@@ -12,27 +12,43 @@ const INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [user, setUser]                   = useState(null);
+  const [doctorProfile, setDoctorProfile] = useState(null);
+  const [loading, setLoading]             = useState(true);
+  const [token, setToken]                 = useState(localStorage.getItem('token'));
 
   // Ref untuk menyimpan timer inaktivitas
   const inactivityTimer = useRef(null);
   // Ref untuk fungsi logout agar bisa dipakai di event listener tanpa stale closure
   const logoutRef = useRef(null);
 
+  // ─── Fetch profil dokter (hanya jika role === 'doctor') ─────────────────────
+  const fetchDoctorProfile = useCallback(async () => {
+    try {
+      const res = await api.get('/api/doctors/my/profile');
+      setDoctorProfile(res.data.doctor || null);
+    } catch {
+      setDoctorProfile(null);
+    }
+  }, []);
+
   // ─── Fetch user dari server ─────────────────────────────────────────────────
-  const fetchUser = async () => {
+  const fetchUser = useCallback(async () => {
     try {
       const response = await api.get('/api/auth/me');
-      setUser(response.data);
+      const userData = response.data;
+      setUser(userData);
+      // Jika dokter, langsung fetch profil dokter sekalian
+      if (userData?.role === 'doctor') {
+        fetchDoctorProfile();
+      }
     } catch (error) {
       localStorage.removeItem('token');
       setToken(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchDoctorProfile]);
 
   useEffect(() => {
     if (token) {
@@ -40,7 +56,7 @@ export const AuthProvider = ({ children }) => {
     } else {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, fetchUser]);
 
   // ─── Logout ─────────────────────────────────────────────────────────────────
   const logout = useCallback((reason = 'manual') => {
@@ -48,6 +64,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('lastActivity');
     setToken(null);
     setUser(null);
+    setDoctorProfile(null);
     clearTimeout(inactivityTimer.current);
 
     if (reason === 'inactivity') {
@@ -72,7 +89,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('lastActivity', Date.now().toString());
 
     inactivityTimer.current = setTimeout(() => {
-      // Hanya logout jika masih ada user yang login
       if (logoutRef.current && localStorage.getItem('token')) {
         logoutRef.current('inactivity');
       }
@@ -82,21 +98,17 @@ export const AuthProvider = ({ children }) => {
   // ─── Pasang / lepas event listener aktivitas ────────────────────────────────
   useEffect(() => {
     if (!user) {
-      // Tidak ada user login — bersihkan semua
       clearTimeout(inactivityTimer.current);
       ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
       return;
     }
 
-    // Cek apakah sesi sudah expired sejak terakhir kali halaman ditutup
-    // Hanya cek jika lastActivity pernah di-set (bukan 0 / fresh login)
     const lastActivity = parseInt(localStorage.getItem('lastActivity') || '0', 10);
     if (lastActivity > 0 && Date.now() - lastActivity > INACTIVITY_LIMIT_MS) {
       logout('inactivity');
       return;
     }
 
-    // Mulai memantau aktivitas
     resetInactivityTimer();
     ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, resetInactivityTimer));
 
@@ -115,10 +127,13 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('lastActivity', Date.now().toString());
       setToken(newToken);
       setUser(newUser);
+      // Fetch profil dokter jika role dokter
+      if (newUser?.role === 'doctor') {
+        fetchDoctorProfile();
+      }
       toast.success('Login berhasil!');
       return true;
     } catch (error) {
-      // Re-throw agar Login.js bisa handle needsVerification
       if (error.response?.data?.needsVerification) throw error;
       toast.error(error.response?.data?.message || 'Login gagal');
       return false;
@@ -142,8 +157,18 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ─── Refresh doctorProfile (dipanggil setelah dokter simpan profil) ──────────
+  const refreshDoctorProfile = useCallback(() => {
+    if (user?.role === 'doctor') fetchDoctorProfile();
+  }, [user, fetchDoctorProfile]);
+
   return (
-    <AuthContext.Provider value={{ user, setUser, login, register, logout, loading }}>
+    <AuthContext.Provider value={{
+      user, setUser,
+      doctorProfile, setDoctorProfile, refreshDoctorProfile,
+      login, register, logout,
+      loading,
+    }}>
       {children}
     </AuthContext.Provider>
   );

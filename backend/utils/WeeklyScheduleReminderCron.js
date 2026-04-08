@@ -1,3 +1,4 @@
+const fmtDoctorName = require('./fmtDoctorName');
 /**
  * WeeklyScheduleReminderCron.js
  *
@@ -44,7 +45,7 @@ const checkAndNotify = async () => {
                 userId  : doctor.userId,
                 type    : 'schedule_reminder',
                 title   : '⏰ Jadwal Konsultasi Online Belum Dirilis',
-                message : `dr. ${doctor.name}, jadwal konsultasi online minggu depan belum dirilis. Pasien tidak bisa booking. Silakan atur jadwal sekarang di menu Jadwal → Konsultasi Online.`,
+                message : `${fmtDoctorName(doctor)}, jadwal konsultasi online minggu depan belum dirilis. Pasien tidak bisa booking. Silakan atur jadwal sekarang di menu Jadwal → Konsultasi Online.`,
                 data    : { type: 'online' },
                 io      : _io,
             });
@@ -60,7 +61,7 @@ const checkAndNotify = async () => {
                 userId  : doctor.userId,
                 type    : 'schedule_reminder',
                 title   : '⏰ Jadwal Janji Temu Belum Dirilis',
-                message : `dr. ${doctor.name}, jadwal janji temu offline minggu depan belum dirilis. Pasien tidak bisa booking. Silakan atur jadwal sekarang di menu Jadwal → Janji Temu.`,
+                message : `${fmtDoctorName(doctor)}, jadwal janji temu offline minggu depan belum dirilis. Pasien tidak bisa booking. Silakan atur jadwal sekarang di menu Jadwal → Janji Temu.`,
                 data    : { type: 'appointment' },
                 io      : _io,
             });

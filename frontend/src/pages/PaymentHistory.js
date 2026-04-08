@@ -214,7 +214,7 @@ const PaymentHistory = () => {
                                             </Badge>
                                             {p.doctorName && (
                                                 <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                                    dr. {p.doctorName}
+                                                    {p.doctorName}
                                                     {p.doctorSpec && ` · ${p.doctorSpec}`}
                                                 </div>
                                             )}
@@ -271,7 +271,7 @@ const PaymentHistory = () => {
                                 {selectedPayment.doctorName && (
                                     <tr>
                                         <td className="text-muted fw-semibold">Dokter</td>
-                                        <td>dr. {selectedPayment.doctorName}</td>
+                                        <td>{selectedPayment.doctorName}</td>
                                     </tr>
                                 )}
                                 <tr>

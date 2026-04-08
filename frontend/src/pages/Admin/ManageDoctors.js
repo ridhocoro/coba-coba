@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { fmtDoctorName } from '../../utils/format';
+
 
 const ManageDoctors = () => {
   const [doctors, setDoctors]     = useState([]);
@@ -17,7 +19,7 @@ const ManageDoctors = () => {
   const [overrides, setOverrides] = useState([]);
   // ── Tambah Dokter ──
   const [addModal, setAddModal]   = useState(false);
-  const [addForm, setAddForm]     = useState({ name:'', email:'', password:'', specialization:'', qualification:'', gender:'', consultationFee:'', bio:'', experience:'' });
+  const [addForm, setAddForm]     = useState({ name:'', email:'', password:'', specialization:'', gender:'', consultationFee:'', bio:'', experience:'', titlePrefix:'', titleSuffix:'', strNumber:'', alumnus:'', practiceLocation:'' });
   const [addSaving, setAddSaving] = useState(false);
 
   const fetchDoctors = useCallback(async () => {
@@ -109,7 +111,7 @@ const ManageDoctors = () => {
       await api.post('/api/admin/doctors', addForm);
       toast.success('Dokter berhasil ditambahkan ✅');
       setAddModal(false);
-      setAddForm({ name:'', email:'', password:'', specialization:'', qualification:'', gender:'', consultationFee:'', bio:'', experience:'' });
+      setAddForm({ name:'', email:'', password:'', specialization:'', gender:'', consultationFee:'', bio:'', experience:'', titlePrefix:'', titleSuffix:'', strNumber:'', alumnus:'', practiceLocation:'' });
       fetchDoctors();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal menambahkan dokter');
@@ -160,7 +162,7 @@ const ManageDoctors = () => {
             {filtered.map(doc => (
               <tr key={doc._id}>
                 <td style={S.td}>
-                  <div style={{ fontWeight: 600 }}>dr. {doc.name}</div>
+                  <div style={{ fontWeight: 600 }}>{fmtDoctorName(doc)}</div>
                   <div style={{ fontSize: 11, color: '#64748b' }}>{doc.userId?.email}</div>
                 </td>
                 <td style={S.td}>{doc.specialization}</td>
@@ -191,7 +193,7 @@ const ManageDoctors = () => {
           <div style={S.modal}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
-                {editMode ? '✏️ Edit Dokter' : `👨‍⚕️ dr. ${selected.doctor.name}`}
+                {editMode ? '✏️ Edit Dokter' : `👨‍⚕️ ${fmtDoctorName(selected.doctor)}`}
               </h3>
               <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer' }}>×</button>
             </div>
@@ -280,7 +282,7 @@ const ManageDoctors = () => {
         <div style={S.overlay}>
           <div style={{ ...S.modal, maxWidth: 480 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>📅 Override Jadwal — dr. {overrideModal.name}</h3>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>📅 Override Jadwal — {fmtDoctorName(overrideModal)}</h3>
               <button onClick={() => setOverrideModal(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#92400e', marginBottom: 16 }}>
@@ -329,7 +331,20 @@ const ManageDoctors = () => {
               {/* Nama */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={S.label}>Nama Lengkap <span style={{ color: '#ef4444' }}>*</span></label>
-                <input style={S.field} placeholder="dr. Nama Lengkap" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={S.label}>Gelar Depan</label>
+                    <input style={S.field} placeholder="mis. dr." value={addForm.titlePrefix} onChange={e => setAddForm(f => ({ ...f, titlePrefix: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>Nama Lengkap *</label>
+                    <input style={S.field} placeholder="Nama tanpa gelar" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>Gelar Belakang</label>
+                    <input style={S.field} placeholder="mis. Sp.PD" value={addForm.titleSuffix} onChange={e => setAddForm(f => ({ ...f, titleSuffix: e.target.value }))} />
+                  </div>
+                </div>
               </div>
               {/* Email */}
               <div>
@@ -349,7 +364,6 @@ const ManageDoctors = () => {
               {/* Kualifikasi */}
               <div>
                 <label style={S.label}>Gelar / Kualifikasi</label>
-                <input style={S.field} placeholder="mis. dr., Sp.PD" value={addForm.qualification} onChange={e => setAddForm(f => ({ ...f, qualification: e.target.value }))} />
               </div>
               {/* Fee */}
               <div>
@@ -373,6 +387,20 @@ const ManageDoctors = () => {
               {/* Bio */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={S.label}>Bio / Deskripsi</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={S.label}>Nomor STR</label>
+                    <input style={S.field} placeholder="mis. 37.1.2.3.2024.0001" value={addForm.strNumber} onChange={e => setAddForm(f => ({ ...f, strNumber: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>Alumnus</label>
+                    <input style={S.field} placeholder="mis. Universitas Indonesia" value={addForm.alumnus} onChange={e => setAddForm(f => ({ ...f, alumnus: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label style={S.label}>Lokasi Praktik</label>
+                  <input style={S.field} placeholder="mis. Klinik Sehat, Jakarta" value={addForm.practiceLocation} onChange={e => setAddForm(f => ({ ...f, practiceLocation: e.target.value }))} />
+                </div>
                 <textarea rows={3} style={{ ...S.field, resize: 'vertical' }} placeholder="Deskripsi singkat dokter..." value={addForm.bio} onChange={e => setAddForm(f => ({ ...f, bio: e.target.value }))} />
               </div>
             </div>

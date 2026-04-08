@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
+import { fmtDoctorName } from '../../utils/format';
+
 
 const SickLetters = () => {
   const [letters, setLetters] = useState([]);
@@ -60,7 +62,7 @@ const SickLetters = () => {
               <tr key={l._id}>
                 <td style={S.td}><span style={{ fontFamily:'monospace', fontSize:12, color:'#2563eb' }}>{l.letterNumber}</span></td>
                 <td style={S.td}><div style={{ fontWeight:600 }}>{l.userId?.name || '-'}</div><div style={{ fontSize:11, color:'#64748b' }}>{l.userId?.email}</div></td>
-                <td style={S.td}>dr. {l.doctorId?.name || '-'}</td>
+                <td style={S.td}>{fmtDoctorName(l.doctorId) || '-'}</td>
                 <td style={{ ...S.td, maxWidth:200 }}><div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:12 }}>{l.diagnosis}</div></td>
                 <td style={S.td}>{fmtDate(l.startDate)}</td>
                 <td style={S.td}>{fmtDate(l.endDate)}</td>

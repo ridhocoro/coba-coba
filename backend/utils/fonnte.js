@@ -1,3 +1,4 @@
+const fmtDoctorName = require('./fmtDoctorName');
 /**
  * fonnte.js — helper kirim WhatsApp via Fonnte API
  * Docs: https://fonnte.com/docs
@@ -51,7 +52,7 @@ Halo, *${user.name}*!
 Pembayaran konsultasi Anda telah dikonfirmasi.
 
 📋 *Detail:*
-• Dokter  : dr. ${doctor.name}
+• Dokter  : ${fmtDoctorName(doctor)}
 • Jadwal  : ${fmtWIB(consultation.scheduledAt)}
 • Tipe    : ${consultation.consultationType === 'video_call' ? 'Video Call' : 'Chat'}
 
@@ -69,7 +70,7 @@ async function waReminderKonsultasi(user, doctor, consultation) {
 Klinik Pratama IPB
 
 Halo, *${user.name}*!
-Konsultasi Anda dengan dr. ${doctor.name} dimulai *1 jam lagi*.
+Konsultasi Anda dengan ${fmtDoctorName(doctor)} dimulai *1 jam lagi*.
 
 📅 Jadwal : ${fmtWIB(consultation.scheduledAt)}
 💬 Tipe   : ${consultation.consultationType === 'video_call' ? 'Video Call' : 'Chat'}
@@ -95,7 +96,7 @@ Halo, *${user.name}*!
 Janji temu Anda telah berhasil didaftarkan.
 
 📋 *Detail:*
-• Dokter  : dr. ${doctor.name}
+• Dokter  : ${fmtDoctorName(doctor)}
 • Tanggal : ${tgl}
 • Pukul   : ${appointment.appointmentTime} WIB
 • Lokasi  : Klinik Pratama IPB, Kampus IPB Darmaga
@@ -122,7 +123,7 @@ Halo, *${user.name}*!
 Anda memiliki janji temu *besok*.
 
 📋 *Detail:*
-• Dokter  : dr. ${doctor.name}
+• Dokter  : ${fmtDoctorName(doctor)}
 • Tanggal : ${tgl}
 • Pukul   : ${appointment.appointmentTime} WIB
 • Lokasi  : Klinik Pratama IPB, Kampus IPB Darmaga
@@ -175,7 +176,7 @@ async function waKonsultasiDibatalkan(user, doctorName, alasan) {
 Klinik Pratama IPB
 
 Halo, *${user.name}*!
-Konsultasi Anda dengan dr. ${doctorName} telah dibatalkan.${alasan ? '\nAlasan: ' + alasan : ''}
+Konsultasi Anda dengan ${doctorName} telah dibatalkan.${alasan ? '\nAlasan: ' + alasan : ''}
 
 Jika sudah membayar, refund akan diproses dalam 1×24 jam.
 

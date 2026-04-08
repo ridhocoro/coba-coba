@@ -72,6 +72,13 @@ CREATE TABLE doctors (
     photo            VARCHAR(500),
     signature_url    VARCHAR(500),
 
+    -- Identitas & kredensial
+    str_number       VARCHAR(100),
+    alumnus          VARCHAR(255),
+    practice_location VARCHAR(255),
+    title_prefix     VARCHAR(50),
+    title_suffix     VARCHAR(100),
+
     -- Pengaturan tipe konsultasi
     allow_chat       TINYINT(1) DEFAULT 1,
     allow_video_call TINYINT(1) DEFAULT 1,

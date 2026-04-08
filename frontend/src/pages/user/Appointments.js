@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import io from 'socket.io-client';
 import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
+import { fmtDoctorName } from '../../utils/format';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
@@ -15,6 +16,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const WIB_OFFSET        = 7 * 60 * 60 * 1000;
 const DAY_NAMES         = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
 const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
+
 
 const fmtDT = (dateStr, timeStr) => {
     if (!dateStr) return '-';
@@ -218,17 +220,16 @@ const DoctorProfileModal = ({ doctorEntry, onClose }) => {
                     </div>
 
                     <div style={{ marginTop: 14 }}>
-                        <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>dr. {doc?.name}</div>
+                        <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>{fmtDoctorName(doc)}</div>
                         <div style={{ fontSize: 14, color: '#2563eb', fontWeight: 600, marginTop: 4 }}>Dokter {doc?.specialization}</div>
-
                     </div>
                 </div>
 
                 {/* Body info */}
-                <div style={{ padding: '20px 24px 28px' }}>
+                <div style={{ padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {/* Keterangan tersedia lagi */}
                     {!showOnline && nextAvail && (
-                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ fontSize: 16 }}>🕐</span>
                             <div>
                                 <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700, textTransform: 'uppercase', letterSpacing: .4 }}>Tersedia lagi</div>
@@ -239,20 +240,53 @@ const DoctorProfileModal = ({ doctorEntry, onClose }) => {
 
                     {/* Rating */}
                     {doc?.rating != null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>★</span>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>{Number(doc.rating).toFixed(1)}</span>
+                            {doc.totalReviews > 0 && <span style={{ fontSize: 12, color: '#9ca3af' }}>({doc.totalReviews} ulasan)</span>}
                         </div>
                     )}
 
                     {/* Pengalaman */}
                     {doc?.experience != null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                                      background: '#f9fafb', borderRadius: 10, marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
                             <span style={{ fontSize: 20 }}>🏥</span>
                             <div>
                                 <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>PENGALAMAN</div>
                                 <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.experience} tahun</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Alumnus */}
+                    {doc?.alumnus && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                            <span style={{ fontSize: 20 }}>🎓</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>ALUMNUS</div>
+                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.alumnus}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Lokasi Praktik */}
+                    {doc?.practiceLocation && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                            <span style={{ fontSize: 20 }}>📍</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>LOKASI PRAKTIK</div>
+                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.practiceLocation}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Nomor STR */}
+                    {doc?.strNumber && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10 }}>
+                            <span style={{ fontSize: 20 }}>📋</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>NOMOR STR</div>
+                                <div style={{ fontSize: 13, color: '#1e40af', fontWeight: 700, fontFamily: 'monospace', letterSpacing: .5 }}>{doc.strNumber}</div>
                             </div>
                         </div>
                     )}
@@ -294,7 +328,7 @@ const Card = ({ children }) => (
 );
 
 // ── RatingModal — hanya bintang, tanpa komentar ───────────────────────────────
-const RatingModal = ({ appointmentId, doctorName, onClose, onSuccess }) => {
+const RatingModal = ({ appointmentId, doctor, onClose, onSuccess }) => {
     const [rating, setRating]   = useState(0);
     const [hovered, setHovered] = useState(0);
     const [submitting, setSubmitting] = useState(false);
@@ -314,7 +348,7 @@ const RatingModal = ({ appointmentId, doctorName, onClose, onSuccess }) => {
     return (
         <Modal title="⭐ Beri Rating" onClose={onClose} maxWidth={380}>
             <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>
-                Bagaimana pengalaman janji temu dengan dr. {doctorName}?
+                Bagaimana pengalaman janji temu dengan {fmtDoctorName(doctor)}?
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 28 }}>
                 {[1,2,3,4,5].map(i => (
@@ -362,7 +396,7 @@ const ApptCard = ({ appt, onCancel, onReschedule, onRate, showActions }) => {
                             : '🏥'}
                     </div>
                     <div>
-                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {appt.doctorId?.name || '-'}</div>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{fmtDoctorName(appt.doctorId) || '-'}</div>
                         <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 600 }}>Dokter {appt.doctorId?.specialization || 'Umum'}</div>
                     </div>
                 </div>
@@ -754,7 +788,7 @@ const Appointments = () => {
                                                 showActions={true}
                                                 onCancel={() => handleCancelStart(a)}
                                                 onReschedule={() => handleRescheduleStart(a)}
-                                                onRate={() => setRatingModal({ id: a._id, doctorName: a.doctorId?.name })}
+                                                onRate={() => setRatingModal({ id: a._id, doctor: a.doctorId })}
                                             />
                                         ))}
                                     </div>
@@ -833,7 +867,7 @@ const Appointments = () => {
                                                             : '👨‍⚕️'}
                                                     </div>
                                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {doc.name}</div>
+                                                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{fmtDoctorName(doc)}</div>
                                                         <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>Dokter {doc.specialization}</div>
 
                                                         {/* Badge Online / Offline */}
@@ -844,7 +878,7 @@ const Appointments = () => {
                                                                 color: onlineToday ? '#166534' : '#b91c1c',
                                                                 border: `1px solid ${onlineToday ? '#bbf7d0' : '#fecaca'}`,
                                                             }}>
-                                                                {onlineToday ? '● Online' : '● Offline'}
+                                                                {onlineToday ? ' Online' : ' Offline'}
                                                             </span>
                                                         </div>
 
@@ -908,7 +942,7 @@ const Appointments = () => {
                                     {pastAppts.map(a => (
                                         <ApptCard key={a._id} appt={a}
                                             showActions={false}
-                                            onRate={() => setRatingModal({ id: a._id, doctorName: a.doctorId?.name })}
+                                            onRate={() => setRatingModal({ id: a._id, doctor: a.doctorId })}
                                         />
                                     ))}
                                 </div>
@@ -975,7 +1009,7 @@ const Appointments = () => {
                                 : '👨‍⚕️'}
                         </div>
                         <div>
-                            <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {bookDocInfo?.name}</div>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{fmtDoctorName(bookDocInfo)}</div>
                             <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>Dokter {bookDocInfo?.specialization}</div>
                         </div>
                     </div>
@@ -1244,7 +1278,7 @@ const Appointments = () => {
             {ratingModal && (
                 <RatingModal
                     appointmentId={ratingModal.id}
-                    doctorName={ratingModal.doctorName}
+                    doctor={ratingModal.doctor}
                     onClose={() => setRatingModal(null)}
                     onSuccess={loadData}
                 />

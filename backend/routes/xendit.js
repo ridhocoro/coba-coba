@@ -1,3 +1,4 @@
+const fmtDoctorName = require('../utils/fmtDoctorName');
 /**
  * /api/xendit
  *
@@ -142,7 +143,7 @@ router.post('/initiate-payment/:consultationId', auth, async (req, res) => {
         const invoicePayload = {
             external_id         : externalId,
             amount,
-            description         : `Konsultasi dengan dr. ${doctor.name} – Klinik Pratama IPB`,
+            description         : `Konsultasi dengan ${fmtDoctorName(doctor)} – Klinik Pratama IPB`,
             invoice_duration    : 900,
             success_redirect_url: `${FRONTEND_URL}/payment/success?external_id=${externalId}`,
             failure_redirect_url: `${FRONTEND_URL}/payment/failed?external_id=${externalId}`,
@@ -270,7 +271,7 @@ router.post('/refund/:consultationId', auth, async (req, res) => {
             return res.status(400).json({ error: `Status ${consultation.status} tidak bisa direfund` });
         }
 
-        const _docInfo = await populateFromMySQL({ doctorId: consultation.doctorId }, 'doctorId', 'Doctor', 'consultationFee name');
+        const _docInfo = await populateFromMySQL({ doctorId: consultation.doctorId }, 'doctorId', 'Doctor', 'consultationFee name titlePrefix titleSuffix');
         const doctorInfo = _docInfo?.doctorId;
         const amount = consultation.amount || doctorInfo?.consultationFee;
         if (!amount) return res.status(400).json({ error: 'Nominal refund tidak diketahui' });
@@ -536,7 +537,7 @@ router.get('/history', auth, async (req, res) => {
         if (consultations.length > 0) {
             try {
                 consultations = await populateFromMySQL(
-                    consultations, 'doctorId', 'Doctor', 'name specialization'
+                    consultations, 'doctorId', 'Doctor', 'name specialization titlePrefix titleSuffix'
                 );
             } catch (popErr) {
                 console.error('[Xendit] /history populateFromMySQL error:', popErr.message);
@@ -553,7 +554,7 @@ router.get('/history', auth, async (req, res) => {
                 paymentMethod  : c.xenditPaymentMethod || 'Xendit',
                 paidAt         : c.paidAt,
                 createdAt      : c.createdAt,
-                doctorName     : c.doctorId?.name           || null,
+                doctorName     : [c.doctorId?.titlePrefix, c.doctorId?.name, c.doctorId?.titleSuffix].filter(Boolean).join(' ') || null,
                 doctorSpec     : c.doctorId?.specialization || null,
                 consultationId : c._id,
             }));

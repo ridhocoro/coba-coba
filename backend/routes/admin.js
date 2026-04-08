@@ -1,3 +1,4 @@
+const fmtDoctorName = require('../utils/fmtDoctorName');
 /**
  * routes/admin.js — Admin Dashboard API (rombak total)
  *
@@ -254,7 +255,8 @@ router.get('/doctors', guard, async (req, res) => {
 // POST /admin/doctors — buat akun dokter baru
 router.post('/doctors', guard, async (req, res) => {
     try {
-        const { name, email, password, specialization, qualification, gender, consultationFee, bio, experience } = req.body;
+        const { name, email, password, specialization, gender, consultationFee, bio, experience,
+                strNumber, alumnus, practiceLocation, titlePrefix, titleSuffix } = req.body;
 
         if (!name?.trim())           return res.status(400).json({ message: 'Nama wajib diisi' });
         if (!email?.trim())          return res.status(400).json({ message: 'Email wajib diisi' });
@@ -280,11 +282,15 @@ router.post('/doctors', guard, async (req, res) => {
             userId          : user.id,
             name            : name.trim(),
             specialization  : specialization.trim(),
-            qualification   : qualification?.trim() || '',
-            gender          : gender || '',
-            bio             : bio?.trim() || '',
+            gender          : gender          || '',
+            bio             : bio?.trim()     || '',
             experience      : experience ? Number(experience) : 0,
             consultationFee : consultationFee ? Number(consultationFee) : 0,
+            strNumber       : strNumber?.trim()        || '',
+            alumnus         : alumnus?.trim()          || '',
+            practiceLocation: practiceLocation?.trim() || '',
+            titlePrefix     : titlePrefix?.trim()      || '',
+            titleSuffix     : titleSuffix?.trim()      || '',
             isActive        : true,
         });
 
@@ -499,12 +505,12 @@ router.get('/users/:id', guard, async (req, res) => {
         let consultations = await Consultation.find({ userId: req.params.id })
             .select('status scheduledAt amount paidAt createdAt consultationType doctorId')
             .sort('-createdAt').limit(20).lean();
-        consultations = await populateFromMySQL(consultations, 'doctorId', 'Doctor', 'name specialization');
+        consultations = await populateFromMySQL(consultations, 'doctorId', 'Doctor', 'name specialization titlePrefix titleSuffix');
 
         let appointments = await Appointment.find({ userId: req.params.id })
             .select('status scheduledAt appointmentTime appointmentDate createdAt doctorId')
             .sort('-createdAt').limit(20).lean();
-        appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name specialization');
+        appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name specialization titlePrefix titleSuffix');
 
         const orders = await Order.findAll({
             where: { userId: req.params.id },
@@ -656,7 +662,7 @@ router.get('/consultations', guard, async (req, res) => {
         const consultations = await Consultation.find(filter)
             // PRIVASI: TIDAK populate messages atau medicalRecord
             .select('status scheduledAt scheduledEnd consultationType startTime endTime paidAt amount xenditExternalId doctorId userId createdAt')
-            .populate('doctorId', 'name specialization')
+            .populate('doctorId', 'name specialization titlePrefix titleSuffix')
             .populate('userId',   'name email')
             .sort('-scheduledAt')
             .skip((Number(page) - 1) * Number(limit))
@@ -699,7 +705,7 @@ router.get('/appointments', guard, async (req, res) => {
         const total = await Appointment.countDocuments(filter);
         const appointments = await Appointment.find(filter)
             .select('status scheduledAt appointmentTime appointmentDate doctorId userId complaint cancelReason createdAt')
-            .populate('doctorId', 'name specialization')
+            .populate('doctorId', 'name specialization titlePrefix titleSuffix')
             .populate('userId',   'name email phone')
             .sort('-scheduledAt')
             .skip((Number(page) - 1) * Number(limit))
@@ -727,7 +733,7 @@ router.put('/appointments/:id/check-in', guard, async (req, res) => {
             userId : appt.userId.id,
             type   : 'appointment_reminder',
             title  : '✅ Check-In Berhasil',
-            message: `Anda telah check-in untuk janji temu dengan dr. ${appt.doctorId?.name}. Silakan menunggu.`,
+            message: `Anda telah check-in untuk janji temu dengan ${fmtDoctorName(appt.doctorId)}. Silakan menunggu.`,
             data   : { appointmentId: appt.id },
             io     : req.app.get('io'),
         });
@@ -763,7 +769,7 @@ router.put('/appointments/:id/cancel', guard, async (req, res) => {
             userId : appt.userId.id,
             type   : 'appointment_cancelled',
             title  : '❌ Janji Temu Dibatalkan',
-            message: `Janji temu Anda dengan dr. ${appt.doctorId?.name} dibatalkan. Alasan: ${reason}`,
+            message: `Janji temu Anda dengan ${fmtDoctorName(appt.doctorId)} dibatalkan. Alasan: ${reason}`,
             data   : { appointmentId: appt.id },
             io,
         });

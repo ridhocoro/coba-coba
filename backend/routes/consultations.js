@@ -1,3 +1,4 @@
+const fmtDoctorName = require('../utils/fmtDoctorName');
 const express = require('express');
 const { Doctor, User } = require('../models/mysql');
 const router = express.Router();
@@ -309,7 +310,7 @@ router.post('/:id/initiate-payment', auth, async (req, res) => {
             {
                 external_id         : externalId,
                 amount,
-                description         : `Konsultasi Online – dr. ${consultation.doctorId?.name || ''}`,
+                description         : `Konsultasi Online – ${fmtDoctorName(consultation.doctorId)}`,
                 invoice_duration    : 900,
                 success_redirect_url: `${FRONTEND_URL}/payment/success?external_id=${externalId}`,
                 failure_redirect_url: `${FRONTEND_URL}/payment/failed?external_id=${externalId}`,
@@ -964,7 +965,7 @@ router.post('/:id/messages', auth, async (req, res) => {
         }
 
         const senderRole = isUser ? 'user' : 'doctor';
-        const senderName = isUser ? patient.name : `dr. ${doctor.name}`;
+        const senderName = isUser ? patient.name : `${fmtDoctorName(doctor)}`;
 
         const msg = {
             senderId: req.userId,
@@ -1012,7 +1013,7 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
             return res.status(403).json({ message: 'Anda bukan peserta konsultasi ini' });
         }
 
-        const senderName = isUser ? patient.name : `dr. ${doctor.name}`;
+        const senderName = isUser ? patient.name : `${fmtDoctorName(doctor)}`;
         const imageUrl = `/uploads/chat/${req.file.filename}`;
 
         const msg = {
@@ -1091,7 +1092,7 @@ router.put('/:id/prescription', auth, doctorAuth, async (req, res) => {
             userId: consultation.userId,
             type: 'prescription_sent',
             title: 'Resep Digital Diterbitkan 💊',
-            message: `dr. ${doctor.name} telah menerbitkan resep untuk Anda. Berlaku 7 hari, 1x pembelian.`,
+            message: `${fmtDoctorName(doctor)} telah menerbitkan resep untuk Anda. Berlaku 7 hari, 1x pembelian.`,
             data: { consultationId: consultation.id },
             io: req.app.get('io')
         });
@@ -1187,7 +1188,7 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         doc.moveDown(1);
         doc.text(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { align: 'right' });
         doc.moveDown(2.5);
-        doc.text(`dr. ${doctor?.name || ''}`, { align: 'right' });
+        doc.text(`${fmtDoctorName(doctor)}`, { align: 'right' });
         if (doctor?.specialization) {
             doc.fontSize(9).text(doctor.specialization, { align: 'right' });
         }
@@ -1280,7 +1281,7 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         doc.text(`Pasien         : ${patient?.name || 'Pasien'}`);
         doc.text(`ID Pasien      : ${consultation.userId.toString().slice(-8).toUpperCase()}`);
         doc.text(`Tanggal        : ${tgl}`);
-        doc.text(`Dokter         : dr. ${doctor?.name || ''}`);
+        doc.text(`Dokter         : ${fmtDoctorName(doctor)}`);
         if (doctor?.specialization) {
             doc.text(`Spesialisasi   : ${doctor.specialization}`);
         }
@@ -1310,7 +1311,7 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         doc.moveDown(0.5);
         doc.text(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { align: 'right' });
         doc.moveDown(2.5);
-        doc.font('Helvetica-Bold').text(`dr. ${doctor?.name || ''}`, { align: 'right' });
+        doc.font('Helvetica-Bold').text(`${fmtDoctorName(doctor)}`, { align: 'right' });
         doc.font('Helvetica').fontSize(9).text(doctor?.specialization || '', { align: 'right' });
 
         doc.end();
@@ -1438,7 +1439,7 @@ router.put('/:id/sick-letter/issue', auth, doctorAuth, async (req, res) => {
             userId: consultation.userId,
             type: 'sick_letter_issued',
             title: 'Surat Sakit Diterbitkan',
-            message: `Surat sakit Anda telah diterbitkan oleh dr. ${doctor.name}`,
+            message: `Surat sakit Anda telah diterbitkan oleh ${fmtDoctorName(doctor)}`,
             data: { consultationId: consultation.id },
             io: req.app.get('io')
         });
@@ -1579,7 +1580,7 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
 
         const nameY = signY + 28 + imgSize + 6;
         doc.fontSize(10).font('Helvetica-Bold')
-           .text(`dr. ${doctor?.name || ''}`, rightX, nameY, { width: colW, align: 'center' });
+           .text(`${fmtDoctorName(doctor)}`, rightX, nameY, { width: colW, align: 'center' });
         if (doctor?.specialization) {
             doc.fontSize(9).font('Helvetica')
                .text(doctor.specialization, rightX, nameY + 14, { width: colW, align: 'center' });

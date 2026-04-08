@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
 import {
     API_URL, colors, fmtDate, fmtDT, toMin, toHHMM,
     CONS_SLOTS, APPT_SLOTS, DAYS_INFO, makeEmptySchedule, DEF_CONS, DEF_APPT,
@@ -10,9 +11,12 @@ import {
 } from './shared';
 
 
-
 const SectionProfile = () => {
-    const [form, setForm] = useState({ name: '', specialization: '', qualification: '', gender: '', bio: '', experience: '' });
+    const { refreshDoctorProfile } = useAuth();
+    const [form, setForm] = useState({
+        name: '', specialization: '', gender: '', bio: '', experience: '',
+        strNumber: '', alumnus: '', practiceLocation: '', titlePrefix: '', titleSuffix: '',
+    });
     const [loading, setLoading]         = useState(true);
     const [saving, setSaving]           = useState(false);
     const [uploading, setUploading]     = useState(false);
@@ -33,12 +37,16 @@ const SectionProfile = () => {
                 const d = r.data.doctor;
                 if (!d) return;
                 setForm({
-                    name:           d.name           || '',
-                    specialization: d.specialization || '',
-                    qualification:  d.qualification  || '',
-                    gender:         d.gender         || '',
-                    bio:            d.bio            || '',
-                    experience:     d.experience     != null ? String(d.experience) : '',
+                    name:             d.name           || '',
+                    specialization:   d.specialization || '',
+                    gender:           d.gender         || '',
+                    bio:              d.bio            || '',
+                    experience:       d.experience     != null ? String(d.experience) : '',
+                    strNumber:        d.strNumber       || '',
+                    alumnus:          d.alumnus         || '',
+                    practiceLocation: d.practiceLocation || '',
+                    titlePrefix:      d.titlePrefix     || '',
+                    titleSuffix:      d.titleSuffix     || '',
                 });
                 setPhotoUrl(d.photo || '');
                 setSignatureUrl(d.signatureUrl || '');
@@ -51,10 +59,28 @@ const SectionProfile = () => {
     const saveProfile = async () => {
         if (!form.name.trim())           { toast.error('Nama wajib diisi'); return; }
         if (!form.specialization.trim()) { toast.error('Spesialisasi wajib diisi'); return; }
+        // Trim strNumber whitespace
+        const payload = { ...form, strNumber: form.strNumber?.trim() || '' };
         setSaving(true);
         try {
-            const r = await api.put('/api/doctors/my/profile', form);
-            setForm(f => ({ ...f, ...r.data.doctor }));
+            const r = await api.put('/api/doctors/my/profile', payload);
+            const d = r.data.doctor;
+            if (d) {
+                setForm(f => ({
+                    ...f,
+                    name:             d.name             || f.name,
+                    specialization:   d.specialization   || f.specialization,
+                    gender:           d.gender           ?? f.gender,
+                    bio:              d.bio              ?? f.bio,
+                    experience:       d.experience != null ? String(d.experience) : f.experience,
+                    strNumber:        d.strNumber         ?? f.strNumber,
+                    alumnus:          d.alumnus           ?? f.alumnus,
+                    practiceLocation: d.practiceLocation  ?? f.practiceLocation,
+                    titlePrefix:      d.titlePrefix       ?? f.titlePrefix,
+                    titleSuffix:      d.titleSuffix       ?? f.titleSuffix,
+                }));
+            }
+            refreshDoctorProfile();
             toast.success('Profil berhasil disimpan ✅');
         } catch (e) { toast.error(e.response?.data?.message || 'Gagal menyimpan profil'); }
         finally { setSaving(false); }
@@ -146,11 +172,10 @@ const SectionProfile = () => {
                     {/* Name & specialization */}
                     <div style={{ textAlign: 'center', marginTop: 14 }}>
                         <div style={{ fontWeight: 800, fontSize: 18, color: colors.text, lineHeight: 1.2 }}>
-                            {form.name || 'Nama Dokter'}
+                            {[form.titlePrefix, form.name, form.titleSuffix].filter(Boolean).join(' ') || 'Nama Dokter'}
                         </div>
                         <div style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
                             {form.specialization || 'Spesialisasi'}
-                            {form.qualification ? <span style={{ color: colors.subtle }}> · {form.qualification}</span> : ''}
                         </div>
                         {(form.experience || form.gender) && (
                             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
@@ -183,13 +208,17 @@ const SectionProfile = () => {
             <Card style={{ padding: 28 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-                    {/* Row 1: Nama */}
-                    <ProfileField label="Nama Lengkap" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required placeholder="dr. Nama Lengkap, Sp.X" />
+                    {/* Row 1: Gelar depan + Nama Lengkap + Gelar belakang */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 160px', gap: 16 }}>
+                        <ProfileField label="Gelar Depan" value={form.titlePrefix} onChange={v => setForm(f => ({ ...f, titlePrefix: v }))} placeholder="mis. dr., Prof. dr." />
+                        <ProfileField label="Nama Lengkap" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required placeholder="Nama lengkap tanpa gelar" />
+                        <ProfileField label="Gelar Belakang" value={form.titleSuffix} onChange={v => setForm(f => ({ ...f, titleSuffix: v }))} placeholder="mis. Sp.PD, M.Kes" />
+                    </div>
 
                     {/* Row 2: Spesialisasi + Pendidikan */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                         <ProfileField label="Spesialisasi" value={form.specialization} onChange={v => setForm(f => ({ ...f, specialization: v }))} required placeholder="mis. Umum, Penyakit Dalam" />
-                        <ProfileField label="Pendidikan / Gelar" value={form.qualification} onChange={v => setForm(f => ({ ...f, qualification: v }))} placeholder="mis. S.Ked, dr., Sp.PD" />
+                        <ProfileField label="Alumnus" value={form.alumnus} onChange={v => setForm(f => ({ ...f, alumnus: v }))} placeholder="mis. Universitas Indonesia" />
                     </div>
 
                     {/* Row 3: Gender + Pengalaman */}
@@ -206,7 +235,13 @@ const SectionProfile = () => {
                         <ProfileField label="Pengalaman (tahun)" value={form.experience} onChange={v => setForm(f => ({ ...f, experience: v }))} placeholder="mis. 5" hint="Masukkan angka tahun pengalaman" />
                     </div>
 
-                    {/* Row 4: Bio */}
+                    {/* Row 4: Nomor STR + Lokasi Praktik */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                        <ProfileField label="Nomor STR" value={form.strNumber} onChange={v => setForm(f => ({ ...f, strNumber: v }))} placeholder="mis. 37.1.2.3.2024.0001" />
+                        <ProfileField label="Lokasi Praktik" value={form.practiceLocation} onChange={v => setForm(f => ({ ...f, practiceLocation: v }))} placeholder="mis. Klinik Sehat, Jakarta Selatan" />
+                    </div>
+
+                    {/* Row 5: Bio */}
                     <div>
                         <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.muted }}>Bio / Deskripsi Singkat</label>
                         <textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} rows={4}

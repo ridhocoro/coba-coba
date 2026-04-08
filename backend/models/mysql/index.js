@@ -79,6 +79,11 @@ const Doctor = sequelize.define('Doctor', {
     signatureUrl    : { type: DataTypes.STRING(500), field: 'signature_url' },
     allowChat       : { type: DataTypes.BOOLEAN, defaultValue: true,  field: 'allow_chat'       },
     allowVideoCall  : { type: DataTypes.BOOLEAN, defaultValue: true,  field: 'allow_video_call' },
+    strNumber       : { type: DataTypes.STRING(100), field: 'str_number' },
+    alumnus         : { type: DataTypes.STRING(255) },
+    practiceLocation: { type: DataTypes.STRING(255), field: 'practice_location' },
+    titlePrefix     : { type: DataTypes.STRING(50),  field: 'title_prefix' },
+    titleSuffix     : { type: DataTypes.STRING(100), field: 'title_suffix' },
 }, { tableName: 'doctors', underscored: true });
 
 // ============================================================

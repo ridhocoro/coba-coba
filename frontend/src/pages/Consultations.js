@@ -17,6 +17,7 @@ import api from '../utils/api';
 import { toast } from 'react-hot-toast';
 import io from 'socket.io-client';
 import { FaStar, FaStarHalfAlt, FaRegStar, FaImage } from 'react-icons/fa';
+import { fmtDoctorName } from '../utils/format';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
@@ -28,6 +29,7 @@ const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
 const fmtRupiah   = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 const fmtDate     = (d) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB' : '-';
+
 
 const fmtDateLabel = (dateStr) => {
     if (!dateStr) return '';
@@ -279,16 +281,16 @@ const DoctorProfileModal = ({ doc, onClose }) => {
                     </div>
 
                     <div style={{ marginTop: 14 }}>
-                        <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>dr. {doc?.name}</div>
+                        <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>{fmtDoctorName(doc)}</div>
                         <div style={{ fontSize: 14, color: '#2563eb', fontWeight: 600, marginTop: 4 }}>Dokter {doc?.specialization}</div>
                     </div>
                 </div>
 
                 {/* Body info */}
-                <div style={{ padding: '20px 24px 28px' }}>
+                <div style={{ padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {/* Keterangan tersedia lagi */}
                     {!showOnline && nextAvail && (
-                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ fontSize: 16 }}>🕐</span>
                             <div>
                                 <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700, textTransform: 'uppercase', letterSpacing: .4 }}>Tersedia lagi</div>
@@ -298,20 +300,53 @@ const DoctorProfileModal = ({ doc, onClose }) => {
                     )}
                     {/* Rating */}
                     {doc?.rating != null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>★</span>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>{Number(doc.rating).toFixed(1)}</span>
+                            {doc.totalReviews > 0 && <span style={{ fontSize: 12, color: '#9ca3af' }}>({doc.totalReviews} ulasan)</span>}
                         </div>
                     )}
 
                     {/* Pengalaman */}
                     {doc?.experience != null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                                      background: '#f9fafb', borderRadius: 10, marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
                             <span style={{ fontSize: 20 }}>🏥</span>
                             <div>
                                 <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>PENGALAMAN</div>
                                 <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.experience} tahun</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Alumnus */}
+                    {doc?.alumnus && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                            <span style={{ fontSize: 20 }}>🎓</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>ALUMNUS</div>
+                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.alumnus}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Lokasi Praktik */}
+                    {doc?.practiceLocation && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                            <span style={{ fontSize: 20 }}>📍</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>LOKASI PRAKTIK</div>
+                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.practiceLocation}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Nomor STR */}
+                    {doc?.strNumber && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10 }}>
+                            <span style={{ fontSize: 20 }}>📋</span>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>NOMOR STR</div>
+                                <div style={{ fontSize: 13, color: '#1e40af', fontWeight: 700, fontFamily: 'monospace', letterSpacing: .5 }}>{doc.strNumber}</div>
                             </div>
                         </div>
                     )}
@@ -384,7 +419,7 @@ const PaymentForm = ({ consultation, amount, deadline, onClose }) => {
                 </div>
                 {consultation?.doctorId?.name && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#374151', marginBottom: 6 }}>
-                        <span>Dokter</span><span style={{ fontWeight: 600 }}>dr. {consultation.doctorId.name}</span>
+                        <span>Dokter</span><span style={{ fontWeight: 600 }}>{fmtDoctorName(consultation.doctorId)}</span>
                     </div>
                 )}
                 {consultation?.scheduledAt && (
@@ -436,7 +471,7 @@ const PaymentForm = ({ consultation, amount, deadline, onClose }) => {
 };
 
 // ── RatingModal — hanya bintang, tanpa komentar ───────────────────────────────
-const RatingModal = ({ consultationId, doctorName, onClose, onSuccess }) => {
+const RatingModal = ({ consultationId, doctor, onClose, onSuccess }) => {
     const [rating, setRating]   = useState(0);
     const [hovered, setHovered] = useState(0);
     const [submitting, setSubmitting] = useState(false);
@@ -456,7 +491,7 @@ const RatingModal = ({ consultationId, doctorName, onClose, onSuccess }) => {
     return (
         <Modal title="⭐ Beri Rating" onClose={onClose} maxWidth={380}>
             <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>
-                Bagaimana pengalaman konsultasi dengan dr. {doctorName}?
+                Bagaimana pengalaman konsultasi dengan {fmtDoctorName(doctor)}?
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 28 }}>
                 {[1, 2, 3, 4, 5].map(i => (
@@ -509,7 +544,7 @@ const ConsultationCard = ({
                         {cons.status === 'completed' ? '📝' : '👨‍⚕️'}
                     </div>
                     <div>
-                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {cons.doctorId?.name || '-'}</div>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{fmtDoctorName(cons.doctorId) || '-'}</div>
                         <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 600 }}>Dokter {cons.doctorId?.specialization || 'Umum'}</div>
                     </div>
                 </div>
@@ -984,7 +1019,7 @@ const Consultations = () => {
                                                 onDownload={() => downloadFile(`/api/consultations/${cons._id}/sick-letter/pdf`, `surat-sakit-${cons._id}.pdf`)}
                                                 onDownloadPrescription={() => downloadFile(`/api/consultations/${cons._id}/prescription/pdf`, `resep-${cons._id}.pdf`)}
                                                 onDownloadMedRecord={() => downloadFile(`/api/consultations/${cons._id}/medical-record/pdf`, `rekam-medis-${cons._id}.pdf`)}
-                                                onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
+                                                onRate={() => setRatingModal({ id: cons._id, doctor: cons.doctorId })}
                                                 onPostCancel={() => { setPostCancelModal(cons); setPostCancelChoice(null); setPostCancelBankCode(''); setPostCancelAccount(''); setPostCancelAccountName(''); }}
                                             />
                                         ))}
@@ -1003,7 +1038,7 @@ const Consultations = () => {
                                                 onDownload={() => downloadFile(`/api/consultations/${cons._id}/sick-letter/pdf`, `surat-sakit-${cons._id}.pdf`)}
                                                 onDownloadPrescription={() => downloadFile(`/api/consultations/${cons._id}/prescription/pdf`, `resep-${cons._id}.pdf`)}
                                                 onDownloadMedRecord={() => downloadFile(`/api/consultations/${cons._id}/medical-record/pdf`, `rekam-medis-${cons._id}.pdf`)}
-                                                onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
+                                                onRate={() => setRatingModal({ id: cons._id, doctor: cons.doctorId })}
                                                 onRefund={() => setRefundModal(cons)}
                                                 onCancel={() => setCancelModal(cons)}
                                                 onReschedule={() => navigate(`/consultations/book/${cons.doctorId?._id || cons.doctorId}?rescheduleId=${cons._id}`)}
@@ -1071,7 +1106,7 @@ const Consultations = () => {
                                                     </div>
                                                     <div>
                                                         <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>
-                                                            dr. {doc.name}
+                                                            {fmtDoctorName(doc)}
                                                         </div>
                                                         <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600, marginTop: 2 }}>Dokter {doc.specialization}</div>
                                                         
@@ -1153,7 +1188,7 @@ const Consultations = () => {
                                         <ConsultationCard key={cons._id} cons={cons}
                                             showChat={true}
                                             onChat={() => navigate(`/consultations/${cons._id}`)}
-                                            onRate={() => setRatingModal({ id: cons._id, doctorName: cons.doctorId?.name })}
+                                            onRate={() => setRatingModal({ id: cons._id, doctor: cons.doctorId })}
                                             onDownload={() => downloadFile(`/api/consultations/${cons._id}/sick-letter/pdf`, `surat-sakit-${cons._id}.pdf`)}
                                             onDownloadPrescription={() => downloadFile(`/api/consultations/${cons._id}/prescription/pdf`, `resep-${cons._id}.pdf`)}
                                             onDownloadMedRecord={() => downloadFile(`/api/consultations/${cons._id}/medical-record/pdf`, `rekam-medis-${cons._id}.pdf`)}
@@ -1185,7 +1220,7 @@ const Consultations = () => {
                                 : '👨‍⚕️'}
                         </div>
                         <div>
-                            <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>dr. {selectedDoc?.name}</div>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{fmtDoctorName(selectedDoc)}</div>
                             <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>Dokter {selectedDoc?.specialization}</div>
                             <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 700, marginTop: 2 }}>{fmtRupiah(selectedDoc?.consultationFee)}</div>
                         </div>
@@ -1342,7 +1377,7 @@ const Consultations = () => {
                         <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: 14, marginBottom: 16 }}>
                             <div style={{ color: '#1d4ed8', fontSize: 11, fontWeight: 700, marginBottom: 8 }}>RINGKASAN PESANAN</div>
                             {[
-                                ['Dokter', `dr. ${selectedDoc?.name}`],
+                                ['Dokter', fmtDoctorName(selectedDoc)],
                                 ['Tipe', bookType === 'chat' ? '💬 Chat' : '📹 Video Call'],
                                 ['Jadwal', `${fmtDateLabel(bookDate)}, ${bookSlotUtc.startTime}–${bookSlotUtc.endTime} WIB`],
                                 ['Biaya', fmtRupiah(selectedDoc?.consultationFee)],
@@ -1423,7 +1458,7 @@ const Consultations = () => {
                         <div style={{ marginTop: 4, color: '#991b1b' }}>Catatan: biaya layanan payment gateway tidak termasuk dalam refund.</div>
                     </div>
                     <div style={{ fontSize: 13, color: '#374151', marginBottom: 16, lineHeight: 1.7 }}>
-                        <div>👨‍⚕️ <strong>Dokter:</strong> dr. {cancelModal.doctorId?.name}</div>
+                        <div>👨‍⚕️ <strong>Dokter:</strong> {fmtDoctorName(cancelModal.doctorId)}</div>
                         <div>📅 <strong>Jadwal:</strong> {fmtDateTime(cancelModal.scheduledAt)}</div>
                     </div>
                     {needsBankInfo && (
@@ -1457,7 +1492,7 @@ const Consultations = () => {
             {postCancelModal && (
                 <Modal title={postCancelModal.status === 'doctor_no_show' ? '😔 Dokter Tidak Hadir' : '🚫 Konsultasi Dibatalkan'} onClose={() => setPostCancelModal(null)}>
                     <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 18 }}>
-                        Konsultasi Anda dengan <strong>dr. {postCancelModal.doctorId?.name}</strong> tidak dapat dilanjutkan. Pilih tindakan selanjutnya:
+                        Konsultasi Anda dengan <strong>{fmtDoctorName(postCancelModal.doctorId)}</strong> tidak dapat dilanjutkan. Pilih tindakan selanjutnya:
                     </p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
                         {[
@@ -1502,7 +1537,7 @@ const Consultations = () => {
             {ratingModal && (
                 <RatingModal
                     consultationId={ratingModal.id}
-                    doctorName={ratingModal.doctorName}
+                    doctor={ratingModal.doctor}
                     onClose={() => setRatingModal(null)}
                     onSuccess={loadData}
                 />

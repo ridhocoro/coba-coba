@@ -58,12 +58,19 @@ const SectionKonsultasi = ({ socketRef }) => {
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
 
-    const activeList = consultations.filter(c => ['confirmed','in_progress','paid','scheduled'].includes(c.status));
+    const activeList = consultations.filter(c =>
+        ['confirmed', 'in_progress', 'ongoing', 'paid', 'scheduled',
+         'pending_payment', 'waiting_verification'].includes(c.status)
+    );
     const todayList  = consultations.filter(c => {
         if (!c.scheduledAt) return false;
         return new Date(c.scheduledAt).toDateString() === new Date().toDateString();
     });
-    const histList   = consultations.filter(c => ['completed','no_show','doctor_no_show','cancelled_by_doctor','expired'].includes(c.status));
+    const histList   = consultations.filter(c =>
+        ['completed', 'no_show', 'doctor_no_show', 'cancelled_by_doctor',
+         'cancelled_by_user', 'cancelled_by_admin', 'expired',
+         'refund_requested', 'refunded', 'refund_failed'].includes(c.status)
+    );
     const shown      = { active: activeList, today: todayList, history: histList }[tab] || [];
 
     const handleStart = async (id) => {

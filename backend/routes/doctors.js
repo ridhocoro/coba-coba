@@ -1,3 +1,4 @@
+const fmtDoctorName = require('../utils/fmtDoctorName');
 /**
  * routes/doctors.js
  *
@@ -116,7 +117,6 @@ router.get('/my/profile', auth, doctorAuth, async (req, res) => {
                 _id:              doctor.id,
                 name:             doctor.name,
                 specialization:   doctor.specialization,
-                qualification:    doctor.qualification,
                 gender:           doctor.gender,
                 bio:              doctor.bio,
                 experience:       doctor.experience,
@@ -127,9 +127,14 @@ router.get('/my/profile', auth, doctorAuth, async (req, res) => {
                 isOnline:         doctor.isOnline,
                 rating:           doctor.rating,
                 totalReviews:     doctor.totalReviews,
-                consultationSettings: { allowChat: doctor.allowChat, allowVideoCall: doctor.allowVideoCall } || {
-                    allowChat: true,
-                    allowVideoCall: true,
+                strNumber:        doctor.strNumber       || '',
+                alumnus:          doctor.alumnus         || '',
+                practiceLocation: doctor.practiceLocation || '',
+                titlePrefix:      doctor.titlePrefix     || '',
+                titleSuffix:      doctor.titleSuffix     || '',
+                consultationSettings: {
+                    allowChat:      doctor.allowChat      ?? true,
+                    allowVideoCall: doctor.allowVideoCall ?? true,
                 },
                 userId: doctor.userId,
             },
@@ -146,7 +151,8 @@ router.get('/my/profile', auth, doctorAuth, async (req, res) => {
  */
 router.put('/my/profile', auth, doctorAuth, async (req, res) => {
     try {
-        const { name, specialization, qualification, gender, bio, experience } = req.body;
+        const { name, specialization, gender, bio, experience,
+                strNumber, alumnus, practiceLocation, titlePrefix, titleSuffix } = req.body;
         // consultationFee sengaja tidak diambil dari req.body
 
         if (!name?.trim())           return res.status(400).json({ success: false, message: 'Nama wajib diisi' });
@@ -154,12 +160,16 @@ router.put('/my/profile', auth, doctorAuth, async (req, res) => {
 
         await Doctor.update(
             {
-                name:           name.trim(),
-                specialization: specialization.trim(),
-                qualification:  qualification?.trim()   || '',
-                gender:         gender                  || '',
-                bio:            bio?.trim()             || '',
-                experience:     experience ? Number(experience) : 0,
+                name:             name.trim(),
+                specialization:   specialization.trim(),
+                gender:           gender                   || '',
+                bio:              bio?.trim()              || '',
+                experience:       experience ? Number(experience) : 0,
+                strNumber:        strNumber?.trim()        || '',
+                alumnus:          alumnus?.trim()          || '',
+                practiceLocation: practiceLocation?.trim() || '',
+                titlePrefix:      titlePrefix?.trim()      || '',
+                titleSuffix:      titleSuffix?.trim()      || '',
             },
             { where: { userId: req.userId } }
         );
@@ -518,7 +528,7 @@ router.get('/', async (req, res) => {
     try {
         const docsRecords = await Doctor.findAll({ 
             where: { isActive: true },
-            attributes: ['id', 'name', 'specialization', 'consultationFee', 'rating', 'photo', 'bio', 'allowChat', 'allowVideoCall', 'isOnline', 'experience'],
+            attributes: ['id', 'name', 'specialization', 'consultationFee', 'rating', 'photo', 'bio', 'allowChat', 'allowVideoCall', 'isOnline', 'experience', 'strNumber', 'alumnus', 'practiceLocation', 'titlePrefix', 'titleSuffix'],
             include: [
                 { model: User, as: 'user', attributes: ['name'] },
                 { model: DoctorSchedule, as: 'schedules' }
@@ -694,11 +704,10 @@ router.put('/:id', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
         // SEC-03 fix: whitelist updatable fields — prevent mass assignment of rating, userId, etc.
-        const { name, specialization, qualification, gender, bio, experience, consultationFee, isActive } = req.body;
+        const { name, specialization, gender, bio, experience, consultationFee, isActive } = req.body;
         const update = {};
         if (name            !== undefined) update.name             = name;
         if (specialization  !== undefined) update.specialization   = specialization;
-        if (qualification   !== undefined) update.qualification    = qualification;
         if (gender          !== undefined) update.gender           = gender;
         if (bio             !== undefined) update.bio              = bio;
         if (experience      !== undefined) update.experience       = experience;
@@ -888,7 +897,7 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             await createNotification({
                 userId : admin.id,
                 type   : 'new_message',
-                title  : `💬 Pesan dari dr. ${doctor.name}`,
+                title  : `💬 Pesan dari ${fmtDoctorName(doctor)}`,
                 message: text?.trim() || 'Dokter mengirimkan file',
                 data   : { doctorId: doctor.id },
                 io,

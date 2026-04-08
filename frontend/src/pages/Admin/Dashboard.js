@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
+import { fmtDoctorName } from '../../utils/format';
+
 
 const fmt = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 const fmtNum = n => Number(n || 0).toLocaleString('id-ID');
@@ -148,7 +150,7 @@ const AdminDashboard = ({ onNavigate }) => {
               <tbody>
                 {growth.doctors.map(d => (
                   <tr key={d._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#0f172a' }}>dr. {d.name}</td>
+                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#0f172a' }}>{fmtDoctorName(d)}</td>
                     <td style={{ padding: '8px 10px', color: '#475569' }}>{d.specialization}</td>
                     <td style={{ padding: '8px 10px' }}>
                       <span style={{ color: '#f59e0b', fontWeight: 700 }}>{d.rating || 0}</span>

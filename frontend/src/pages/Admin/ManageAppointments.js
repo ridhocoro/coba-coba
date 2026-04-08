@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
+
 import { toast } from 'react-hot-toast';
+import { fmtDoctorName } from '../../utils/format';
 
 const STATUS_CFG = {
   scheduled:          { bg:'#dbeafe', c:'#1e40af', l:'Terjadwal' },
@@ -109,7 +111,7 @@ const ManageAppointments = () => {
                 <tr key={appt._id}>
                   <td style={S.td}><div style={{ fontWeight:600 }}>{fmtDate(appt.scheduledAt)}</div><div style={{ fontSize:12, color:'#2563eb' }}>{appt.appointmentTime} WIB</div></td>
                   <td style={S.td}><div style={{ fontWeight:600 }}>{appt.userId?.name || '-'}</div><div style={{ fontSize:11, color:'#64748b' }}>{appt.userId?.phone}</div></td>
-                  <td style={S.td}>dr. {appt.doctorId?.name || '-'}</td>
+                  <td style={S.td}>{fmtDoctorName(appt.doctorId) || '-'}</td>
                   <td style={{ ...S.td, maxWidth:160 }}><div style={{ fontSize:12, color:'#475569', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{appt.complaint || '-'}</div></td>
                   <td style={S.td}><span style={{ background:cfg.bg, color:cfg.c, borderRadius:20, padding:'2px 10px', fontSize:11, fontWeight:700 }}>{cfg.l}</span></td>
                   <td style={S.td}>
@@ -141,7 +143,7 @@ const ManageAppointments = () => {
             </div>
             <div style={{ fontSize:13, color:'#475569', marginBottom:14 }}>
               <div><strong>Pasien:</strong> {cancelModal.userId?.name}</div>
-              <div><strong>Dokter:</strong> dr. {cancelModal.doctorId?.name}</div>
+              <div><strong>Dokter:</strong> {fmtDoctorName(cancelModal.doctorId)}</div>
               <div><strong>Jadwal:</strong> {cancelModal.appointmentTime} WIB</div>
             </div>
             <div style={{ marginBottom:12 }}>

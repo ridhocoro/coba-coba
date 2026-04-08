@@ -1,3 +1,4 @@
+const fmtDoctorName = require('../utils/fmtDoctorName');
 /**
  * routes/appointments.js — Janji Temu Offline
  */
@@ -218,7 +219,9 @@ router.get('/doctors-with-slots', async (req, res) => {
         // 1. Ambil SEMUA dokter yang aktif dari MySQL
         const activeDoctors = await Doctor.findAll({
             where: { isActive: true },
-            attributes: ['id', 'name', 'specialization', 'photo', 'rating', 'experience', 'isActive', 'consultationFee', 'bio'],
+            attributes: ['id', 'name', 'specialization', 'photo', 'rating', 'experience',
+                         'isActive', 'consultationFee', 'bio', 'totalReviews',
+                         'strNumber', 'alumnus', 'practiceLocation', 'titlePrefix', 'titleSuffix'],
             include: [{ model: User, as: 'user', attributes: ['name'] }]
         });
 
@@ -516,7 +519,7 @@ router.post('/book', auth, async (req, res) => {
             userId  : req.userId,
             type    : 'appointment_reminder',
             title   : '✅ Janji Temu Terkonfirmasi',
-            message : `Janji temu Anda dengan dr. ${doctor.name} pada ${fmtTgl(scheduledAt)} pukul ${time} WIB berhasil dibuat.`,
+            message : `Janji temu Anda dengan ${fmtDoctorName(doctor)} pada ${fmtTgl(scheduledAt)} pukul ${time} WIB berhasil dibuat.`,
             data    : { appointmentId: appointment.id },
             io      : req.app.get('io'),
         });
@@ -761,7 +764,7 @@ router.put('/:id/reschedule', auth, async (req, res) => {
             userId  : req.userId,
             type    : 'appointment_reminder',
             title   : '🔄 Jadwal Diubah',
-            message : `Janji temu Anda dengan dr. ${doctorInfo?.name || ''} diubah ke ${fmtTgl(scheduledAt)} pukul ${time} WIB.`,
+            message : `Janji temu Anda dengan ${fmtDoctorName(doctorInfo)} diubah ke ${fmtTgl(scheduledAt)} pukul ${time} WIB.`,
             data    : { appointmentId: updated.id },
             io      : req.app.get('io'),
         });
@@ -888,7 +891,7 @@ router.put('/doctor/:id/complete', auth, doctorAuth, async (req, res) => {
             userId  : appointment.userId.toString(),
             type    : 'appointment_reminder',
             title   : '✅ Janji Temu Selesai',
-            message : `Janji temu Anda dengan dr. ${doctor.name} telah selesai. Rekam medis tersedia.`,
+            message : `Janji temu Anda dengan ${fmtDoctorName(doctor)} telah selesai. Rekam medis tersedia.`,
             data    : { appointmentId: appointment._id },
             io      : req.app.get('io'),
         });
@@ -927,7 +930,7 @@ router.put('/doctor/:id/cancel', auth, doctorAuth, async (req, res) => {
             userId  : appointment.userId.toString(),
             type    : 'appointment_reminder',
             title   : '❌ Janji Temu Dibatalkan Dokter',
-            message : `Maaf, janji temu Anda dengan dr. ${doctor.name} pada pukul ${appointment.appointmentTime} WIB dibatalkan. Alasan: ${reason}`,
+            message : `Maaf, janji temu Anda dengan ${fmtDoctorName(doctor)} pada pukul ${appointment.appointmentTime} WIB dibatalkan. Alasan: ${reason}`,
             data    : { appointmentId: appointment._id },
             io      : req.app.get('io'),
         });

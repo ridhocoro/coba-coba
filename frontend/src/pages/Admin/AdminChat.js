@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../../utils/api';
+
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import io from 'socket.io-client';
+import { fmtDoctorName } from '../../utils/format';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
@@ -152,7 +154,7 @@ const AdminChat = () => {
               <div style={S.avatar}>👨‍⚕️</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>dr. {doc.name}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>fmtDoctorName(doc)</span>
                   {unread > 0 && (
                     <span style={{ background: '#ef4444', color: '#fff', borderRadius: 20, padding: '1px 7px', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{unread}</span>
                   )}
@@ -178,7 +180,7 @@ const AdminChat = () => {
             <div style={S.chatHeader}>
               <div style={S.avatar}>👨‍⚕️</div>
               <div>
-                <div>dr. {activeDoctor?.name}</div>
+                <div>fmtDoctorName(activeDoctor)</div>
                 <div style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>{activeDoctor?.specialization}</div>
               </div>
             </div>
@@ -188,7 +190,7 @@ const AdminChat = () => {
               {!loadingMsgs && messages.length === 0 && (
                 <div style={{ textAlign: 'center', color: '#94a3b8', marginTop: 40 }}>
                   <p style={{ fontSize: 32 }}>👋</p>
-                  <p style={{ fontSize: 13 }}>Belum ada pesan. Mulai percakapan dengan dr. {activeDoctor?.name}.</p>
+                  <p style={{ fontSize: 13 }}>Belum ada pesan. Mulai percakapan dengan fmtDoctorName(activeDoctor).</p>
                 </div>
               )}
               {messages.map((msg, i) => {
@@ -209,7 +211,7 @@ const AdminChat = () => {
                       )}
                     </div>
                     <span style={{ fontSize: 10, color: '#94a3b8', margin: '2px 4px' }}>
-                      {isMine ? 'Admin' : `dr. ${activeDoctor?.name}`} · {fmtTime(msg.createdAt)}
+                      {isMine ? 'Admin' : fmtDoctorName(activeDoctor)} · {fmtTime(msg.createdAt)}
                     </span>
                   </div>
                 );

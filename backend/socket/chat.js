@@ -1,3 +1,4 @@
+const fmtDoctorName = require('../utils/fmtDoctorName');
 const jwt = require('jsonwebtoken');
 const Consultation = require('../models/Consultation');
 const Doctor       = require('../models/Doctor');
@@ -20,7 +21,15 @@ module.exports = (io) => {
     });
 
     io.on('connection', (socket) => {
-        console.log(`🔌 Client connected: ${socket.id} (userId: ${socket.userId})`);
+        // Log hanya di development, dan hanya sekali per userId (bukan per socket id)
+        if (process.env.NODE_ENV !== 'production') {
+            if (!global._socketLog) global._socketLog = {};
+            const now = Date.now();
+            if (!global._socketLog[socket.userId] || now - global._socketLog[socket.userId] > 30000) {
+                global._socketLog[socket.userId] = now;
+                console.log(`[Socket] User connected: ${socket.userId} (role: ${socket.userRole})`);
+            }
+        }
 
         // Join room user sendiri
         socket.on('join-user', (userId) => {
@@ -59,7 +68,9 @@ module.exports = (io) => {
                 if (!socket.consultationRooms) socket.consultationRooms = new Set();
                 socket.consultationRooms.add(consultationId);
 
-                console.log(`User ${socket.userId} (${socket.userRole}) joined consultation: ${consultationId}`);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`[Socket] Joined consultation: ${consultationId} (user: ${socket.userId})`);
+                }
             } catch (err) {
                 console.error('[Socket] join-consultation error:', err.message);
             }
@@ -115,7 +126,7 @@ module.exports = (io) => {
                 const senderRole = isPatient ? (consultation.userId?.role || 'user') : 'doctor';
                 const senderName = isPatient
                     ? (consultation.userId?.name || 'Pasien')
-                    : `dr. ${consultation.doctorId?.name || 'Dokter'}`;
+                    : `${fmtDoctorName(consultation.doctorId)}`;
 
                 io.to(`consultation-${data.consultationId}`).emit('receive-message', {
                     _id:        data._id,
@@ -207,7 +218,11 @@ module.exports = (io) => {
         });
 
         socket.on('disconnect', (reason) => {
-            console.log(`🔌 Client disconnected: ${socket.id} (reason: ${reason})`);
+            // Hanya log disconnect yang tidak normal (bukan navigasi biasa)
+            const normalReasons = ['client namespace disconnect', 'transport close', 'transport error'];
+            if (process.env.NODE_ENV !== 'production' && !normalReasons.includes(reason)) {
+                console.log(`[Socket] User disconnected: ${socket.userId} (reason: ${reason})`);
+            }
         });
     });
 };

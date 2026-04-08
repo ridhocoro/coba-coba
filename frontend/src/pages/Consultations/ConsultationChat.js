@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import io from 'socket.io-client';
 import api, { API_URL } from '../../utils/api';
+import { fmtDoctorName } from '../../utils/format';
 
 // ── Helpers ───────────────────────────────────────────────────────
 const fmtTime = (d) => new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -827,7 +828,7 @@ const SessionEndCountdown = ({ scheduledEnd }) => {
 // ══════════════════════════════════════════════════════════════════
 const ConsultationChat = () => {
   const { id } = useParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, doctorProfile } = useAuth();
   const navigate = useNavigate();
 
   const [consultation, setConsultation] = useState(null);
@@ -1022,7 +1023,7 @@ const ConsultationChat = () => {
     setNewMessage('');
     setSending(true);
     const localId = `local-${Date.now()}-${Math.random()}`;
-    const optimistic = { _localId: localId, senderId: myId, senderName: isDoctor ? `dr. ${user.name}` : user.name, senderRole: user.role, message: text, timestamp: new Date(), _pending: true };
+    const optimistic = { _localId: localId, senderId: myId, senderName: isDoctor ? fmtDoctorName({ titlePrefix: doctorProfile?.titlePrefix, name: user.name, titleSuffix: doctorProfile?.titleSuffix }) : user.name, senderRole: user.role, message: text, timestamp: new Date(), _pending: true };
     setMessages(prev => [...prev, optimistic]);
     try {
       const res = await api.post(`/api/consultations/${id}/messages`, { message: text });
@@ -1286,7 +1287,7 @@ const ConsultationChat = () => {
   const IncomingCallBanner = () => incomingCall && !showVideoCall ? (
     <div style={{ position: 'fixed', top: 80, right: 20, background: '#161b22', border: '1px solid #1f6feb', borderRadius: 14, padding: '16px 20px', zIndex: 9000, boxShadow: '0 8px 30px rgba(0,0,0,.5)', minWidth: 260 }}>
       <div style={{ color: '#e6edf3', fontWeight: 700, marginBottom: 4 }}>📹 Panggilan Video Masuk</div>
-      <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 12 }}>dr. {doc?.name} mengajak video call</div>
+      <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 12 }}>{fmtDoctorName(doc)} mengajak video call</div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={() => { setIncomingCall(null); }} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#f85149', cursor: 'pointer', fontWeight: 600 }}>
           ❌ Tolak
@@ -1329,7 +1330,7 @@ const ConsultationChat = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍⚕️</div>
               <div>
-                <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>dr. {doc?.name}</div>
+                <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
                 <div style={{ color: '#58a6ff', fontSize: 12 }}>{doc?.specialization}</div>
               </div>
             </div>
@@ -1539,7 +1540,7 @@ const ConsultationChat = () => {
           <div style={s.header}>
             <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👨‍⚕️</div>
             <div style={{ flex: 1 }}>
-              <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>dr. {doc?.name}</div>
+              <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
               <div style={{ color: '#8b949e', fontSize: 12 }}>{doc?.specialization} · {typeLabel}</div>
             </div>
             <StatusBadge status={consultation.status} />

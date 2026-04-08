@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { fmtDoctorName } from '../../utils/format';
+
 
 const ManageUsers = () => {
   const [users, setUsers]     = useState([]);
@@ -215,7 +217,7 @@ const ManageUsers = () => {
                   <div style={{ maxHeight: 140, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {items.map(item => (
                       <div key={item._id} style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 12px', fontSize: 12, display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{type === 'orders' ? item.orderNumber : (item.doctorId?.name ? `dr. ${item.doctorId.name}` : '-')}</span>
+                        <span>{type === 'orders' ? item.orderNumber : (item.doctorId?.name ? fmtDoctorName(item.doctorId) : '-')}</span>
                         <span style={{ color: '#64748b' }}>{item.status}</span>
                       </div>
                     ))}

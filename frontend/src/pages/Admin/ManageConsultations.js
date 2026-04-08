@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
+import { fmtDoctorName } from '../../utils/format';
+
 
 const STATUS_CFG = {
   confirmed:          { bg:'#dbeafe', c:'#1e40af', l:'Terkonfirmasi' },
@@ -86,7 +88,7 @@ const ManageConsultations = () => {
                 <tr key={c._id}>
                   <td style={S.td}>{fmtDate(c.scheduledAt)}</td>
                   <td style={S.td}><div style={{ fontWeight:600 }}>{c.userId?.name || '-'}</div><div style={{ fontSize:11, color:'#64748b' }}>{c.userId?.email}</div></td>
-                  <td style={S.td}>dr. {c.doctorId?.name || '-'}<div style={{ fontSize:11, color:'#64748b' }}>{c.doctorId?.specialization}</div></td>
+                  <td style={S.td}>{fmtDoctorName(c.doctorId) || '-'}<div style={{ fontSize:11, color:'#64748b' }}>{c.doctorId?.specialization}</div></td>
                   <td style={S.td}>{c.consultationType === 'video_call' ? '📹 Video' : '💬 Chat'}</td>
                   <td style={S.td}>{c.durationMin != null ? `${c.durationMin} mnt` : '-'}</td>
                   <td style={S.td}><span style={{ background: cfg.bg, color: cfg.c, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>{cfg.l}</span></td>

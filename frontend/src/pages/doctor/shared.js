@@ -201,25 +201,20 @@ export const SchedulePreview = ({ schedule, color = colors.primary }) => {
     const total = activeDays.reduce((s, d) => s + (schedule[String(d.val)] || []).length, 0);
     return (
         <div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
                 {activeDays.map(day => {
-                    const slots = schedule[String(day.val)] || [];
+                    const count = (schedule[String(day.val)] || []).length;
                     return (
-                        <div key={day.val} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div key={day.val} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110 }}>
                             <span style={{ fontSize: 12, fontWeight: 700, color, minWidth: 52 }}>{day.label}</span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                {slots.map(s => (
-                                    <span key={s} style={{ background: `${color}15`, color, border: `1px solid ${color}30`, borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
-                                        {s} WIB
-                                    </span>
-                                ))}
-                            </div>
-                            <span style={{ fontSize: 11, color: colors.muted }}>({slots.length} slot)</span>
+                            <span style={{ fontSize: 12, background: `${color}15`, color, border: `1px solid ${color}30`, borderRadius: 20, padding: '2px 10px', fontWeight: 700 }}>
+                                {count} slot
+                            </span>
                         </div>
                     );
                 })}
             </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: colors.muted, fontWeight: 600 }}>Total: {total} slot/minggu</div>
+            <div style={{ marginTop: 10, fontSize: 12, color: colors.muted, fontWeight: 600 }}>Total: {total} slot/minggu</div>
         </div>
     );
 };

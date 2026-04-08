@@ -13,6 +13,7 @@ import React, {
     useState, useEffect, useRef, useCallback
 } from 'react';
 import { toast } from 'react-hot-toast';
+import { fmtDoctorName } from '../../utils/format';
 
 // ── ICE Servers (baca dari env atau gunakan public STUN) ──────────────────────
 const buildIceServers = () => {
@@ -45,7 +46,7 @@ export default function VideoCallModal({
     consultationId,
     socket,
     isDoctor,
-    doctorName,
+    doctor,
     patientName,
     onClose,
     onCallEnded,
@@ -321,7 +322,8 @@ export default function VideoCallModal({
         'failed'       : { color: '#c0392b', label: 'Gagal'    },
     }[iceState] || { color: '#8b949e', label: '' };
 
-    const remoteName = isDoctor ? (patientName || 'Pasien') : `dr. ${doctorName || 'Dokter'}`;
+    const fullDoctorName = doctor ? fmtDoctorName(doctor) : 'Dokter';
+    const remoteName = isDoctor ? (patientName || 'Pasien') : fullDoctorName;
 
     // ── Render: Incoming call (pasien) ────────────────────────────────────
     if (incomingOffer && !isDoctor) {

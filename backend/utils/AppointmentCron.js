@@ -1,3 +1,4 @@
+const fmtDoctorName = require('./fmtDoctorName');
 /**
  * AppointmentCron.js
  *
@@ -106,7 +107,7 @@ async function runReminder() {
                     userId  : user.id,
                     type    : 'appointment_reminder',
                     title   : '⏰ Pengingat Janji Temu',
-                    message : `Ingat! Anda memiliki janji temu dengan dr. ${doctor?.name || '-'} besok pukul ${appt.appointmentTime} WIB. Harap datang tepat waktu.`,
+                    message : `Ingat! Anda memiliki janji temu dengan ${fmtDoctorName(doctor)} besok pukul ${appt.appointmentTime} WIB. Harap datang tepat waktu.`,
                     data    : { appointmentId: appt._id },
                     io      : _io,
                 });

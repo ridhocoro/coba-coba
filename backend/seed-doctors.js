@@ -4,10 +4,11 @@ require('dotenv').config();
 
 const doctors = [
     {
-        name: 'dr. Ahmad Syauqi, Sp.PD',
+        name: 'Ahmad Syauqi',
+         titlePrefix: 'dr.',
+         titleSuffix: 'Sp.PD',
         specialization: 'Penyakit Dalam',
         consultationFee: 150000,
-        qualification: 'Spesialis Penyakit Dalam',
         experience: 15,
         rating: 4.9,
         totalReviews: 128,
@@ -38,10 +39,11 @@ const doctors = [
         ]
     },
     {
-        name: 'dr. Siti Rahma, Sp.A',
+        name: 'Siti Rahma',
+         titlePrefix: 'dr.',
+         titleSuffix: 'Sp.A',
         specialization: 'Spesialis Anak',
         consultationFee: 120000,
-        qualification: 'Spesialis Anak',
         experience: 12,
         rating: 4.8,
         totalReviews: 95,
@@ -64,10 +66,11 @@ const doctors = [
         ]
     },
     {
-        name: 'dr. Budi Santoso, Sp.JP',
+        name: 'Budi Santoso',
+         titlePrefix: 'dr.',
+         titleSuffix: 'Sp.JP',
         specialization: 'Spesialis Jantung',
         consultationFee: 250000,
-        qualification: 'Spesialis Jantung dan Pembuluh Darah',
         experience: 20,
         rating: 5.0,
         totalReviews: 210,
@@ -90,10 +93,11 @@ const doctors = [
         ]
     },
     {
-        name: 'dr. Dewi Lestari, Sp.OG',
+        name: 'Dewi Lestari',
+         titlePrefix: 'dr.',
+         titleSuffix: 'Sp.OG',
         specialization: 'Spesialis Kandungan',
         consultationFee: 200000,
-        qualification: 'Spesialis Obstetri dan Ginekologi',
         experience: 10,
         rating: 4.7,
         totalReviews: 82,
@@ -116,10 +120,11 @@ const doctors = [
         ]
     },
     {
-        name: 'dr. Rudi Hermawan, Sp.KK',
+        name: 'Rudi Hermawan',
+         titlePrefix: 'dr.',
+         titleSuffix: 'Sp.KK',
         specialization: 'Spesialis Kulit',
         consultationFee: 180000,
-        qualification: 'Spesialis Kulit dan Kelamin',
         experience: 8,
         rating: 4.6,
         totalReviews: 67,
@@ -142,10 +147,11 @@ const doctors = [
         ]
     },
     {
-        name: 'dr. Maya Safitri, Sp.M',
+        name: 'Maya Safitri',
+         titlePrefix: 'dr.',
+         titleSuffix: 'Sp.M',
         specialization: 'Spesialis Mata',
         consultationFee: 160000,
-        qualification: 'Spesialis Mata',
         experience: 7,
         rating: 4.8,
         totalReviews: 73,
