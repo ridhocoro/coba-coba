@@ -39,6 +39,7 @@ import AdminIndex from './pages/Admin/index';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { useLocation } from 'react-router-dom';
 
 // ─── Route guard ───────────────────────────────────────────────────────────────
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -65,17 +66,19 @@ const HomeRouter = () => {
 // ─── App content ──────────────────────────────────────────────────────────────
 function AppContent() {
     const { user } = useAuth();
+    const location = useLocation();
     const isDoctor = user?.role === 'doctor';
     const isAdmin  = user?.role === 'admin';
 
-    // Admin dan Dokter punya layout sendiri — sembunyikan Navbar & Footer global
-    const hideLayout = isDoctor || isAdmin;
+    // Sembunyikan Navbar & Footer untuk: admin, dokter, dan halaman chat konsultasi
+    const isChatPage = /^\/consultations\/[^/]+$/.test(location.pathname) && location.pathname !== '/consultations';
+    const hideLayout = isDoctor || isAdmin || isChatPage;
 
     return (
         <div className="App">
             {!hideLayout && <Navbar />}
 
-            <main style={{ minHeight: hideLayout ? '100vh' : '80vh' }}>
+            <main style={{ minHeight: hideLayout ? '100vh' : '80vh', height: isChatPage ? '100vh' : 'auto', overflow: isChatPage ? 'hidden' : 'auto' }}>
                 <Routes>
                     {/* ===== PUBLIC ===== */}
                     <Route path="/"                         element={<HomeRouter />} />

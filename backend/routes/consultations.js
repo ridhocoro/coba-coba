@@ -187,7 +187,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 
         const CONS_CUTOFF_MS = 20 * 60 * 1000;
         if (slotStart.getTime() - now.getTime() < CONS_CUTOFF_MS) {
-            return res.status(400).json({ message: 'Pemesanan harus dilakukan minimal 20 menit sebelum jadwal' });
+            return res.status(400).json({ message: 'Pemesanan harus dilakukan maksimal 20 menit sebelum jadwal' });
         }
 
         const slotConflict = await Consultation.findOne({
@@ -1615,7 +1615,7 @@ router.get('/:id', auth, async (req, res) => {
         // Populate MySQL agar tampilan Frontend bisa membaca `userId.name` dan `doctorId.name`
         const populated = await populateFromMySQL(consultation.toObject(), [
             { field: 'userId', model: 'User', attributes: ['name', 'email', 'phone'] },
-            { field: 'doctorId', model: 'Doctor', attributes: ['name', 'specialization', 'photo', 'userId'] }
+            { field: 'doctorId', model: 'Doctor', attributes: ['name', 'specialization', 'photo', 'userId', 'titlePrefix', 'titleSuffix', 'strNumber', 'alumnus', 'practiceLocation'] }
         ]);
 
         const chatAllowedStatuses = ['confirmed', 'in_progress', 'completed', 'no_show',

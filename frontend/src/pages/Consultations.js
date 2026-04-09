@@ -22,12 +22,12 @@ import { fmtDoctorName } from '../utils/format';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
-const WIB_OFFSET        = 7 * 60 * 60 * 1000;
-const DAY_NAMES         = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const WIB_OFFSET = 7 * 60 * 60 * 1000;
+const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
 
-const fmtRupiah   = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
-const fmtDate     = (d) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+const fmtRupiah = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB' : '-';
 
 
@@ -49,26 +49,26 @@ const groupByDate = (slotsArr) => {
 };
 
 const STATUS_CFG = {
-    draft:                { color: '#6b7280', bg: '#f3f4f6', label: 'Draft' },
-    pending_payment:      { color: '#b45309', bg: '#fffbeb', label: 'Menunggu Pembayaran' },
+    draft: { color: '#6b7280', bg: '#f3f4f6', label: 'Draft' },
+    pending_payment: { color: '#b45309', bg: '#fffbeb', label: 'Menunggu Pembayaran' },
     waiting_verification: { color: '#b45309', bg: '#fffbeb', label: 'Verifikasi Pembayaran' },
-    confirmed:            { color: '#1d4ed8', bg: '#eff6ff', label: 'Dikonfirmasi' },
-    paid:                 { color: '#1d4ed8', bg: '#eff6ff', label: 'Dibayar' },
-    scheduled:            { color: '#7e22ce', bg: '#f5f3ff', label: 'Terjadwal' },
-    in_progress:          { color: '#15803d', bg: '#f0fdf4', label: 'Berlangsung' },
-    ongoing:              { color: '#15803d', bg: '#f0fdf4', label: 'Berlangsung' },
-    completed:            { color: '#4b5563', bg: '#f3f4f6', label: 'Selesai' },
-    cancelled:            { color: '#b91c1c', bg: '#fef2f2', label: 'Dibatalkan' },
-    cancelled_by_user:    { color: '#b91c1c', bg: '#fef2f2', label: 'Batal (Pasien)' },
-    cancelled_by_doctor:  { color: '#b91c1c', bg: '#fef2f2', label: 'Batal (Dokter)' },
-    cancelled_by_admin:   { color: '#b91c1c', bg: '#fef2f2', label: 'Batal (Admin)' },
-    expired:              { color: '#6b7280', bg: '#f3f4f6', label: 'Kadaluarsa' },
-    rejected_payment:     { color: '#b91c1c', bg: '#fef2f2', label: 'Pembayaran Ditolak' },
-    no_show:              { color: '#9a3412', bg: '#fef3c7', label: 'Tidak Hadir' },
-    doctor_no_show:       { color: '#b91c1c', bg: '#fef2f2', label: 'Dokter Tidak Hadir' },
-    refund_requested:     { color: '#7e22ce', bg: '#f5f3ff', label: 'Refund Diajukan' },
-    refunded:             { color: '#15803d', bg: '#f0fdf4', label: 'Refund Selesai' },
-    refund_failed:        { color: '#b91c1c', bg: '#fef2f2', label: 'Refund Ditolak' },
+    confirmed: { color: '#1d4ed8', bg: '#eff6ff', label: 'Dikonfirmasi' },
+    paid: { color: '#1d4ed8', bg: '#eff6ff', label: 'Dibayar' },
+    scheduled: { color: '#7e22ce', bg: '#f5f3ff', label: 'Terjadwal' },
+    in_progress: { color: '#15803d', bg: '#f0fdf4', label: 'Berlangsung' },
+    ongoing: { color: '#15803d', bg: '#f0fdf4', label: 'Berlangsung' },
+    completed: { color: '#4b5563', bg: '#f3f4f6', label: 'Selesai' },
+    cancelled: { color: '#b91c1c', bg: '#fef2f2', label: 'Dibatalkan' },
+    cancelled_by_user: { color: '#b91c1c', bg: '#fef2f2', label: 'Batal (Pasien)' },
+    cancelled_by_doctor: { color: '#b91c1c', bg: '#fef2f2', label: 'Batal (Dokter)' },
+    cancelled_by_admin: { color: '#b91c1c', bg: '#fef2f2', label: 'Batal (Admin)' },
+    expired: { color: '#6b7280', bg: '#f3f4f6', label: 'Kadaluarsa' },
+    rejected_payment: { color: '#b91c1c', bg: '#fef2f2', label: 'Pembayaran Ditolak' },
+    no_show: { color: '#9a3412', bg: '#fef3c7', label: 'Tidak Hadir' },
+    doctor_no_show: { color: '#b91c1c', bg: '#fef2f2', label: 'Dokter Tidak Hadir' },
+    refund_requested: { color: '#7e22ce', bg: '#f5f3ff', label: 'Refund Diajukan' },
+    refunded: { color: '#15803d', bg: '#f0fdf4', label: 'Refund Selesai' },
+    refund_failed: { color: '#b91c1c', bg: '#fef2f2', label: 'Refund Ditolak' },
 };
 
 function canCancelConsultation(cons) {
@@ -121,9 +121,9 @@ const Countdown = ({ deadline, onExpired }) => {
 
 // ── Helpers: status online/offline dokter konsultasi ─────────────────────────
 // availableDays: [{ day: 'Senin', slots: [{ startTime: '08:00', endTime: '10:00', isAvailable }] }]
-const DAY_NAME_TO_DOW = { 'Minggu':0,'Senin':1,'Selasa':2,'Rabu':3,'Kamis':4,'Jumat':5,'Sabtu':6 };
-const DOW_TO_DAY_NAME = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-const MONTH_ABBR      = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+const DAY_NAME_TO_DOW = { 'Minggu': 0, 'Senin': 1, 'Selasa': 2, 'Rabu': 3, 'Kamis': 4, 'Jumat': 5, 'Sabtu': 6 };
+const DOW_TO_DAY_NAME = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 /**
  * Cek apakah dokter konsultasi sedang online sekarang.
@@ -134,8 +134,8 @@ const isConsultDocOnlineNow = (doc) => {
         const availableDays = doc?.availableDays;
         if (!availableDays || !availableDays.length) return false;
 
-        const nowWIB  = new Date(Date.now() + 7 * 60 * 60 * 1000);
-        const dow     = nowWIB.getUTCDay();
+        const nowWIB = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const dow = nowWIB.getUTCDay();
         const nowMins = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
 
         const todayEntry = availableDays.find(d => DAY_NAME_TO_DOW[d.day] === dow);
@@ -173,9 +173,9 @@ const getConsultNextAvailable = (doc) => {
         const availableDays = doc?.availableDays;
         if (!availableDays || !availableDays.length) return null;
 
-        const nowWIB  = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const nowWIB = new Date(Date.now() + 7 * 60 * 60 * 1000);
         const todayDow = nowWIB.getUTCDay();
-        const nowMins  = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
+        const nowMins = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
 
         // Coba dalam 7 hari ke depan (termasuk hari ini setelah jam sekarang)
         for (let delta = 0; delta <= 6; delta++) {
@@ -201,9 +201,9 @@ const getConsultNextAvailable = (doc) => {
                 const targetDate = new Date(nowWIB);
                 targetDate.setUTCDate(targetDate.getUTCDate() + delta);
 
-                const tgl  = targetDate.getUTCDate();
-                const bln  = MONTH_ABBR[targetDate.getUTCMonth()];
-                const thn  = targetDate.getUTCFullYear();
+                const tgl = targetDate.getUTCDate();
+                const bln = MONTH_ABBR[targetDate.getUTCMonth()];
+                const thn = targetDate.getUTCFullYear();
                 const hari = DOW_TO_DAY_NAME[targetDow];
 
                 return { label: `${hari}, ${tgl} ${bln} ${thn}, ${slot.startTime} WIB` };
@@ -229,137 +229,147 @@ const POPUP_STYLE = `
 
 // ── DoctorProfileModal (Konsultasi) ──────────────────────────────────────────
 const DoctorProfileModal = ({ doc, onClose }) => {
-    const online        = isConsultDocOnlineNow(doc);
+    const online = isConsultDocOnlineNow(doc);
     const hasAnySchedule = consultDocHasAnySchedule(doc);
     // isOffline dari backend = belum buat jadwal sama sekali / jadwal expired
-    const noSchedule    = doc?.isOffline === true || !hasAnySchedule;
-    const showOnline    = !noSchedule && online;
-    const nextAvail     = (!showOnline && !noSchedule) ? getConsultNextAvailable(doc) : null;
+    const noSchedule = doc?.isOffline === true || !hasAnySchedule;
+    const showOnline = !noSchedule && online;
+    const nextAvail = (!showOnline && !noSchedule) ? getConsultNextAvailable(doc) : null;
 
     return (
         <>
             <style>{POPUP_STYLE}</style>
             <div className="cons-popup-backdrop"
-                 style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999,
-                           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-                 onClick={onClose}>
-            <div className="cons-popup-card"
-                 style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400,
-                           maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,.25)' }}
-                 onClick={e => e.stopPropagation()}>
+                style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+                }}
+                onClick={onClose}>
+                <div className="cons-popup-card"
+                    style={{
+                        background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400,
+                        maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,.25)'
+                    }}
+                    onClick={e => e.stopPropagation()}>
 
-                {/* Header foto */}
-                <div style={{ position: 'relative', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)',
-                              borderRadius: '20px 20px 0 0', padding: '32px 24px 24px', textAlign: 'center' }}>
-                    <button onClick={onClose}
-                        style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(255,255,255,0.8)',
-                                 border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 18,
-                                 cursor: 'pointer', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        ×
-                    </button>
+                    {/* Header foto */}
+                    <div style={{
+                        position: 'relative', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)',
+                        borderRadius: '20px 20px 0 0', padding: '32px 24px 24px', textAlign: 'center'
+                    }}>
+                        <button onClick={onClose}
+                            style={{
+                                position: 'absolute', top: 14, right: 14, background: 'rgba(255,255,255,0.8)',
+                                border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 18,
+                                cursor: 'pointer', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                            ×
+                        </button>
 
-                    {/* Foto besar */}
-                    <div style={{ position: 'relative', display: 'inline-block' }}>
-                        <div style={{ width: 96, height: 96, borderRadius: '50%', background: '#e5e7eb',
-                                      overflow: 'hidden', margin: '0 auto', border: '4px solid #fff',
-                                      boxShadow: '0 4px 16px rgba(0,0,0,.12)', display: 'flex',
-                                      alignItems: 'center', justifyContent: 'center', fontSize: 42 }}>
-                            {doc?.photo
-                                ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : '👨‍⚕️'}
+                        {/* Foto besar */}
+                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <div style={{
+                                width: 96, height: 96, borderRadius: '50%', background: '#e5e7eb',
+                                overflow: 'hidden', margin: '0 auto', border: '4px solid #fff',
+                                boxShadow: '0 4px 16px rgba(0,0,0,.12)', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center', fontSize: 42
+                            }}>
+                                {doc?.photo
+                                    ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    : '👨‍⚕️'}
+                            </div>
+                            {/* Badge online/offline */}
+                            <span style={{
+                                position: 'absolute', bottom: 4, right: 4,
+                                background: showOnline ? '#22c55e' : '#ef4444',
+                                color: '#fff', fontSize: 10, fontWeight: 700,
+                                padding: '2px 7px', borderRadius: 20,
+                                border: '2px solid #fff', whiteSpace: 'nowrap',
+                            }}>
+                                {showOnline ? '● Online' : '● Offline'}
+                            </span>
                         </div>
-                        {/* Badge online/offline */}
-                        <span style={{
-                            position: 'absolute', bottom: 4, right: 4,
-                            background: showOnline ? '#22c55e' : '#ef4444',
-                            color: '#fff', fontSize: 10, fontWeight: 700,
-                            padding: '2px 7px', borderRadius: 20,
-                            border: '2px solid #fff', whiteSpace: 'nowrap',
-                        }}>
-                            {showOnline ? '● Online' : '● Offline'}
-                        </span>
+
+                        <div style={{ marginTop: 14 }}>
+                            <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>{fmtDoctorName(doc)}</div>
+                            <div style={{ fontSize: 14, color: '#2563eb', fontWeight: 600, marginTop: 4 }}>Dokter {doc?.specialization}</div>
+                        </div>
                     </div>
 
-                    <div style={{ marginTop: 14 }}>
-                        <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>{fmtDoctorName(doc)}</div>
-                        <div style={{ fontSize: 14, color: '#2563eb', fontWeight: 600, marginTop: 4 }}>Dokter {doc?.specialization}</div>
+                    {/* Body info */}
+                    <div style={{ padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {/* Keterangan tersedia lagi */}
+                        {!showOnline && nextAvail && (
+                            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 16 }}>🕐</span>
+                                <div>
+                                    <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700, textTransform: 'uppercase', letterSpacing: .4 }}>Tersedia lagi</div>
+                                    <div style={{ fontSize: 13, color: '#78350f', fontWeight: 600 }}>{nextAvail.label}</div>
+                                </div>
+                            </div>
+                        )}
+                        {/* Rating */}
+                        {doc?.rating != null && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>★</span>
+                                <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>{Number(doc.rating).toFixed(1)}</span>
+                                {doc.totalReviews > 0 && <span style={{ fontSize: 12, color: '#9ca3af' }}>({doc.totalReviews} ulasan)</span>}
+                            </div>
+                        )}
+
+                        {/* Pengalaman */}
+                        {doc?.experience != null && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                                <span style={{ fontSize: 20 }}>🏥</span>
+                                <div>
+                                    <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>PENGALAMAN</div>
+                                    <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.experience} tahun</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Alumnus */}
+                        {doc?.alumnus && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                                <span style={{ fontSize: 20 }}>🎓</span>
+                                <div>
+                                    <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>ALUMNUS</div>
+                                    <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.alumnus}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Lokasi Praktik */}
+                        {doc?.practiceLocation && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                                <span style={{ fontSize: 20 }}>📍</span>
+                                <div>
+                                    <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>LOKASI PRAKTIK</div>
+                                    <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.practiceLocation}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Nomor STR */}
+                        {doc?.strNumber && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10 }}>
+                                <span style={{ fontSize: 20 }}>📋</span>
+                                <div>
+                                    <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>NOMOR STR</div>
+                                    <div style={{ fontSize: 13, color: '#1e40af', fontWeight: 700, fontFamily: 'monospace', letterSpacing: .5 }}>{doc.strNumber}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Bio */}
+                        {doc?.bio && (
+                            <div style={{ padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
+                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, marginBottom: 6 }}>TENTANG DOKTER</div>
+                                <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{doc.bio}</p>
+                            </div>
+                        )}
                     </div>
                 </div>
-
-                {/* Body info */}
-                <div style={{ padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {/* Keterangan tersedia lagi */}
-                    {!showOnline && nextAvail && (
-                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 16 }}>🕐</span>
-                            <div>
-                                <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700, textTransform: 'uppercase', letterSpacing: .4 }}>Tersedia lagi</div>
-                                <div style={{ fontSize: 13, color: '#78350f', fontWeight: 600 }}>{nextAvail.label}</div>
-                            </div>
-                        </div>
-                    )}
-                    {/* Rating */}
-                    {doc?.rating != null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>★</span>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>{Number(doc.rating).toFixed(1)}</span>
-                            {doc.totalReviews > 0 && <span style={{ fontSize: 12, color: '#9ca3af' }}>({doc.totalReviews} ulasan)</span>}
-                        </div>
-                    )}
-
-                    {/* Pengalaman */}
-                    {doc?.experience != null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
-                            <span style={{ fontSize: 20 }}>🏥</span>
-                            <div>
-                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>PENGALAMAN</div>
-                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.experience} tahun</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Alumnus */}
-                    {doc?.alumnus && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
-                            <span style={{ fontSize: 20 }}>🎓</span>
-                            <div>
-                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>ALUMNUS</div>
-                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.alumnus}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Lokasi Praktik */}
-                    {doc?.practiceLocation && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
-                            <span style={{ fontSize: 20 }}>📍</span>
-                            <div>
-                                <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>LOKASI PRAKTIK</div>
-                                <div style={{ fontSize: 14, color: '#111827', fontWeight: 600 }}>{doc.practiceLocation}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Nomor STR */}
-                    {doc?.strNumber && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10 }}>
-                            <span style={{ fontSize: 20 }}>📋</span>
-                            <div>
-                                <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>NOMOR STR</div>
-                                <div style={{ fontSize: 13, color: '#1e40af', fontWeight: 700, fontFamily: 'monospace', letterSpacing: .5 }}>{doc.strNumber}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Bio */}
-                    {doc?.bio && (
-                        <div style={{ padding: '10px 14px', background: '#f9fafb', borderRadius: 10 }}>
-                            <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, marginBottom: 6 }}>TENTANG DOKTER</div>
-                            <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{doc.bio}</p>
-                        </div>
-                    )}
-                </div>
-            </div>
             </div>
         </>
     );
@@ -389,7 +399,7 @@ const Card = ({ children }) => (
 // ── PaymentForm ───────────────────────────────────────────────────────────────
 const PaymentForm = ({ consultation, amount, deadline, onClose }) => {
     const [loading, setLoading] = useState(false);
-    const [error, setError]     = useState(null);
+    const [error, setError] = useState(null);
 
     const handlePay = async () => {
         setLoading(true); setError(null);
@@ -472,7 +482,7 @@ const PaymentForm = ({ consultation, amount, deadline, onClose }) => {
 
 // ── RatingModal — hanya bintang, tanpa komentar ───────────────────────────────
 const RatingModal = ({ consultationId, doctor, onClose, onSuccess }) => {
-    const [rating, setRating]   = useState(0);
+    const [rating, setRating] = useState(0);
     const [hovered, setHovered] = useState(0);
     const [submitting, setSubmitting] = useState(false);
 
@@ -520,18 +530,18 @@ const ConsultationCard = ({
     showChat = false,
 }) => {
     const c = STATUS_CFG[cons.status] || { label: cons.status, color: '#6b7280', bg: '#f3f4f6' };
-    const needsPay        = cons.status === 'pending_payment';
-    const canChat         = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(cons.status);
+    const needsPay = cons.status === 'pending_payment';
+    const canChat = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing'].includes(cons.status);
     // Rating bisa dari Riwayat
-    const canRate         = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(cons.status) && !cons.rating;
-    const hasSickLetter   = cons.sickLetter?.status === 'issued';
+    const canRate = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(cons.status) && !cons.rating;
+    const hasSickLetter = cons.sickLetter?.status === 'issued';
     const hasPrescription = !!(cons.prescriptionData?.prescriptionNumber || cons.prescription);
-    const hasMedRecord    = !!cons.medicalRecord?.isCompleted;
-    const canRefund       = ['cancelled_by_doctor', 'doctor_no_show'].includes(cons.status);
+    const hasMedRecord = !!cons.medicalRecord?.isCompleted;
+    const canRefund = ['cancelled_by_doctor', 'doctor_no_show'].includes(cons.status);
     const isRefundPending = cons.status === 'refund_requested';
-    const isRefundFailed  = cons.status === 'refund_failed';
-    const showCancelBtn   = canCancelConsultation(cons);
-    const canReschedule   = cons.status === 'confirmed' && showCancelBtn;
+    const isRefundFailed = cons.status === 'refund_failed';
+    const showCancelBtn = canCancelConsultation(cons);
+    const canReschedule = cons.status === 'confirmed' && showCancelBtn;
     const needsPostCancelAction = ['doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(cons.status)
         && !cons.postCancelChoice && cons.paidAt;
 
@@ -747,50 +757,50 @@ const Consultations = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
 
-    const [activeTab, setActiveTab]         = useState('aktif');
+    const [activeTab, setActiveTab] = useState('aktif');
     const [consultations, setConsultations] = useState([]);
-    const [doctors, setDoctors]             = useState([]);
-    const [loading, setLoading]             = useState(true);
+    const [doctors, setDoctors] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-    const [modalLogin, setModalLogin]   = useState(false);
+    const [modalLogin, setModalLogin] = useState(false);
     const [doctorProfileModal, setDoctorProfileModal] = useState(null); // doc yang diklik
-    const [payModal, setPayModal]       = useState(null);
+    const [payModal, setPayModal] = useState(null);
     const [ratingModal, setRatingModal] = useState(null);
     const [refundModal, setRefundModal] = useState(null);
     const [cancelModal, setCancelModal] = useState(null);
-    const [cancelling, setCancelling]   = useState(false);
+    const [cancelling, setCancelling] = useState(false);
 
     // Booking
-    const [modalBook, setModalBook]           = useState(false);
-    const [bookDocId, setBookDocId]           = useState('');
-    const [bookType, setBookType]             = useState('chat');
-    const [bookDate, setBookDate]             = useState('');
-    const [bookTime, setBookTime]             = useState('');
-    const [bookSlotUtc, setBookSlotUtc]       = useState(null);
-    const [bookComplaint, setBookComplaint]   = useState('');
+    const [modalBook, setModalBook] = useState(false);
+    const [bookDocId, setBookDocId] = useState('');
+    const [bookType, setBookType] = useState('chat');
+    const [bookDate, setBookDate] = useState('');
+    const [bookTime, setBookTime] = useState('');
+    const [bookSlotUtc, setBookSlotUtc] = useState(null);
+    const [bookComplaint, setBookComplaint] = useState('');
     const [bookMedHistory, setBookMedHistory] = useState('');
     const [bookAttachments, setBookAttachments] = useState([]);
-    const [slots, setSlots]                   = useState([]);
-    const [loadingSlots, setLoadingSlots]     = useState(false);
-    const [booking, setBooking]               = useState(false);
+    const [slots, setSlots] = useState([]);
+    const [loadingSlots, setLoadingSlots] = useState(false);
+    const [booking, setBooking] = useState(false);
 
     // Cancel bank info
     const [needsBankInfo, setNeedsBankInfo] = useState(false);
-    const [bankCode, setBankCode]           = useState('');
+    const [bankCode, setBankCode] = useState('');
     const [accountNumber, setAccountNumber] = useState('');
-    const [accountName, setAccountName]     = useState('');
-    const [bankList, setBankList]           = useState([]);
+    const [accountName, setAccountName] = useState('');
+    const [bankList, setBankList] = useState([]);
 
     // Post-cancel
-    const [postCancelModal, setPostCancelModal]             = useState(null);
-    const [postCancelChoice, setPostCancelChoice]           = useState(null);
-    const [postCancelBankCode, setPostCancelBankCode]       = useState('');
-    const [postCancelAccount, setPostCancelAccount]         = useState('');
+    const [postCancelModal, setPostCancelModal] = useState(null);
+    const [postCancelChoice, setPostCancelChoice] = useState(null);
+    const [postCancelBankCode, setPostCancelBankCode] = useState('');
+    const [postCancelAccount, setPostCancelAccount] = useState('');
     const [postCancelAccountName, setPostCancelAccountName] = useState('');
-    const [postCancelProcessing, setPostCancelProcessing]   = useState(false);
+    const [postCancelProcessing, setPostCancelProcessing] = useState(false);
 
     useEffect(() => {
-        api.get('/api/xendit/banks').then(r => setBankList(r.data.banks || [])).catch(() => {});
+        api.get('/api/xendit/banks').then(r => setBankList(r.data.banks || [])).catch(() => { });
     }, []);
 
     const loadData = useCallback(async () => {
@@ -928,8 +938,8 @@ const Consultations = () => {
         try {
             if (postCancelChoice === 'refund') {
                 const fd2 = new FormData();
-                if (postCancelBankCode)    fd2.append('bankCode', postCancelBankCode);
-                if (postCancelAccount)     fd2.append('accountNumber', postCancelAccount);
+                if (postCancelBankCode) fd2.append('bankCode', postCancelBankCode);
+                if (postCancelAccount) fd2.append('accountNumber', postCancelAccount);
                 if (postCancelAccountName) fd2.append('accountName', postCancelAccountName);
                 await api.post(`/api/consultations/${postCancelModal._id}/refund-request`, fd2);
                 toast.success('Permintaan refund dikirim. Dana akan masuk dalam 1×24 jam.');
@@ -954,13 +964,13 @@ const Consultations = () => {
     // Riwayat: completed + cancelled/expired + refunded — tidak duplikat dengan needsAction
     const history = consultations.filter(c =>
         ['completed', 'cancelled', 'expired', 'rejected_payment', 'no_show', 'refunded',
-         'cancelled_by_user', 'cancelled_by_admin', 'cancelled_by_doctor'].includes(c.status)
+            'cancelled_by_user', 'cancelled_by_admin', 'cancelled_by_doctor'].includes(c.status)
         && !needsAction.find(n => n._id === c._id)
     );
 
     const groupedBookSlots = groupByDate(slots);
-    const bookDates        = Object.keys(groupedBookSlots).sort();
-    const selectedDoc      = doctors.find(d => d._id === bookDocId || d.id === bookDocId);
+    const bookDates = Object.keys(groupedBookSlots).sort();
+    const selectedDoc = doctors.find(d => d._id === bookDocId || d.id === bookDocId);
 
     // ── RENDER ────────────────────────────────────────────────────────────────
     return (
@@ -978,9 +988,9 @@ const Consultations = () => {
             {user && (
                 <div className="d-flex border-bottom mb-4" style={{ gap: '1.5rem', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                     {[
-                        { id: 'aktif',      label: '🕒 Konsultasi Aktif' },
+                        { id: 'aktif', label: '🕒 Konsultasi Aktif' },
                         { id: 'buat_janji', label: '➕ Konsultasi Baru' },
-                        { id: 'riwayat',    label: '📖 Riwayat & Rekam Medis' },
+                        { id: 'riwayat', label: '📖 Riwayat & Rekam Medis' },
                     ].map(t => (
                         <button key={t.id} onClick={() => setActiveTab(t.id)}
                             className="bg-transparent border-0 pb-2 px-1"
@@ -1078,22 +1088,22 @@ const Consultations = () => {
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
                                     {doctors.map(doc => {
-                                        const online         = isConsultDocOnlineNow(doc);
+                                        const online = isConsultDocOnlineNow(doc);
                                         const hasAnySchedule = consultDocHasAnySchedule(doc);
                                         // isOffline dari backend: belum buat jadwal / jadwal expired
-                                        const noSchedule     = doc.isOffline === true || !hasAnySchedule;
-                                        const showOnline     = !noSchedule && online;
+                                        const noSchedule = doc.isOffline === true || !hasAnySchedule;
+                                        const showOnline = !noSchedule && online;
                                         // Bisa diklik jika ada jadwal (meski hari ini offline)
-                                        const canBook        = !noSchedule;
+                                        const canBook = !noSchedule;
                                         // Keterangan "Tersedia lagi" hanya jika ada jadwal tapi tidak online sekarang
-                                        const nextAvail      = (!showOnline && !noSchedule) ? getConsultNextAvailable(doc) : null;
+                                        const nextAvail = (!showOnline && !noSchedule) ? getConsultNextAvailable(doc) : null;
 
                                         return (
-                                            <div key={doc._id} style={{ 
-                                                background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb', 
-                                                display: 'flex', flexDirection: 'column', 
+                                            <div key={doc._id} style={{
+                                                background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb',
+                                                display: 'flex', flexDirection: 'column',
                                                 opacity: noSchedule ? 0.6 : 1, filter: noSchedule ? 'grayscale(40%)' : 'none',
-                                                transition: 'all 0.2s' 
+                                                transition: 'all 0.2s'
                                             }}>
                                                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
                                                     <div onClick={() => setDoctorProfileModal(doc)}
@@ -1109,7 +1119,7 @@ const Consultations = () => {
                                                             {fmtDoctorName(doc)}
                                                         </div>
                                                         <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600, marginTop: 2 }}>Dokter {doc.specialization}</div>
-                                                        
+
                                                         {/* Badge Online / Offline */}
                                                         <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                                             <span style={{
@@ -1155,19 +1165,19 @@ const Consultations = () => {
                                                     <span style={{ color: noSchedule ? '#9ca3af' : '#2563eb', fontWeight: 700, fontSize: 14 }}>
                                                         {fmtRupiah(doc.consultationFee)}
                                                     </span>
-                                                    <button 
+                                                    <button
                                                         disabled={!canBook}
                                                         onClick={() => canBook && handleBookStart(doc)}
-                                                        style={{ 
-                                                            padding: '8px 16px', 
-                                                            background: noSchedule ? '#f3f4f6' : '#eff6ff', 
-                                                            color: noSchedule ? '#9ca3af' : '#2563eb', 
-                                                            border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, 
-                                                            cursor: canBook ? 'pointer' : 'not-allowed', 
-                                                            transition: 'background .2s' 
+                                                        style={{
+                                                            padding: '8px 16px',
+                                                            background: noSchedule ? '#f3f4f6' : '#eff6ff',
+                                                            color: noSchedule ? '#9ca3af' : '#2563eb',
+                                                            border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                                                            cursor: canBook ? 'pointer' : 'not-allowed',
+                                                            transition: 'background .2s'
                                                         }}
-                                                        onMouseEnter={e => { if(canBook) e.target.style.background = '#dbeafe' }}
-                                                        onMouseLeave={e => { if(canBook) e.target.style.background = '#eff6ff' }}>
+                                                        onMouseEnter={e => { if (canBook) e.target.style.background = '#dbeafe' }}
+                                                        onMouseLeave={e => { if (canBook) e.target.style.background = '#eff6ff' }}>
                                                         {noSchedule ? 'Offline' : 'Pilih Jadwal'}
                                                     </button>
                                                 </div>
@@ -1271,9 +1281,9 @@ const Consultations = () => {
                                         return wib.getUTCDay() === targetDow;
                                     });
                                     const isSelected = matchDate && bookDate === matchDate;
-                                    const hasSlot    = !!matchDate;
-                                    const dateNum    = matchDate ? matchDate.slice(8).replace(/^0/, '') : null;
-                                    const monthAbbr  = matchDate ? ['','Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][+matchDate.slice(5,7)] : null;
+                                    const hasSlot = !!matchDate;
+                                    const dateNum = matchDate ? matchDate.slice(8).replace(/^0/, '') : null;
+                                    const monthAbbr = matchDate ? ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'][+matchDate.slice(5, 7)] : null;
                                     return (
                                         <button key={label}
                                             disabled={!hasSlot}
@@ -1331,8 +1341,10 @@ const Consultations = () => {
                                             lineHeight: 1.3,
                                         }}>
                                         <div>{s.startTime}</div>
-                                        <div style={{ fontSize: 9, fontWeight: 500, marginTop: 2,
-                                            color: bookTime === s.startTime ? '#2563eb' : s.available ? '#9ca3af' : '#d1d5db' }}>
+                                        <div style={{
+                                            fontSize: 9, fontWeight: 500, marginTop: 2,
+                                            color: bookTime === s.startTime ? '#2563eb' : s.available ? '#9ca3af' : '#d1d5db'
+                                        }}>
                                             {!s.available ? 'Penuh' : `s/d ${s.endTime}`}
                                         </div>
                                     </button>

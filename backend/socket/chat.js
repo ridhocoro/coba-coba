@@ -41,13 +41,18 @@ module.exports = (io) => {
         // Join room konsultasi — dengan validasi akses
         socket.on('join-consultation', async (consultationId) => {
             try {
-                const consultation = await Consultation.findById(consultationId)
-                    .populate('doctorId', 'userId');
+                // Gunakan lean() karena doctorId adalah UUID MySQL bukan ObjectId Mongoose
+                const consultation = await Consultation.findById(consultationId).lean();
 
                 if (!consultation) return;
 
-                const patientId    = consultation.userId?.toString();
-                const doctorUserId = consultation.doctorId?.userId?.toString();
+                const patientId = consultation.userId?.toString();
+                // Query MySQL untuk mendapatkan userId dokter dari UUID doctorId
+                let doctorUserId = null;
+                if (consultation.doctorId) {
+                    const doctorRecord = await Doctor.findOne({ where: { id: consultation.doctorId.toString() } });
+                    doctorUserId = doctorRecord?.userId?.toString() || null;
+                }
                 const isAdmin   = socket.userRole === 'admin';
                 const isPatient = patientId === socket.userId;
                 const isDoctor  = doctorUserId === socket.userId;
@@ -86,12 +91,15 @@ module.exports = (io) => {
             if (Array.isArray(consultationIds)) {
                 for (const cId of consultationIds) {
                     try {
-                        const consultation = await Consultation.findById(cId)
-                            .populate('doctorId', 'userId');
+                        const consultation = await Consultation.findById(cId).lean();
                         if (!consultation) continue;
 
-                        const patientId    = consultation.userId?.toString();
-                        const doctorUserId = consultation.doctorId?.userId?.toString();
+                        const patientId = consultation.userId?.toString();
+                        let doctorUserId = null;
+                        if (consultation.doctorId) {
+                            const doctorRecord = await Doctor.findOne({ where: { id: consultation.doctorId.toString() } });
+                            doctorUserId = doctorRecord?.userId?.toString() || null;
+                        }
                         const isAdmin   = socket.userRole === 'admin';
                         const isPatient = patientId === socket.userId;
                         const isDoctor  = doctorUserId === socket.userId;

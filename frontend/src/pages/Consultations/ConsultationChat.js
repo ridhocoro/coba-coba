@@ -39,7 +39,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ── Countdown to scheduled time ───────────────────────────────────
-const CountdownBanner = ({ scheduledAt }) => {
+const CountdownBanner = ({ scheduledAt, lightMode = false }) => {
   const [remaining, setRemaining] = useState('');
   useEffect(() => {
     const tick = () => {
@@ -48,19 +48,30 @@ const CountdownBanner = ({ scheduledAt }) => {
       const h = Math.floor(ms / 3600000);
       const m = Math.floor((ms % 3600000) / 60000);
       const s = Math.floor((ms % 60000) / 1000);
-      setRemaining(h > 0 ? `${h}j ${m}m` : m > 0 ? `${m}m ${s}d` : `${s}d`);
+      setRemaining(
+        h > 0
+          ? `${h} jam ${m} menit ${s} detik`
+          : m > 0
+          ? `${m} menit ${s} detik`
+          : `${s} detik`
+      );
     };
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, [scheduledAt]);
   if (!remaining) return null;
+  if (lightMode) return (
+    <span style={{ fontWeight: 700, color: '#0369a1', fontVariantNumeric: 'tabular-nums' }}>
+      {remaining}
+    </span>
+  );
   return (
-    <div style={{ background: '#161b22', border: '1px solid #1f6feb40', borderRadius: 10, padding: '10px 16px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 16px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
       <span style={{ fontSize: 20 }}>⏰</span>
       <div>
-        <div style={{ color: '#58a6ff', fontSize: 12, fontWeight: 700 }}>Dimulai dalam {remaining}</div>
-        <div style={{ color: '#8b949e', fontSize: 11 }}>{fmtDT(scheduledAt)}</div>
+        <div style={{ color: '#1d4ed8', fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>Dimulai dalam {remaining}</div>
+        <div style={{ color: '#6b7280', fontSize: 11 }}>{fmtDT(scheduledAt)}</div>
       </div>
     </div>
   );
@@ -673,7 +684,7 @@ const MedicalRecordModal = ({ existing, consultation, onClose, onSave, isEndSess
             {lbl('S — Keluhan (Subjective)')}
             <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '9px 12px', color: '#c9d1d9', fontSize: 13 }}>
               {consultation?.symptoms || '-'}
-              {consultation?.medicalHistory && <div style={{ marginTop: 6, color: '#8b949e', fontSize: 12 }}>Riwayat: {consultation.medicalHistory}</div>}
+              {consultation?.medicalHistory && <div style={{ marginTop: 6, color: '#6b7280', fontSize: 12 }}>Riwayat: {consultation.medicalHistory}</div>}
             </div>
           </div>
 
@@ -809,18 +820,24 @@ const SessionEndCountdown = ({ scheduledEnd }) => {
   useEffect(() => {
     const tick = () => {
       const ms = msUntil(scheduledEnd);
-      if (ms <= 0) { setRemaining('00:00'); return; }
+      if (ms <= 0) { setRemaining(''); return; }
       const h = Math.floor(ms / 3600000);
       const m = Math.floor((ms % 3600000) / 60000);
       const s = Math.floor((ms % 60000) / 1000);
-      setRemaining(h > 0 ? `${h}j ${m}m` : m > 0 ? `${m}m ${s}d` : `${s}d`);
+      setRemaining(
+        h > 0
+          ? `${h} jam ${m} menit ${s} detik`
+          : m > 0
+          ? `${m} menit ${s} detik`
+          : `${s} detik`
+      );
     };
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, [scheduledEnd]);
-  const isUrgent = remaining && parseInt(remaining) <= 5 && remaining.includes('m');
-  return <span style={{ color: isUrgent ? '#f85149' : '#3fb950', fontWeight: 700 }}>{remaining}</span>;
+  const isUrgent = remaining && remaining.includes('detik') && !remaining.includes('menit') && parseInt(remaining) <= 30;
+  return <span style={{ color: isUrgent ? '#ef4444' : '#16a34a', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{remaining}</span>;
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -1191,16 +1208,16 @@ const ConsultationChat = () => {
 
   // ── Styles ──────────────────────────────────────────────────────
   const s = {
-    root:        { display: 'flex', height: 'calc(100vh - 56px)', background: '#0d1117', fontFamily: "'DM Sans', sans-serif", overflow: 'hidden' },
-    sidebar:     { width: 280, borderRight: '1px solid #21262d', display: 'flex', flexDirection: 'column', background: '#0d1117', flexShrink: 0, overflowY: 'auto' },
+    root:        { display: 'flex', height: '100vh', background: '#f6f8fa', fontFamily: "'DM Sans', sans-serif", overflow: 'hidden' },
+    sidebar:     { width: 280, borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', background: '#fff', flexShrink: 0, overflowY: 'auto' },
     chat:        { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
-    header:      { padding: '12px 16px', borderBottom: '1px solid #21262d', display: 'flex', alignItems: 'center', gap: 12, background: '#161b22', flexShrink: 0 },
-    msgArea:     { flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8 },
-    footer:      { padding: '12px 16px', borderTop: '1px solid #21262d', background: '#161b22', flexShrink: 0 },
-    sideSection: { padding: '14px 16px', borderBottom: '1px solid #21262d' },
-    label:       { color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, display: 'block' },
+    header:      { padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12, background: '#fff', flexShrink: 0 },
+    msgArea:     { flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8, background: '#f6f8fa' },
+    footer:      { padding: '12px 16px', borderTop: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 },
+    sideSection: { padding: '14px 16px', borderBottom: '1px solid #f3f4f6' },
+    label:       { color: '#6b7280', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, display: 'block' },
     actionBtn:   (color = '#1f6feb') => ({ width: '100%', padding: '9px 14px', borderRadius: 8, border: 'none', background: color, color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }),
-    ghostBtn:    { width: '100%', padding: '9px 14px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer', fontSize: 13, marginBottom: 8 },
+    ghostBtn:    { width: '100%', padding: '9px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontSize: 13, marginBottom: 8 },
   };
 
   // ── Loading / not found ─────────────────────────────────────────
@@ -1328,14 +1345,32 @@ const ConsultationChat = () => {
           <div style={s.sideSection}>
             <span style={s.label}>Dokter</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍⚕️</div>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍⚕️</div>
               <div>
-                <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
-                <div style={{ color: '#58a6ff', fontSize: 12 }}>{doc?.specialization}</div>
+                <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
+                <div style={{ color: '#2563eb', fontSize: 12 }}>{doc?.specialization}</div>
               </div>
             </div>
             <StatusBadge status={consultation.status} />
           </div>
+
+          {/* Section Pasien — tampil untuk dokter */}
+          {isDoctor && (
+            <div style={s.sideSection}>
+              <span style={s.label}>Pasien</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+                <div>
+                  <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>
+                    {consultation?.userId?.name || '-'}
+                  </div>
+                  {consultation?.userId?.email && (
+                    <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>{consultation.userId.email}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div style={s.sideSection}>
             <span style={s.label}>Info Konsultasi</span>
@@ -1345,8 +1380,8 @@ const ConsultationChat = () => {
               ['Dibuat', new Date(consultation.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })],
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ color: '#8b949e', fontSize: 12 }}>{k}</span>
-                <span style={{ color: '#c9d1d9', fontSize: 12, textAlign: 'right', maxWidth: 160 }}>{v}</span>
+                <span style={{ color: '#6b7280', fontSize: 12 }}>{k}</span>
+                <span style={{ color: '#374151', fontSize: 12, textAlign: 'right', maxWidth: 160 }}>{v}</span>
               </div>
             ))}
           </div>
@@ -1354,11 +1389,11 @@ const ConsultationChat = () => {
           {/* Keluhan & riwayat — SELALU tampil untuk dokter */}
           <div style={s.sideSection}>
             <span style={s.label}>Keluhan Pasien</span>
-            <div style={{ color: '#c9d1d9', fontSize: 13, lineHeight: 1.6 }}>{consultation.symptoms}</div>
+            <div style={{ color: '#374151', fontSize: 13, lineHeight: 1.6 }}>{consultation.symptoms}</div>
             {consultation.medicalHistory && (
               <>
                 <span style={{ ...s.label, marginTop: 10 }}>Riwayat Penyakit</span>
-                <div style={{ color: '#c9d1d9', fontSize: 13, lineHeight: 1.6 }}>{consultation.medicalHistory}</div>
+                <div style={{ color: '#374151', fontSize: 13, lineHeight: 1.6 }}>{consultation.medicalHistory}</div>
               </>
             )}
           </div>
@@ -1387,13 +1422,13 @@ const ConsultationChat = () => {
                 return (
                   <>
                     {!canStart && !expired && (
-                      <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: '#8b949e' }}>
-                        ⏰ Start tersedia {minsLeft > 0 ? `dalam ${minsLeft} menit` : 'saat jadwal tiba'}
-                        <div style={{ marginTop: 4, color: '#58a6ff' }}>{fmtDT(consultation.scheduledAt)}</div>
+                      <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: '#0369a1' }}>
+                        ⏰ Start tersedia saat jadwal tiba
+                        <div style={{ marginTop: 4 }}><CountdownBanner scheduledAt={consultation.scheduledAt} lightMode /></div>
                       </div>
                     )}
                     {expired && (
-                      <div style={{ background: '#161b22', border: '1px solid #f8514940', borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: '#f85149' }}>
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: '#f85149' }}>
                         ⚠️ Waktu konsultasi telah berakhir
                       </div>
                     )}
@@ -1469,7 +1504,7 @@ const ConsultationChat = () => {
                     <button onClick={downloadMedicalRecordPDF} style={s.actionBtn('#0e7490')}>⬇ Unduh Rekam Medis PDF</button>
                   )}
                   {consultation.medicalRecord && !consultation.medicalRecord.isCompleted && (
-                    <div style={{ background: '#161b22', border: '1px solid #f0883e40', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#f0883e' }}>
+                    <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#c2410c' }}>
                       ⏳ Rekam medis sedang menunggu dilengkapi oleh dokter.
                     </div>
                   )}
@@ -1484,7 +1519,7 @@ const ConsultationChat = () => {
                 <button onClick={() => setShowRating(true)} style={s.actionBtn('#ca8a04')}>⭐ Beri Rating</button>
               )}
               {isRatable && consultation.rating && (
-                <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#8b949e' }}>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#8b949e' }}>
                   Rating Anda: {'⭐'.repeat(consultation.rating)}
                 </div>
               )}
@@ -1499,7 +1534,7 @@ const ConsultationChat = () => {
 
               {/* Info locked state */}
               {isLockedForUser && (
-                <div style={{ background: '#161b22', border: '1px solid #1f6feb30', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#8b949e', textAlign: 'center' }}>
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#8b949e', textAlign: 'center' }}>
                   🔒 Chat aktif saat jadwal tiba
                 </div>
               )}
@@ -1513,7 +1548,7 @@ const ConsultationChat = () => {
                 <div style={{ color: sickLetter.status === 'issued' ? '#3fb950' : '#a371f7', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
                   {sickLetter.status === 'issued' ? '✓ Sudah Terbit' : '○ Draft'}
                 </div>
-                <div style={{ color: '#c9d1d9', fontSize: 12 }}>Diagnosis: {sickLetter.diagnosis}</div>
+                <div style={{ color: '#374151', fontSize: 12 }}>Diagnosis: {sickLetter.diagnosis}</div>
                 {sickLetter.startDate && <div style={{ color: '#8b949e', fontSize: 11, marginTop: 2 }}>
                   {new Date(sickLetter.startDate).toLocaleDateString('id-ID')} – {new Date(sickLetter.endDate).toLocaleDateString('id-ID')}
                 </div>}
@@ -1525,11 +1560,11 @@ const ConsultationChat = () => {
           {isDoctor && consultation.medicalRecord && (
             <div style={s.sideSection}>
               <span style={s.label}>Rekam Medis</span>
-              <div style={{ background: consultation.medicalRecord.isCompleted ? '#0a3d1e' : '#1a1a2e', border: `1px solid ${consultation.medicalRecord.isCompleted ? '#2ea04330' : '#30363d'}`, borderRadius: 10, padding: '10px 12px' }}>
-                <div style={{ color: consultation.medicalRecord.isCompleted ? '#3fb950' : '#a371f7', fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
+              <div style={{ background: consultation.medicalRecord.isCompleted ? '#f0fdf4' : '#f9fafb', border: `1px solid ${consultation.medicalRecord.isCompleted ? '#bbf7d0' : '#e5e7eb'}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ color: consultation.medicalRecord.isCompleted ? '#16a34a' : '#7c3aed', fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
                   {consultation.medicalRecord.isCompleted ? '✓ Selesai (pasien bisa unduh)' : '○ Draft (belum final)'}
                 </div>
-                {consultation.medicalRecord.assessment && <div style={{ color: '#c9d1d9', fontSize: 12 }}>Diagnosis: {consultation.medicalRecord.assessment}</div>}
+                {consultation.medicalRecord.assessment && <div style={{ color: '#374151', fontSize: 12 }}>Diagnosis: {consultation.medicalRecord.assessment}</div>}
               </div>
             </div>
           )}
@@ -1538,10 +1573,10 @@ const ConsultationChat = () => {
         {/* ── Chat Area ────────────────────────────────────────── */}
         <div style={s.chat}>
           <div style={s.header}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👨‍⚕️</div>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👨‍⚕️</div>
             <div style={{ flex: 1 }}>
-              <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
-              <div style={{ color: '#8b949e', fontSize: 12 }}>{doc?.specialization} · {typeLabel}</div>
+              <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
+              <div style={{ color: '#6b7280', fontSize: 12 }}>{doc?.specialization} · {typeLabel}</div>
             </div>
             <StatusBadge status={consultation.status} />
           </div>
@@ -1549,25 +1584,25 @@ const ConsultationChat = () => {
           <div style={{ ...s.msgArea, position: 'relative' }}>
             {/* Countdown banner untuk dokter (info saja, tidak memblokir) */}
             {isDoctor && isConfirmed && consultation.scheduledAt && msUntil(consultation.scheduledAt) > 0 && (
-              <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '12px 16px', marginBottom: 4 }}>
-                <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 6 }}>ℹ️ Anda bisa klik Mulai Sesi 5 menit sebelum jadwal</div>
+              <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 16px', marginBottom: 4 }}>
+                <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 6 }}>ℹ️ Anda bisa klik Mulai Sesi 5 menit sebelum jadwal</div>
                 <CountdownBanner scheduledAt={consultation.scheduledAt} />
               </div>
             )}
 
             {/* Banner terkunci untuk USER — tampilkan jadwal + countdown di atas chat (bukan overlay) */}
             {isLockedForUser && (
-              <div style={{ background: 'linear-gradient(135deg,#0d1f3c,#162032)', border: '1px solid #1f6feb50', borderRadius: 12, padding: '16px 20px', marginBottom: 8 }}>
+              <div style={{ background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', border: '1px solid #bfdbfe', borderRadius: 12, padding: '16px 20px', marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{ fontSize: 32, flexShrink: 0 }}>🔒</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: '#e6edf3', fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Ruang Chat Terkunci</div>
+                    <div style={{ color: '#1e40af', fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Ruang Chat Terkunci</div>
                     <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 8 }}>
                       Konsultasi Anda terkonfirmasi. Chat akan aktif otomatis saat jadwal tiba.
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0d1117', borderRadius: 8, padding: '8px 12px', width: 'fit-content' }}>
-                      <span style={{ color: '#8b949e', fontSize: 11 }}>Jadwal:</span>
-                      <span style={{ color: '#58a6ff', fontWeight: 700, fontSize: 12 }}>{fmtDT(consultation.scheduledAt)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', borderRadius: 8, padding: '8px 12px', width: 'fit-content', border: '1px solid #bfdbfe' }}>
+                      <span style={{ color: '#6b7280', fontSize: 11 }}>Jadwal:</span>
+                      <span style={{ color: '#1d4ed8', fontWeight: 700, fontSize: 12 }}>{fmtDT(consultation.scheduledAt)}</span>
                     </div>
                     <div style={{ marginTop: 8 }}><CountdownBanner scheduledAt={consultation.scheduledAt} /></div>
                   </div>
@@ -1577,19 +1612,19 @@ const ConsultationChat = () => {
 
             {/* Session end countdown saat sedang berlangsung */}
             {isLive && consultation.scheduledEnd && msUntil(consultation.scheduledEnd) > 0 && (
-              <div style={{ background: '#0a3d1e', border: '1px solid #2ea04330', borderRadius: 10, padding: '10px 14px', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 18 }}>⏱️</span>
                 <div>
-                  <div style={{ color: '#3fb950', fontSize: 12, fontWeight: 700 }}>Sesi berakhir dalam <SessionEndCountdown scheduledEnd={consultation.scheduledEnd} /></div>
-                  <div style={{ color: '#8b949e', fontSize: 11 }}>Sesi otomatis ditutup 15 mnt setelah waktu berakhir</div>
+                  <div style={{ color: '#15803d', fontSize: 12, fontWeight: 700 }}>Sesi berakhir dalam <SessionEndCountdown scheduledEnd={consultation.scheduledEnd} /></div>
+                  <div style={{ color: '#6b7280', fontSize: 11 }}>Sesi otomatis ditutup 15 mnt setelah waktu berakhir</div>
                 </div>
               </div>
             )}
 
             {/* Keluhan banner */}
-            <div style={{ background: '#161b22', border: '1px solid #1f6feb40', borderRadius: 10, padding: '10px 14px', marginBottom: 4 }}>
-              <div style={{ color: '#58a6ff', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>📋 Keluhan Awal</div>
-              <div style={{ color: '#c9d1d9', fontSize: 13 }}>{consultation.symptoms}</div>
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 4 }}>
+              <div style={{ color: '#1d4ed8', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>📋 Keluhan Awal</div>
+              <div style={{ color: '#1e40af', fontSize: 13 }}>{consultation.symptoms}</div>
             </div>
 
             {messages.map((msg, i) => {
@@ -1599,11 +1634,13 @@ const ConsultationChat = () => {
                   <div style={{
                     maxWidth: '70%', padding: '10px 14px',
                     borderRadius: isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                    background: isMine ? 'linear-gradient(135deg,#1f6feb,#388bfd)' : '#21262d',
-                    color: '#e6edf3', fontSize: 14,
+                    background: isMine ? 'linear-gradient(135deg,#2563eb,#3b82f6)' : '#fff',
+                    color: isMine ? '#fff' : '#111827', fontSize: 14,
+                    border: isMine ? 'none' : '1px solid #e5e7eb',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
                     opacity: msg._pending ? 0.7 : 1,
                   }}>
-                    {!isMine && <div style={{ color: '#8b949e', fontSize: 11, marginBottom: 4, fontWeight: 600 }}>{msg.senderName}</div>}
+                    {!isMine && <div style={{ color: '#6b7280', fontSize: 11, marginBottom: 4, fontWeight: 600 }}>{msg.senderName}</div>}
                     {msg.imageUrl ? (
                       <div>
                         <img src={`${API_URL}${msg.imageUrl}`} alt="img" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: msg.message ? 6 : 0 }} />
@@ -1612,7 +1649,7 @@ const ConsultationChat = () => {
                     ) : (
                       <div style={{ lineHeight: 1.5 }}>{msg.message}</div>
                     )}
-                    <div style={{ color: isMine ? 'rgba(255,255,255,.5)' : '#8b949e', fontSize: 10, marginTop: 4, textAlign: 'right' }}>
+                    <div style={{ color: isMine ? 'rgba(255,255,255,.6)' : '#9ca3af', fontSize: 10, marginTop: 4, textAlign: 'right' }}>
                       {msg._pending ? '⏳' : fmtTime(msg.timestamp)}
                     </div>
                   </div>
@@ -1662,7 +1699,7 @@ const ConsultationChat = () => {
 
           {/* Status info bar — saat tidak bisa chat */}
           {!canChat && !isCompleted && !isLockedForUser && (
-            <div style={{ padding: '14px 20px', borderTop: '1px solid #21262d', background: '#161b22', textAlign: 'center', color: '#8b949e', fontSize: 13 }}>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #e5e7eb', background: '#fff', textAlign: 'center', color: '#8b949e', fontSize: 13 }}>
               {isConfirmed && isDoctor && '✅ Pembayaran dikonfirmasi. Klik "Mulai Sesi" di sidebar saat siap.'}
               {isConfirmed && isUser && timeHasArrived && '⏳ Menunggu dokter memulai sesi...'}
               {isLive && isUser && !timeHasArrived && '⏳ Sesi berlangsung — menunggu dokter...'}
@@ -1678,7 +1715,7 @@ const ConsultationChat = () => {
                 <button type="button"
                   onClick={() => canChat && fileInputRef.current?.click()}
                   disabled={!canChat || uploadingImg}
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: 'none', color: uploadingImg ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', border: 'none', color: uploadingImg ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {uploadingImg ? '⏳' : '📎'}
                 </button>
                 <input
@@ -1687,10 +1724,10 @@ const ConsultationChat = () => {
                   onChange={e => { if (canChat) { setNewMessage(e.target.value); handleTyping(); } }}
                   onKeyDown={e => { if (canChat && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }}
                   placeholder={isLockedForUser ? '🔒 Chat aktif saat jadwal tiba — silakan lihat UI di atas' : 'Ketik pesan... (Enter untuk kirim)'}
-                  style={{ flex: 1, background: isLockedForUser ? '#0d1117' : '#21262d', border: isLockedForUser ? '1px solid #30363d' : 'none', borderRadius: 20, padding: '9px 16px', color: isLockedForUser ? '#484f58' : '#e6edf3', fontSize: 14, outline: 'none', cursor: isLockedForUser ? 'not-allowed' : 'text' }} />
+                  style={{ flex: 1, background: isLockedForUser ? '#f3f4f6' : '#f9fafb', border: isLockedForUser ? '1px solid #e5e7eb' : '1px solid #e5e7eb', borderRadius: 20, padding: '9px 16px', color: isLockedForUser ? '#9ca3af' : '#111827', fontSize: 14, outline: 'none', cursor: isLockedForUser ? 'not-allowed' : 'text' }} />
                 <button type="submit"
                   disabled={!canChat || !newMessage.trim() || sending}
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: (canChat && newMessage.trim() && !sending) ? '#1f6feb' : '#21262d', border: 'none', color: '#fff', cursor: (canChat && !sending) ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: (canChat && newMessage.trim() && !sending) ? '#2563eb' : '#e5e7eb', border: 'none', color: (canChat && newMessage.trim() && !sending) ? '#fff' : '#9ca3af', cursor: (canChat && !sending) ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {sending ? '⏳' : '➤'}
                 </button>
               </form>
