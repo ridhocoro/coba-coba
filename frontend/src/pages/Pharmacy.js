@@ -49,6 +49,28 @@ const STATUS_CFG = {
     refunded             : { bg:'#dcfce7', color:'#166534', icon:FaCheckCircle,        label:'Refund Berhasil'           },
 };
 
+// ─── Grup Filter Status Pesanan ───────────────────────────────────────────────
+const ORDER_FILTERS = [
+    { value: 'all',      label: 'Semua'             },
+    { value: 'active',   label: 'Aktif'             },
+    { value: 'pending',  label: 'Menunggu Bayar'    },
+    { value: 'paid',     label: 'Sudah Bayar'       },
+    { value: 'done',     label: 'Selesai'           },
+    { value: 'cancelled',label: 'Dibatalkan'        },
+    { value: 'expired',  label: 'Kedaluwarsa'       },
+];
+
+// Status yang termasuk tiap grup filter
+const FILTER_STATUS_MAP = {
+    all      : null, // tidak difilter
+    active   : ['waiting_prescription','prescription_rejected','pending','paid','diproses','dikirim','siap_diambil'],
+    pending  : ['pending'],
+    paid     : ['paid'],
+    done     : ['selesai','terkirim','refunded'],
+    cancelled: ['cancelled','refund_rejected'],
+    expired  : ['expired'],
+};
+
 // ─── Komponen Fallback Gambar ─────────────────────────────────────────────────
 const ProductImage = ({ src, alt, isActive, isGrid = true }) => {
     const [err, setErr] = useState(false);
@@ -217,6 +239,7 @@ const Pharmacy = () => {
 
     const [orders,        setOrders]        = useState([]);
     const [loadingOrders, setLoadingOrders] = useState(false);
+    const [orderFilter,   setOrderFilter]   = useState('all'); // filter status pesanan
 
     const isStudent = user?.email?.toLowerCase().endsWith('@apps.ipb.ac.id');
     const cartHasRx = cart.some(i => i.requiresPrescription);
@@ -246,7 +269,10 @@ const Pharmacy = () => {
     }, [currentPage, searchTerm, selectedCat]); // eslint-disable-line
 
     useEffect(() => {
-        if (activeTab === 'orders' && user) fetchOrders();
+        if (activeTab === 'orders' && user) {
+            fetchOrders();
+            setOrderFilter('all'); // reset filter saat buka tab
+        }
     }, [activeTab, user]); // eslint-disable-line
 
     useEffect(() => {
@@ -780,15 +806,59 @@ const Pharmacy = () => {
                 {/* ─── ORDERS ───────────────────────────────────────────── */}
                 {activeTab==='orders'&&(
                     <div className="fade-in">
-                        {loadingOrders?<div style={{textAlign:'center',padding:'80px 0'}}><Spinner animation="border" style={{color:'#000'}}/><div style={{marginTop:16,color:'#64748b'}}>Memuat riwayat pesanan...</div></div>
-                            :orders.length===0?(
+                        {/* ── Filter Status Bar ── */}
+                        {!loadingOrders && orders.length > 0 && (
+                            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:24}}>
+                                {ORDER_FILTERS.map(f => {
+                                    const count = f.value === 'all'
+                                        ? orders.length
+                                        : orders.filter(o => (FILTER_STATUS_MAP[f.value]||[]).includes(o.status)).length;
+                                    if (f.value !== 'all' && count === 0) return null;
+                                    return (
+                                        <button key={f.value}
+                                            onClick={() => setOrderFilter(f.value)}
+                                            style={{
+                                                padding:'8px 16px', borderRadius:12, fontSize:13, fontWeight:600,
+                                                border: orderFilter === f.value ? 'none' : '2px solid #e2e8f0',
+                                                background: orderFilter === f.value ? '#000' : '#fff',
+                                                color: orderFilter === f.value ? '#fff' : '#475569',
+                                                cursor:'pointer', transition:'all .2s',
+                                                boxShadow: orderFilter === f.value ? '0 4px 10px rgba(0,0,0,0.2)' : 'none',
+                                                display:'flex', alignItems:'center', gap:6,
+                                            }}>
+                                            {f.label}
+                                            <span style={{
+                                                background: orderFilter === f.value ? 'rgba(255,255,255,0.25)' : '#f1f5f9',
+                                                color: orderFilter === f.value ? '#fff' : '#64748b',
+                                                borderRadius:20, padding:'1px 7px', fontSize:11, fontWeight:800,
+                                            }}>{count}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {(() => {
+                            const filteredOrders = orderFilter === 'all'
+                                ? orders
+                                : orders.filter(o => (FILTER_STATUS_MAP[orderFilter]||[]).includes(o.status));
+                            return loadingOrders ? (
+                                <div style={{textAlign:'center',padding:'80px 0'}}><Spinner animation="border" style={{color:'#000'}}/><div style={{marginTop:16,color:'#64748b'}}>Memuat riwayat pesanan...</div></div>
+                            ) : orders.length===0 ? (
                                 <div className="slide-up" style={{textAlign:'center',padding:'80px 0',background:'#fff',borderRadius:24,border:'1px solid #f1f5f9',boxShadow:'0 4px 6px rgba(0,0,0,0.02)'}}>
                                     <div style={{width:80,height:80,background:'#f8fafc',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px'}}><FaBox size={32} style={{color:'#cbd5e1'}}/></div>
                                     <h4 style={{fontWeight:700,color:'#0f172a'}}>Belum ada pesanan</h4>
                                     <p style={{color:'#64748b',marginBottom:24}}>Anda belum pernah melakukan pesanan obat.</p>
                                     <button className="btn-p" style={{padding:'12px 28px', background:'#000'}} onClick={()=>setActiveTab('shop')}>Mulai Belanja Sekarang</button>
                                 </div>
-                            ):orders.map((order, i)=>(
+                            ) : filteredOrders.length===0 ? (
+                                <div className="slide-up" style={{textAlign:'center',padding:'60px 0',background:'#fff',borderRadius:24,border:'1px dashed #e2e8f0'}}>
+                                    <FaBox size={40} style={{color:'#cbd5e1',marginBottom:12}}/>
+                                    <h5 style={{fontWeight:700,color:'#475569'}}>Tidak ada pesanan</h5>
+                                    <p style={{color:'#94a3b8',fontSize:14}}>Tidak ada pesanan dengan filter ini.</p>
+                                    <button className="btn-o" style={{marginTop:8}} onClick={()=>setOrderFilter('all')}>Tampilkan Semua</button>
+                                </div>
+                            ) : filteredOrders.map((order, i)=>(
                                 <div key={order._id} className="order-card slide-up" style={{animationDelay:`${i*0.05}s`}}>
                                     <div style={{display:'flex',flexWrap:'wrap',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20,paddingBottom:16,borderBottom:'1px dashed #e2e8f0'}}>
                                         <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center'}}>
@@ -908,7 +978,7 @@ const Pharmacy = () => {
                                     </Row>
                                 </div>
                             ))
-                        }
+                        })()}
                     </div>
                 )}
 

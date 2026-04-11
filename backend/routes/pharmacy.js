@@ -8,7 +8,7 @@ const axios = require('axios');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 
-const { Medicine, Order, User } = require('../models/mysql');
+const { Medicine, Order, OrderItem, User } = require('../models/mysql');
 const { Op } = require('sequelize');
 const { createNotification } = require('../utils/notificationHelper');
 const { createCloudinaryUpload } = require('../config/cloudinary');
@@ -26,6 +26,7 @@ const KLINIK_LNG        = 106.7237;
 const STUDENT_MAX_PCS   = 8;   // maks 8 pcs gratis / bulan / mahasiswa
 const PICKUP_READY_MIN  = 30;  // menit sampai siap diambil
 const PAYMENT_LOCK_MIN  = 15;  // menit lock stok saat pending
+const FREE_DELIVERY_KM  = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 async function getRoadDistance(lat1, lng1, lat2, lng2) {
@@ -46,7 +47,8 @@ function haversine(lat1, lng1, lat2, lng2) {
 
 function formatOrder(o) {
     if (!o) return o;
-    const json = o.toJSON ? o.toJSON() : o;
+    const json = o.toJSON ? o.toJSON() : { ...o };
+
     if (json.user) {
         json.userId = json.user;
         if (json.userId) json.userId.id = json.user.id;
@@ -57,25 +59,46 @@ function formatOrder(o) {
         if (json.paymentId) json.paymentId.id = json.payment.id;
         delete json.payment;
     }
+
     if (json.items && Array.isArray(json.items)) {
         json.items = json.items.map(i => {
-            if (i.medicine) {
-                i.medicineId = i.medicine;
-                if (i.medicineId) i.medicineId.id = i.medicine.id;
-                delete i.medicine;
+            const item = i.toJSON ? i.toJSON() : { ...i };
+            if (item.medicine) {
+                item.medicineId = item.medicine;
+                if (item.medicineId) item.medicineId.id = item.medicine.id;
+                delete item.medicine;
             }
-            return i;
+            if (!item.name && item.medicineName) item.name = item.medicineName;
+            return item;
         });
     }
+
+    if (typeof json.shippingAddress === 'string' || json.shippingLat !== undefined) {
+        json.shippingAddress = {
+            address: json.shippingAddress || '',
+            detail : json.shippingDetail  || '',
+            lat    : json.shippingLat,
+            lng    : json.shippingLng,
+        };
+    }
+
+    if (json.requiresPrescription) {
+        json.prescription = {
+            url            : json.prescriptionImageUrl       || null,
+            status         : json.prescriptionStatus         || null,
+            rejectedReason : json.prescriptionRejectedReason || null,
+            reviewedAt     : json.prescriptionReviewedAt     || null,
+        };
+    }
+
     return json;
 }
 
 /**
  * Cek berapa pcs mahasiswa sudah ambil gratis bulan ini
- * Hanya menghitung order dengan status selain cancelled/expired
  */
 async function getStudentFreeUsage(userId) {
-    const now       = new Date();
+    const now        = new Date();
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endMonth   = new Date(now.getFullYear(), now.getMonth()+1, 0, 23, 59, 59);
 
@@ -85,6 +108,8 @@ async function getStudentFreeUsage(userId) {
             isStudentDiscount: true,
             studentFreeQty   : { [Op.gt]: 0 },
             status           : { [Op.notIn]: ['cancelled','expired','prescription_rejected'] },
+            // FIX: gunakan 'created_at' (nama kolom DB) karena Sequelize underscored:true
+            // memetakannya ke 'created_at' di WHERE clause
             createdAt        : { [Op.between]: [startMonth, endMonth] },
         }
     });
@@ -190,6 +215,328 @@ router.post('/admin/medicines/:id/image', auth, adminAuth,
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// USER — Hitung Ongkir
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post('/calculate-shipping', auth, async (req, res) => {
+    try {
+        const { lat, lng } = req.body;
+        if (!lat || !lng) return res.status(400).json({ message: 'Koordinat (lat, lng) wajib diisi' });
+
+        const distanceKm = await getRoadDistance(KLINIK_LAT, KLINIK_LNG, lat, lng);
+        const withinRange = distanceKm <= FREE_DELIVERY_KM;
+
+        const options = [];
+
+        options.push({
+            method     : 'diantar',
+            label      : 'Diantar ke Rumah',
+            description: withinRange
+                ? `Gratis ongkir! Estimasi 1–2 jam (jarak ${distanceKm.toFixed(1)} km)`
+                : `Hanya tersedia untuk jarak ≤ ${FREE_DELIVERY_KM} km (jarak Anda ${distanceKm.toFixed(1)} km)`,
+            cost       : 0,
+            disabled   : !withinRange,
+        });
+
+        options.push({
+            method     : 'pickup',
+            label      : 'Ambil di Apotek',
+            description: `Ambil langsung di Klinik Pratama IPB. Siap dalam ±${PICKUP_READY_MIN} menit.`,
+            cost       : 0,
+            disabled   : false,
+        });
+
+        return res.json({
+            success    : true,
+            distance   : parseFloat(distanceKm.toFixed(2)),
+            canDeliver : withinRange,
+            message    : withinRange
+                ? `📍 Jarak ${distanceKm.toFixed(1)} km — pengiriman gratis tersedia!`
+                : `📍 Jarak ${distanceKm.toFixed(1)} km — melebihi batas pengiriman ${FREE_DELIVERY_KM} km. Silakan pilih Pickup.`,
+            options,
+        });
+    } catch (err) {
+        console.error('[pharmacy] calculate-shipping:', err.message);
+        res.status(500).json({ message: 'Gagal menghitung jarak pengiriman', detail: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Daftar pesanan saya
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/orders', auth, async (req, res) => {
+    try {
+        const orders = await Order.findAll({
+            where  : { userId: req.userId },
+            include: [{ association: 'items', include: ['medicine'] }],
+            // FIX: pakai 'created_at' (nama kolom DB) bukan 'createdAt' (nama JS attribute)
+            // Sequelize underscored:true menerjemahkan JS->DB tapi ORDER BY butuh nama kolom DB
+            order  : [['created_at', 'DESC']],
+        });
+        res.json(orders.map(formatOrder));
+    } catch (err) {
+        console.error('[pharmacy] GET /orders:', err.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Buat pesanan baru
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post('/orders', auth, async (req, res) => {
+    try {
+        const { items, deliveryMethod, address, detail, lat, lng, distance, phone } = req.body;
+
+        if (!items || items.length === 0)
+            return res.status(400).json({ message: 'Keranjang kosong' });
+        if (!['diantar', 'pickup'].includes(deliveryMethod))
+            return res.status(400).json({ message: 'Metode pengiriman tidak valid' });
+
+        if (deliveryMethod === 'diantar') {
+            if (!lat || !lng) return res.status(400).json({ message: 'Koordinat wajib diisi untuk pengiriman' });
+            const distKm = await getRoadDistance(KLINIK_LAT, KLINIK_LNG, lat, lng);
+            if (distKm > FREE_DELIVERY_KM)
+                return res.status(400).json({ message: `Pengiriman hanya tersedia untuk jarak ≤ ${FREE_DELIVERY_KM} km. Jarak Anda ${distKm.toFixed(1)} km. Silakan pilih Pickup.` });
+        }
+
+        const user = await User.findByPk(req.userId);
+        if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
+
+        const isStudent = user.email?.toLowerCase().endsWith('@apps.ipb.ac.id');
+        let quotaUsed = 0;
+        const freeUsedThisMonth = isStudent ? await getStudentFreeUsage(req.userId) : 0;
+        let remainingQuota = isStudent ? Math.max(0, STUDENT_MAX_PCS - freeUsedThisMonth) : 0;
+
+        let subtotalObat = 0;
+        let requiresPrescription = false;
+        const orderItemsData = [];
+
+        for (const item of items) {
+            const med = await Medicine.findByPk(item._id || item.id);
+            if (!med || !med.isActive)
+                return res.status(400).json({ message: `Obat "${item.name || item._id}" tidak tersedia` });
+
+            const available = (med.stock || 0) - (med.lockedStock || 0);
+            if (item.quantity > available)
+                return res.status(400).json({ message: `Stok ${med.name} tidak mencukupi (tersedia: ${available})` });
+
+            if (med.requiresPrescription) requiresPrescription = true;
+
+            let isFreeForStudent = false;
+            let finalPrice = Number(med.price);
+
+            if (isStudent && med.availableForStudentQuota && !med.requiresPrescription && remainingQuota > 0) {
+                const freeQty = Math.min(item.quantity, remainingQuota);
+                remainingQuota -= freeQty;
+                quotaUsed      += freeQty;
+                finalPrice      = freeQty >= item.quantity ? 0 : Number(med.price);
+                isFreeForStudent = freeQty > 0;
+            }
+
+            const subtotal = finalPrice * item.quantity;
+            subtotalObat  += subtotal;
+
+            orderItemsData.push({
+                medicineId          : med.id,
+                medicineName        : med.name,
+                price               : Number(med.price),
+                finalPrice,
+                quantity            : item.quantity,
+                subtotal,
+                requiresPrescription: med.requiresPrescription || false,
+                isFreeForStudent,
+            });
+        }
+
+        const totalAmount = subtotalObat;
+
+        const order = await Order.create({
+            userId            : req.userId,
+            deliveryMethod,
+            shippingAddress   : address || '',
+            shippingDetail    : detail  || '',
+            shippingLat       : lat     || null,
+            shippingLng       : lng     || null,
+            shippingPhone     : phone   || '',
+            distance          : distance || 0,
+            shippingCost      : 0,
+            subtotalObat,
+            totalAmount,
+            requiresPrescription,
+            isStudentDiscount : isStudent && quotaUsed > 0,
+            studentFreeQty    : quotaUsed,
+            status            : requiresPrescription ? 'waiting_prescription' : 'pending',
+            estimatedDelivery : deliveryMethod === 'diantar'
+                ? 'Estimasi 1–2 jam setelah pembayaran dikonfirmasi' : null,
+        });
+
+        for (const itemData of orderItemsData) {
+            await OrderItem.create({ orderId: order.id, ...itemData });
+        }
+
+        const fullOrder = await Order.findByPk(order.id, {
+            include: [{ association: 'items', include: ['medicine'] }],
+        });
+
+        res.status(201).json({ success: true, order: formatOrder(fullOrder), requiresPrescription, quotaUsed });
+    } catch (err) {
+        console.error('[pharmacy] POST /orders:', err.message, err.stack);
+        res.status(500).json({ message: err.message || 'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Upload resep
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post('/orders/:orderId/prescription', auth,
+    (req, res, next) => {
+        uploadRx.single('prescription')(req, res, err => {
+            if (err) return res.status(400).json({ message: err.message });
+            next();
+        });
+    },
+    async (req, res) => {
+        try {
+            const order = await Order.findByPk(req.params.orderId);
+            if (!order) return res.status(404).json({ message: 'Pesanan tidak ditemukan' });
+            if (order.userId !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
+            if (!['waiting_prescription', 'prescription_rejected'].includes(order.status))
+                return res.status(400).json({ message: 'Tidak bisa upload resep pada status ini' });
+            if (!req.file) return res.status(400).json({ message: 'File resep diperlukan' });
+
+            order.prescriptionImageUrl    = `/uploads/prescriptions/${req.file.filename}`;
+            order.prescriptionStatus      = 'pending';
+            order.prescriptionUploadCount = (order.prescriptionUploadCount || 0) + 1;
+            order.status                  = 'waiting_prescription';
+            order.updatedAt               = new Date();
+            await order.save();
+
+            const io = req.app.get('io');
+            const admins = await User.findAll({ where: { role: 'admin' } });
+            for (const admin of admins) {
+                await createNotification({
+                    userId : admin.id, type: 'prescription_submitted',
+                    title  : '📋 Resep Baru Dikirim',
+                    message: `Pesanan ${order.orderNumber} mengirimkan resep. Harap verifikasi.`,
+                    data   : { orderId: order.id }, io,
+                });
+            }
+
+            res.json({ success: true, message: 'Resep berhasil diupload. Menunggu verifikasi admin.', order });
+        } catch (err) {
+            res.status(500).json({ message: err.message || 'Server error' });
+        }
+    }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Batalkan pesanan
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.put('/orders/:id/cancel', auth, async (req, res) => {
+    try {
+        const order = await Order.findByPk(req.params.id, {
+            include: [{ association: 'items' }],
+        });
+        if (!order) return res.status(404).json({ message: 'Pesanan tidak ditemukan' });
+        if (order.userId !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
+
+        const cancellable = ['waiting_prescription', 'prescription_rejected', 'pending', 'paid'];
+        if (!cancellable.includes(order.status))
+            return res.status(400).json({ message: 'Pesanan tidak bisa dibatalkan pada status ini' });
+
+        if (order.status === 'paid') {
+            for (const item of (order.items || []))
+                await Medicine.increment('stock', { by: item.quantity, where: { id: item.medicineId } });
+        }
+
+        order.status      = 'cancelled';
+        order.cancelReason= req.body.reason || 'Dibatalkan pengguna';
+        order.cancelledAt = new Date();
+        order.updatedAt   = new Date();
+        await order.save();
+
+        res.json({ success: true, message: 'Pesanan dibatalkan', order });
+    } catch (err) {
+        res.status(500).json({ message: err.message || 'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Konfirmasi pesanan gratis
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.put('/orders/:id/confirm-free', auth, async (req, res) => {
+    try {
+        const order = await Order.findByPk(req.params.id, {
+            include: [{ association: 'items' }],
+        });
+        if (!order) return res.status(404).json({ message: 'Pesanan tidak ditemukan' });
+        if (order.userId !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
+        if (order.totalAmount !== 0) return res.status(400).json({ message: 'Pesanan ini tidak gratis' });
+
+        if (!['pending', 'paid'].includes(order.status))
+            return res.status(400).json({ message: 'Status pesanan tidak valid untuk konfirmasi gratis' });
+
+        for (const item of (order.items || []))
+            await Medicine.increment('stock', { by: -item.quantity, where: { id: item.medicineId } });
+
+        order.status         = 'diproses';
+        order.diprosesPaidAt = new Date();
+        order.updatedAt      = new Date();
+        await order.save();
+
+        res.json({ success: true, message: 'Pesanan dikonfirmasi. Sedang disiapkan.', order });
+    } catch (err) {
+        res.status(500).json({ message: err.message || 'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Selesaikan pesanan
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.put('/orders/:id/selesai', auth, async (req, res) => {
+    try {
+        const order = await Order.findByPk(req.params.id);
+        if (!order) return res.status(404).json({ message: 'Pesanan tidak ditemukan' });
+        if (order.userId !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
+        if (!['terkirim', 'siap_diambil'].includes(order.status))
+            return res.status(400).json({ message: 'Pesanan belum diterima/siap diambil' });
+
+        order.status      = 'selesai';
+        order.completedAt = new Date();
+        order.updatedAt   = new Date();
+        await order.save();
+
+        res.json({ success: true, message: 'Pesanan diselesaikan!', order });
+    } catch (err) {
+        res.status(500).json({ message: err.message || 'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Kuota mahasiswa
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/student-quota', auth, async (req, res) => {
+    try {
+        const user = await User.findByPk(req.userId);
+        if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
+        const isStudent = user.email?.toLowerCase().endsWith('@apps.ipb.ac.id');
+        if (!isStudent) return res.json({ isStudent: false, used: 0, remaining: 0, max: STUDENT_MAX_PCS });
+        const used      = await getStudentFreeUsage(req.userId);
+        const remaining = Math.max(0, STUDENT_MAX_PCS - used);
+        res.json({ isStudent: true, used, remaining, max: STUDENT_MAX_PCS });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ADMIN — Orders
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -201,21 +548,27 @@ router.get('/admin/orders', auth, adminAuth, async (req, res) => {
         const result = await Order.findAndCountAll({
             where: q,
             include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone'] }, 'payment', { association: 'items', include: ['medicine'] }],
-            order: [['createdAt', 'DESC']],
+            // FIX: 'created_at' bukan 'createdAt'
+            order: [['created_at', 'DESC']],
             limit: limit * 1,
             offset: (page - 1) * limit
         });
         const orders = result.rows.map(formatOrder);
         const total = result.count;
         res.json({ success:true, orders, totalPages:Math.ceil(total/limit), total });
-    } catch { res.status(500).json({ message:'Server error' }); }
+    } catch (err) {
+        console.error('[pharmacy] GET /admin/orders:', err.message);
+        res.status(500).json({ message:'Server error' });
+    }
 });
 
 // ── Admin: edit kuantitas item sebelum approve resep ─────────────────────────
 router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) => {
     try {
-        const { items } = req.body; // [{ medicineId, quantity }]
-        const order = await Order.findByPk(req.params.id);
+        const { items } = req.body;
+        const order = await Order.findByPk(req.params.id, {
+            include: [{ association: 'items' }],
+        });
         if (!order) return res.status(404).json({ message:'Order tidak ditemukan' });
         if (order.status !== 'waiting_prescription')
             return res.status(400).json({ message:'Hanya bisa edit item saat waiting_prescription' });
@@ -233,15 +586,12 @@ router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) =
             order.items[idx].subtotal = (order.items[idx].finalPrice || order.items[idx].price) * adj.quantity;
         }
 
-        // Recalculate total
         order.subtotalObat = order.items.reduce((s,i) => s + (i.subtotal||0), 0);
         order.totalAmount  = order.subtotalObat + (order.shippingCost||0);
         order.updatedAt    = new Date();
         await order.save();
 
-        // Notif user bahwa kuantitas diubah
         const io = req.app.get('io');
-        // BUG-29 fix: was 'payment_verified' — wrong type for adjusted items
         await createNotification({ userId:order.userId, type:'order_items_adjusted',
             title:'Kuantitas Obat Disesuaikan 📋',
             message:`Admin telah menyesuaikan jumlah obat di pesanan ${order.orderNumber} sesuai dosis resep. Silakan cek detail pesanan.`,
@@ -262,62 +612,63 @@ router.put('/admin/orders/:id/verify-prescription', auth, adminAuth, async (req,
         if (!['approve','reject'].includes(action))
             return res.status(400).json({ message:'action harus approve atau reject' });
 
-        const order = await Order.findByPk(req.params.id, { include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone'] }] });
+        const order = await Order.findByPk(req.params.id, {
+            include: [
+                { model: User, as: 'user', attributes: ['name', 'email', 'phone'] },
+                { association: 'items' },
+            ],
+        });
         if (!order) return res.status(404).json({ message:'Order tidak ditemukan' });
         if (order.status!=='waiting_prescription')
             return res.status(400).json({ message:'Order tidak dalam status menunggu verifikasi resep' });
-        if (!order.prescription)
+        if (!order.prescriptionImageUrl)
             return res.status(400).json({ message:'Belum ada resep yang diupload' });
 
         const io = req.app.get('io');
 
         if (action==='approve') {
-            order.prescription.status    = 'approved';
-            order.prescription.reviewedAt= new Date();
-            order.prescription.reviewedBy= req.userId;
-            order.updatedAt              = new Date();
+            order.prescriptionStatus    = 'approved';
+            order.prescriptionReviewedAt= new Date();
+            order.updatedAt             = new Date();
 
             if (order.totalAmount === 0) {
-                // Gratis — kurangi stok langsung, skip payment step
-                for (const item of order.items)
-                    await Medicine.increment('stock', { by: -item.quantity, where: { id: item.medicineId } });
+                for (const item of (order.items || []))
+                    await Medicine.increment({ stock: -item.quantity }, { where: { id: item.medicineId } });
                 order.status         = 'diproses';
                 order.diprosesPaidAt = new Date();
                 await order.save();
-                await createNotification({ userId:order.userId.id, type:'payment_verified',
+                await createNotification({ userId:order.userId, type:'payment_verified',
                     title:'Resep Disetujui & Pesanan Diproses ✅',
                     message:`Resep pesanan ${order.orderNumber} disetujui. Karena total Rp 0, pesanan langsung diproses.`,
                     data:{ orderId:order.id }, io });
             } else {
-                // Ada biaya — lock stok 15 menit, tunggu pembayaran
                 const lockExpiry = new Date(Date.now() + PAYMENT_LOCK_MIN*60000);
-                for (const item of order.items)
-                    await Medicine.increment({ lockedStock: item.quantity  }, { where: { id: item.medicineId } }); await Medicine.update({ stockLockExpiry: lockExpiry }, { where: { id: item.medicineId } });
+                for (const item of (order.items || []))
+                    await Medicine.increment({ lockedStock: item.quantity }, { where: { id: item.medicineId } });
                 order.status          = 'pending';
                 order.paymentExpiry   = lockExpiry;
                 order.stockLockExpiry = lockExpiry;
                 await order.save();
-                await createNotification({ userId:order.userId.id, type:'payment_verified',
+                await createNotification({ userId:order.userId, type:'payment_verified',
                     title:'Resep Disetujui ✅',
                     message:`Resep pesanan ${order.orderNumber} disetujui. Silakan lanjutkan pembayaran dalam 15 menit.`,
                     data:{ orderId:order.id }, io });
             }
-            if (io) io.to(`user-${order.userId.id}`).emit('prescription-verified', { orderId:order.id.toString(), status:'approved' });
+            if (io) io.to(`user-${order.userId}`).emit('prescription-verified', { orderId:order.id.toString(), status:'approved' });
 
         } else {
-            order.prescription.status         = 'rejected';
-            order.prescription.rejectedReason = reason||'Resep tidak valid';
-            order.prescription.reviewedAt     = new Date();
-            order.prescription.reviewedBy     = req.userId;
-            order.status                      = 'prescription_rejected';
-            order.updatedAt                   = new Date();
+            order.prescriptionStatus         = 'rejected';
+            order.prescriptionRejectedReason = reason||'Resep tidak valid';
+            order.prescriptionReviewedAt     = new Date();
+            order.status                     = 'prescription_rejected';
+            order.updatedAt                  = new Date();
             await order.save();
 
-            await createNotification({ userId:order.userId.id, type:'payment_verified',
+            await createNotification({ userId:order.userId, type:'payment_verified',
                 title:'Resep Ditolak ❌',
                 message:`Resep pesanan ${order.orderNumber} ditolak. Alasan: ${reason||'Resep tidak valid'}. Silakan upload ulang resep yang valid.`,
                 data:{ orderId:order.id }, io });
-            if (io) io.to(`user-${order.userId.id}`).emit('prescription-verified', { orderId:order.id.toString(), status:'rejected', reason });
+            if (io) io.to(`user-${order.userId}`).emit('prescription-verified', { orderId:order.id.toString(), status:'rejected', reason });
         }
 
         res.json({ success:true, message:action==='approve'?'Resep disetujui':'Resep ditolak', order });
@@ -331,7 +682,12 @@ router.put('/admin/orders/:id/verify-prescription', auth, adminAuth, async (req,
 router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
     try {
         const { status } = req.body;
-        const order = await Order.findByPk(req.params.id, { include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone'] }] });
+        const order = await Order.findByPk(req.params.id, {
+            include: [
+                { model: User, as: 'user', attributes: ['name', 'email', 'phone'] },
+                { association: 'items' },
+            ],
+        });
         if (!order) return res.status(404).json({ message:'Order tidak ditemukan' });
 
         const isPickup = order.deliveryMethod==='pickup';
@@ -349,7 +705,7 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
 
         const io  = req.app.get('io');
         const now = new Date();
-        const prevStatus = order.status; // simpan sebelum diubah
+        const prevStatus = order.status;
         order.status    = status;
         order.updatedAt = now;
 
@@ -359,11 +715,9 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
         if (status==='cancelled') {
             order.cancelledAt  = now;
             order.cancelReason = 'Dibatalkan oleh admin';
-            // Stok sudah dikurangi permanent saat xendit paid →
-            // kembalikan jika cancel dari: paid, diproses, dikirim, terkirim, siap_diambil
             const needsStockReturn = ['paid','diproses','dikirim','terkirim','siap_diambil'].includes(prevStatus);
             if (needsStockReturn) {
-                for (const item of order.items)
+                for (const item of (order.items || []))
                     await Medicine.increment('stock', { by: item.quantity, where: { id: item.medicineId } });
             }
         }
@@ -378,10 +732,10 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
             cancelled   : { title:'Pesanan Dibatalkan',         msg:`Pesanan ${order.orderNumber} dibatalkan oleh admin.` },
         };
         if (notifMap[status]) {
-            await createNotification({ userId:order.userId.id, type:'order_shipped',
+            await createNotification({ userId:order.userId, type:'order_shipped',
                 title:notifMap[status].title, message:notifMap[status].msg,
                 data:{ orderId:order.id }, io });
-            if (io) io.to(`user-${order.userId.id}`).emit('order-status-update', { orderId:order.id.toString(), status });
+            if (io) io.to(`user-${order.userId}`).emit('order-status-update', { orderId:order.id.toString(), status });
         }
 
         res.json({ success:true, message:'Status diperbarui', order });
@@ -395,19 +749,9 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
 // REFUND FARMASI
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
-/**
- * POST /pharmacy/orders/:id/refund-request
- *
- * DUA SKENARIO:
- * 1. Status 'paid' & belum 1 jam → refund langsung otomatis via Xendit, tanpa video
- * 2. Status 'terkirim' atau 'selesai' → upload video bukti, review admin dulu
- */
 router.post('/orders/:id/refund-request',
     auth,
     (req, res, next) => {
-        // Hanya proses upload video jika bukan refund langsung
-        // Kita cek status order dulu sebelum memutuskan apakah perlu multer
         uploadRefundVideo.single('video')(req, res, (err) => {
             if (err && err.code !== 'LIMIT_UNEXPECTED_FILE') return next(err);
             next();
@@ -422,7 +766,6 @@ router.post('/orders/:id/refund-request',
 
         const { reason } = req.body;
 
-        // ── SKENARIO 1: paid & belum 1 jam → refund langsung, tanpa video ──
         if (order.status === 'paid') {
             const paidAt  = order.updatedAt || order.createdAt;
             const elapsed = Date.now() - new Date(paidAt).getTime();
@@ -430,7 +773,6 @@ router.post('/orders/:id/refund-request',
                 return res.status(400).json({ message: 'Batas refund langsung adalah 1 jam setelah pembayaran. Untuk refund barang yang sudah diterima, pilih opsi refund dengan video bukti.' });
             }
 
-            // Proses refund otomatis via Xendit
             const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;
             const headers = {
                 Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
@@ -440,7 +782,6 @@ router.post('/orders/:id/refund-request',
             let refunded = false;
             let refundMethod = null;
 
-            // Cari xendit invoice id
             let xenditInvoiceId = null;
             if (order.xenditExternalId) {
                 try {
@@ -458,7 +799,9 @@ router.post('/orders/:id/refund-request',
                         { invoice_id: xenditInvoiceId, reason: 'CANCELLATION', amount },
                         { headers: { ...headers, 'idempotency-key': `REFUND-ORDER-${order.id}-${Date.now()}` } }
                     );
-                    order.refund = { xenditRefundId: r.data.id, method: 'xendit_refund', processedAt: new Date(), reason: reason?.trim() || 'Dibatalkan oleh pasien' };
+                    order.refundMethod     = 'xendit_refund';
+                    order.refundProcessedAt= new Date();
+                    order.refundReason     = reason?.trim() || 'Dibatalkan oleh pasien';
                     refundMethod = 'xendit_refund';
                     refunded = true;
                 } catch (xenditErr) {
@@ -470,7 +813,6 @@ router.post('/orders/:id/refund-request',
             }
 
             if (!refunded) {
-                // Tidak bisa refund otomatis (e-wallet/QRIS) → perlu data rekening
                 const { bankCode, accountNumber, accountName } = req.body;
                 if (!bankCode || !accountNumber || !accountName) {
                     return res.status(200).json({
@@ -482,7 +824,12 @@ router.post('/orders/:id/refund-request',
                     { external_id: `DISB-ORDER-${order.id}-${Date.now()}`, bank_code: bankCode, account_holder_name: accountName, account_number: accountNumber, description: `Refund pesanan ${order.orderNumber}`, amount },
                     { headers: { ...headers, 'X-IDEMPOTENCY-KEY': `DISB-ORDER-${order.id}-${Date.now()}` } }
                 );
-                order.refund = { xenditDisbursementId: r.data.id, method: 'xendit_disbursement', bankCode, accountNumber, accountName, processedAt: new Date(), reason: reason?.trim() || 'Dibatalkan oleh pasien' };
+                order.refundMethod      = 'xendit_disbursement';
+                order.refundBankCode    = bankCode;
+                order.refundAccountNumber= accountNumber;
+                order.refundAccountName = accountName;
+                order.refundProcessedAt = new Date();
+                order.refundReason      = reason?.trim() || 'Dibatalkan oleh pasien';
                 refundMethod = 'xendit_disbursement';
             }
 
@@ -494,7 +841,7 @@ router.post('/orders/:id/refund-request',
                 userId  : order.userId,
                 type    : 'refund_processed',
                 title   : '💰 Refund Berhasil',
-                message : `Refund pesanan ${order.orderNumber} sebesar Rp ${amount.toLocaleString('id-ID')} sedang diproses dan akan masuk dalam ${eta}. Catatan: biaya payment gateway tidak termasuk.`,
+                message : `Refund pesanan ${order.orderNumber} sebesar Rp ${Number(amount).toLocaleString('id-ID')} sedang diproses dan akan masuk dalam ${eta}. Catatan: biaya payment gateway tidak termasuk.`,
                 data    : { orderId: order.id },
                 io      : req.app.get('io'),
             });
@@ -502,12 +849,10 @@ router.post('/orders/:id/refund-request',
             return res.json({ success: true, message: `Refund berhasil diproses. Dana akan masuk dalam ${eta}.`, method: refundMethod, order });
         }
 
-        // ── SKENARIO 2: terkirim / selesai → upload video, review admin ──
         if (!['terkirim', 'selesai'].includes(order.status)) {
             return res.status(400).json({ message: `Refund dengan video hanya bisa untuk pesanan yang sudah diterima (terkirim/selesai). Status saat ini: ${order.status}` });
         }
 
-        // Batas 1 hari setelah terkirim/selesai
         const arrivedAt = order.terkirimAt || order.completedAt || order.updatedAt;
         if (Date.now() - new Date(arrivedAt).getTime() > 24 * 60 * 60 * 1000) {
             return res.status(400).json({ message: 'Batas pengajuan refund adalah 1 hari setelah pesanan diterima.' });
@@ -520,13 +865,10 @@ router.post('/orders/:id/refund-request',
             return res.status(400).json({ message: 'Alasan refund wajib diisi.' });
         }
 
-        order.status = 'refund_requested';
-        order.refund = {
-            videoUrl      : req.file.path,
-            videoPublicId : req.file.filename,
-            reason        : reason.trim(),
-            requestedAt   : new Date(),
-        };
+        order.status           = 'refund_requested';
+        order.refundVideoUrl   = req.file.path;
+        order.refundReason     = reason.trim();
+        order.refundRequestedAt= new Date();
         await order.save();
 
         const admins = await User.findAll({ where: { role: 'admin' } });
@@ -548,11 +890,6 @@ router.post('/orders/:id/refund-request',
     }
 });
 
-/**
- * PUT /pharmacy/admin/orders/:id/refund-review
- * Admin approve atau reject pengajuan refund.
- * Body: { action: 'approve'|'reject', rejectReason?, bankCode?, accountNumber?, accountName? }
- */
 router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) => {
     try {
         const order = await Order.findByPk(req.params.id, { include: [{ model: User, as: 'user' }] });
@@ -565,38 +902,32 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
             return res.status(400).json({ message: 'action harus approve atau reject' });
 
         if (action === 'reject') {
-            order.status = 'refund_rejected';
-            order.refund.reviewedAt = new Date();
-            order.refund.reviewedBy = req.userId;
-            order.refund.rejectReason = rejectReason || 'Tidak memenuhi syarat refund';
+            order.status             = 'refund_rejected';
+            order.refundReviewedAt   = new Date();
+            order.refundRejectReason = rejectReason || 'Tidak memenuhi syarat refund';
             await order.save();
 
             await createNotification({
-                userId  : order.userId.id,
+                userId  : order.userId,
                 type    : 'refund_processed',
                 title   : '❌ Refund Ditolak',
-                message : `Refund pesanan ${order.orderNumber} ditolak. Alasan: ${order.refund.rejectReason}`,
+                message : `Refund pesanan ${order.orderNumber} ditolak. Alasan: ${order.refundRejectReason}`,
                 data    : { orderId: order.id },
                 io      : req.app.get('io'),
             });
             return res.json({ success: true, message: 'Refund ditolak', order });
         }
 
-        // ── APPROVE → proses refund via Xendit ───────────────────────────────
         const xenditExternalId = order.xenditExternalId;
-
         const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;
         const headers = {
             Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
             'Content-Type': 'application/json',
         };
         const amount = order.totalAmount;
-
-        // Cek apakah bisa Xendit Refund API (invoice < 7 hari)
         let refunded = false;
         let refundMethod = null;
 
-        // Cari xendit invoice id
         let xenditInvoiceId = null;
         if (xenditExternalId) {
             try {
@@ -614,19 +945,16 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
                     { invoice_id: xenditInvoiceId, reason: 'CANCELLATION', amount },
                     { headers: { ...headers, 'idempotency-key': `REFUND-ORDER-${order.id}-${Date.now()}` } }
                 );
-                order.refund.xenditRefundId = r.data.id;
                 refundMethod = 'xendit_refund';
                 refunded = true;
             } catch (xenditErr) {
                 const errCode = xenditErr.response?.data?.error_code;
-                // REFUND_NOT_SUPPORTED → fallback disbursement
                 if (!['REFUND_NOT_SUPPORTED', 'CHANNEL_NOT_SUPPORTED'].includes(errCode)) {
                     console.error('[pharmacy refund] Xendit Refund error:', xenditErr.response?.data);
                 }
             }
         }
 
-        // Fallback: Xendit Disbursement (e-wallet / channel tidak support refund)
         if (!refunded) {
             if (!bankCode || !accountNumber || !accountName) {
                 return res.status(400).json({
@@ -645,26 +973,24 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
                 },
                 { headers: { ...headers, 'X-IDEMPOTENCY-KEY': `DISB-ORDER-${order.id}-${Date.now()}` } }
             );
-            order.refund.xenditDisbursementId = r.data.id;
-            order.refund.bankCode      = bankCode;
-            order.refund.accountNumber = accountNumber;
-            order.refund.accountName   = accountName;
+            order.refundBankCode     = bankCode;
+            order.refundAccountNumber= accountNumber;
+            order.refundAccountName  = accountName;
             refundMethod = 'xendit_disbursement';
         }
 
-        order.status = 'refunded';
-        order.refund.method      = refundMethod;
-        order.refund.reviewedAt  = new Date();
-        order.refund.reviewedBy  = req.userId;
-        order.refund.processedAt = new Date();
+        order.status            = 'refunded';
+        order.refundMethod      = refundMethod;
+        order.refundReviewedAt  = new Date();
+        order.refundProcessedAt = new Date();
         await order.save();
 
         const eta = refundMethod === 'xendit_refund' ? 'beberapa menit' : '1x24 jam';
         await createNotification({
-            userId  : order.userId.id,
+            userId  : order.userId,
             type    : 'refund_processed',
             title   : '💰 Refund Disetujui',
-            message : `Refund pesanan ${order.orderNumber} sebesar Rp ${amount.toLocaleString('id-ID')} sedang diproses dan akan masuk dalam ${eta}. Catatan: biaya payment gateway tidak termasuk dalam refund.`,
+            message : `Refund pesanan ${order.orderNumber} sebesar Rp ${Number(amount).toLocaleString('id-ID')} sedang diproses dan akan masuk dalam ${eta}. Catatan: biaya payment gateway tidak termasuk dalam refund.`,
             data    : { orderId: order.id },
             io      : req.app.get('io'),
         });
@@ -676,16 +1002,12 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
     }
 });
 
-/**
- * GET /pharmacy/admin/orders/refund-requests
- * Admin lihat semua pesanan yang sedang menunggu review refund.
- */
 router.get('/admin/orders/refund-requests', auth, adminAuth, async (req, res) => {
     try {
         const result = await Order.findAll({
             where: { status: 'refund_requested' },
             include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone'] }],
-            order: [['createdAt', 'DESC']]
+            order: [['created_at', 'DESC']]
         });
         const orders = result.map(formatOrder);
         res.json({ success: true, orders });

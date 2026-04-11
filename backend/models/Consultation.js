@@ -93,6 +93,11 @@ const consultationSchema = new mongoose.Schema({
         default: 'pending_payment'
     },
 
+    // ⚠️  PERHATIAN: paymentDeadline digunakan oleh TTL index lama di MongoDB
+    // (index "paymentDeadline_1" dengan expireAfterSeconds: 0).
+    // Index tersebut HARUS sudah di-drop via script drop-ttl-index.js.
+    // Saat pembayaran berhasil (confirmed), field ini wajib di-$unset
+    // agar MongoDB tidak menghapus dokumen secara otomatis.
     paymentDeadline: Date,
     symptoms:        String,
     medicalHistory:  String,

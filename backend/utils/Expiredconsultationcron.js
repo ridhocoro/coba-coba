@@ -141,7 +141,7 @@ const checkDoctorNoShow = async () => {
     const candidates = await Consultation.find({
         status      : 'confirmed',
         scheduledEnd: { $lt: grace },
-    }).populate('doctorId', 'name');
+    }).lean(); // doctorId tetap UUID string — tidak perlu populate ke MySQL Doctor
 
     for (const c of candidates) {
         // Atomic → doctor_no_show

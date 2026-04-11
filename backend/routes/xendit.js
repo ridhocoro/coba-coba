@@ -71,9 +71,15 @@ router.post('/create-invoice', auth, async (req, res) => {
 
         let payment = null;
         if (paymentType !== 'consultation') {
+            // ENUM hanya 'order'|'consultation' — semua non-consultation dipetakan ke 'order'
+            // orderId = referenceId (order._id yang dikirim frontend)
             payment = await Payment.create({
-                userId: req.userId, xenditExternalId: externalId, // Diperbaiki
-                amount, currency: 'idr', status: 'pending', paymentType, referenceId,
+                userId          : req.userId,
+                xenditExternalId: externalId,
+                amount,
+                status          : 'pending',
+                paymentType     : 'order',   // fix: 'medicine' tidak ada di ENUM
+                orderId         : referenceId, // fix: field yang benar di Payment model
             });
         }
 
@@ -100,10 +106,54 @@ router.post('/create-invoice', auth, async (req, res) => {
             payment_methods: ['BCA', 'BNI', 'BRI', 'MANDIRI', 'PERMATA', 'OVO', 'DANA', 'SHOPEEPAY', 'LINKAJA', 'QRIS'],
         };
 
+        // Ambil nama obat dari order untuk deskripsi invoice yang informatif
+        // Format: "Zinc 20mg, Paracetamol +1 lainnya" (maks 2 nama, sisanya "+N lainnya")
+        if (paymentType !== 'consultation' && referenceId) {
+            try {
+                const { OrderItem } = require('../models/mysql');
+                const orderItems = await OrderItem.findAll({ where: { orderId: referenceId } });
+                if (orderItems.length > 0) {
+                    const names = orderItems.map(i => i.medicineName).filter(Boolean);
+                    const MAX_SHOW = 2;
+                    const shown   = names.slice(0, MAX_SHOW).join(', ');
+                    const extra   = names.length > MAX_SHOW ? ` +${names.length - MAX_SHOW} lainnya` : '';
+                    invoicePayload.description = `${shown}${extra} – Klinik Pratama IPB`;
+                }
+            } catch (e) { /* fallback ke deskripsi default sudah di-set di atas */ }
+        }
+
         const xenditRes = await axios.post('https://api.xendit.co/v2/invoices', invoicePayload, { headers: xenditHeaders() });
         const invoice = xenditRes.data;
 
-        if (payment) { payment.stripePaymentIntentId = invoice.id; await payment.save(); }
+        if (payment) {
+            // FIX: field yang benar adalah xenditInvoiceId, bukan stripePaymentIntentId
+            payment.xenditInvoiceId = invoice.id;
+            await payment.save();
+        }
+        if (paymentType !== 'consultation' && referenceId) {
+            // Simpan xenditExternalId ke order + lock stok + set paymentExpiry 15 menit
+            try {
+                const PAYMENT_LOCK_MIN = 15;
+                const paymentExpiry    = new Date(Date.now() + PAYMENT_LOCK_MIN * 60 * 1000);
+                const { OrderItem }    = require('../models/mysql');
+
+                // Lock stok semua item di order ini
+                const orderItems = await OrderItem.findAll({ where: { orderId: referenceId } });
+                for (const item of orderItems) {
+                    await Medicine.increment(
+                        { lockedStock: item.quantity },
+                        { where: { id: item.medicineId } }
+                    );
+                }
+
+                // Simpan xenditExternalId + paymentExpiry ke order
+                await Order.update(
+                    { xenditExternalId: externalId, paymentExpiry },
+                    { where: { id: referenceId } }
+                );
+                console.log(`[Xendit] Stok dikunci untuk order ${referenceId}, expiry: ${paymentExpiry.toISOString()}`);
+            } catch (e) { console.error('[Xendit] gagal lock stok / simpan xenditExternalId:', e.message); }
+        }
         if (paymentType === 'consultation') {
             await Consultation.findByIdAndUpdate(referenceId, { xenditInvoiceId: invoice.id, xenditExternalId: externalId });
         }
@@ -441,13 +491,18 @@ const handlePaymentPaid = async (payment, xenditEvent, io) => {
         payment.paidAt = new Date(xenditEvent.paid_at || Date.now());
         await payment.save();
 
-        if (payment.paymentType === 'medicine') {
-            const order = await Order.findByPk(payment.referenceId);
+        // paymentType di DB adalah 'order'; orderId tersimpan di payment.orderId
+        if (payment.paymentType === 'order') {
+            const order = await Order.findByPk(payment.orderId, {
+                include: [{ association: 'items' }],
+            });
             if (order && order.status === 'pending') {
-                for (const item of order.items) {
-                    await Medicine.findByIdAndUpdate(item.medicineId, {
-                        $inc: { stock: -item.quantity, lockedStock: -item.quantity },
-                    });
+                for (const item of (order.items || [])) {
+                    // Sequelize increment — bukan Mongoose findByIdAndUpdate
+                    await Medicine.increment(
+                        { stock: -item.quantity, lockedStock: -item.quantity },
+                        { where: { id: item.medicineId } }
+                    );
                 }
                 order.status = 'paid'; order.updatedAt = new Date();
                 await order.save();
