@@ -114,10 +114,14 @@ router.get('/doctor/pending', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
 
-        const consultations = await Consultation.find({
+        let consultations = await Consultation.find({
             doctorId: doctor.id,
             status: { $in: ['confirmed', 'in_progress'] }
-        }).sort('scheduledAt');
+        }).sort('scheduledAt').lean();
+
+        consultations = await populateFromMySQL(
+            consultations, 'userId', 'User', 'id name email phone'
+        );
 
         res.json({ success: true, count: consultations.length, consultations });
     } catch (err) {
@@ -131,7 +135,11 @@ router.get('/doctor/history', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
 
-        const consultations = await Consultation.find({ doctorId: doctor.id }).sort('-createdAt');
+        let consultations = await Consultation.find({ doctorId: doctor.id }).sort('-createdAt').lean();
+
+        consultations = await populateFromMySQL(
+            consultations, 'userId', 'User', 'id name email phone'
+        );
 
         res.json({ success: true, consultations });
     } catch (err) {
@@ -145,9 +153,14 @@ router.get('/doctor/all', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
 
-        const consultations = await Consultation.find({ doctorId: doctor.id })
+        let consultations = await Consultation.find({ doctorId: doctor.id })
             .populate({ path: 'sickLetter', select: 'status letterNumber diagnosis' })
-            .sort('-createdAt');
+            .sort('-createdAt')
+            .lean();
+
+        consultations = await populateFromMySQL(
+            consultations, 'userId', 'User', 'id name email phone'
+        );
 
         res.json({ success: true, consultations });
     } catch (err) {
