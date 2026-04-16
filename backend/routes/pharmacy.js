@@ -177,6 +177,33 @@ router.get('/medicines', async (req, res) => {
     }
 });
 
+// GET /api/pharmacy/admin/medicines — admin: semua obat (termasuk nonaktif), tanpa filter isActive
+router.get('/admin/medicines', auth, adminAuth, async (req, res) => {
+    try {
+        const { search, category, page = 1, limit = 200 } = req.query;
+        const where = {};
+        if (search) {
+            where[Op.or] = [
+                { name:        { [Op.like]: `%${search}%` } },
+                { genericName: { [Op.like]: `%${search}%` } },
+            ];
+        }
+        if (category) where.category = category;
+
+        const { count, rows: meds } = await Medicine.findAndCountAll({
+            where,
+            limit : Number(limit),
+            offset: (Number(page) - 1) * Number(limit),
+            order : [['created_at', 'DESC']],
+        });
+
+        res.json({ success: true, medicines: meds, total: count });
+    } catch (err) {
+        console.error('[pharmacy] GET /admin/medicines error:', err.message);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
 router.post('/admin/medicines', auth, adminAuth, async (req, res) => {
     try {
         const med = await Medicine.create(req.body);

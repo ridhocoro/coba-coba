@@ -22,6 +22,7 @@ const notificationSchema = new mongoose.Schema({
             'doctor_no_show',
             'schedule_reminder',
             'prescription_sent',
+            'prescription_submitted',
             'order_shipped',
             'order_delivered',
             'appointment_reminder',

@@ -37,8 +37,6 @@ const fmtDoctorName = require('../utils/fmtDoctorName');
  * ── Farmasi ────────────────────────────────────────────────────────
  * GET  /pharmacy/low-stock           → obat di bawah minStock
  * GET  /pharmacy/best-sellers        → Top 5 terlaris
- * GET  /pharmacy/orders              → semua pesanan (filter status+tanggal)
- * PUT  /pharmacy/orders/:id/status   → update status pesanan
  *
  * ── Surat Sakit ────────────────────────────────────────────────────
  * GET  /sick-letters                 → semua surat sakit
@@ -55,6 +53,8 @@ const fmtDoctorName = require('../utils/fmtDoctorName');
  */
 
 const express   = require('express');
+// FIX: tambah Op untuk Sequelize query operators
+const { Op }    = require('sequelize');
 const { User, Doctor, Order, Medicine, Payment } = require('../models/mysql');
 const { populateFromMySQL } = require('../utils/hybridJoin');
 const router    = express.Router();
@@ -66,6 +66,7 @@ const auth      = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const { createNotification } = require('../utils/notificationHelper');
 
+// MongoDB models (Mongoose) — tetap pakai Mongoose syntax
 const Consultation = require('../models/Consultation');
 const Appointment  = require('../models/Appointment');
 const SickLetter   = require('../models/SickLetter');
@@ -105,27 +106,21 @@ const uploadChatFile = multer({
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const WIB = 7 * 60 * 60 * 1000;
-
 function dateRange(period, from, to) {
     const WIB_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC+7
     const now = new Date();
 
-    // Hitung awal & akhir hari WIB dalam UTC
     const nowWib       = new Date(now.getTime() + WIB_OFFSET_MS);
-    const todayWibStr  = nowWib.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const todayWibStr  = nowWib.toISOString().slice(0, 10);
     const todayStart   = new Date(todayWibStr + 'T00:00:00+07:00');
     const todayEnd     = new Date(todayWibStr + 'T23:59:59+07:00');
 
     if (period === 'today') return { start: todayStart, end: todayEnd };
-
     if (period === '7d') {
-        const s = new Date(todayStart.getTime() - 6 * 86400000);
-        return { start: s, end: todayEnd };
+        return { start: new Date(todayStart.getTime() - 6 * 86400000), end: todayEnd };
     }
     if (period === '30d') {
-        const s = new Date(todayStart.getTime() - 29 * 86400000);
-        return { start: s, end: todayEnd };
+        return { start: new Date(todayStart.getTime() - 29 * 86400000), end: todayEnd };
     }
     if (from && to) {
         return {
@@ -134,8 +129,7 @@ function dateRange(period, from, to) {
         };
     }
     // default: 30 hari
-    const s = new Date(todayStart.getTime() - 29 * 86400000);
-    return { start: s, end: todayEnd };
+    return { start: new Date(todayStart.getTime() - 29 * 86400000), end: todayEnd };
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -145,11 +139,12 @@ function dateRange(period, from, to) {
 // GET /admin/analytics/operational
 router.get('/analytics/operational', guard, async (req, res) => {
     try {
-        const now          = new Date();
-        const wibStr       = new Date(now.getTime() + 7*3600000).toISOString().slice(0,10);
-        const todayStart   = new Date(wibStr + 'T00:00:00+07:00');
-        const todayEnd     = new Date(wibStr + 'T23:59:59+07:00');
+        const now        = new Date();
+        const wibStr     = new Date(now.getTime() + 7 * 3600000).toISOString().slice(0, 10);
+        const todayStart = new Date(wibStr + 'T00:00:00+07:00');
+        const todayEnd   = new Date(wibStr + 'T23:59:59+07:00');
 
+        // FIX: Order & pakai Sequelize count({ where: }) bukan countDocuments()
         const [
             pendingRx,
             paidOrders,
@@ -157,11 +152,18 @@ router.get('/analytics/operational', guard, async (req, res) => {
             todayAppt,
             todayConsult,
         ] = await Promise.all([
-            Order.countDocuments({ status: 'waiting_prescription' }),
-            Order.countDocuments({ status: 'paid' }),
-            Order.countDocuments({ status: 'siap_diambil' }),
-            Appointment.countDocuments({ scheduledAt: { $gte: todayStart, $lte: todayEnd }, status: { $in: ['scheduled','checked_in'] } }),
-            Consultation.countDocuments({ scheduledAt: { $gte: todayStart, $lte: todayEnd }, status: { $in: ['confirmed','in_progress'] } }),
+            Order.count({ where: { status: 'waiting_prescription' } }),
+            Order.count({ where: { status: 'paid' } }),
+            Order.count({ where: { status: 'siap_diambil' } }),
+            // Appointment & Consultation tetap Mongoose
+            Appointment.countDocuments({
+                scheduledAt: { $gte: todayStart, $lte: todayEnd },
+                status     : { $in: ['scheduled', 'checked_in'] },
+            }),
+            Consultation.countDocuments({
+                scheduledAt: { $gte: todayStart, $lte: todayEnd },
+                status     : { $in: ['confirmed', 'in_progress'] },
+            }),
         ]);
 
         res.json({ pendingRx, paidOrders, pickupReady, todayAppt, todayConsult });
@@ -176,30 +178,61 @@ router.get('/analytics/financial', guard, async (req, res) => {
         const { period, from, to } = req.query;
         const { start, end } = dateRange(period, from, to);
 
-        const [consultations, orders, appointments] = await Promise.all([
-            Consultation.find({ paidAt: { $gte: start, $lte: end }, status: { $in: ['confirmed','in_progress','completed','refunded'] } }).select('amount paidAt'),
-            Order.find({ createdAt: { $gte: start, $lte: end }, status: { $in: ['paid','diproses','dikirim','terkirim','selesai','refunded'] } }).select('totalAmount shippingCost createdAt'),
-            Appointment.find({ scheduledAt: { $gte: start, $lte: end }, status: { $in: ['checked_in','completed'] } }).select('scheduledAt'),
+        // Consultation & Appointment tetap Mongoose
+        const [consultations, appointments] = await Promise.all([
+            Consultation.find({
+                paidAt: { $gte: start, $lte: end },
+                status: { $in: ['confirmed', 'in_progress', 'completed', 'refunded'] },
+            }).select('amount paidAt'),
+            Appointment.find({
+                scheduledAt: { $gte: start, $lte: end },
+                status     : { $in: ['checked_in', 'completed'] },
+            }).select('scheduledAt'),
         ]);
 
+        // FIX: Order pakai Sequelize findAll + Op.between / Op.in
+        const dbOrders = await Order.findAll({
+            where: {
+                createdAt: { [Op.between]: [start, end] },
+                status   : { [Op.in]: ['paid', 'diproses', 'dikirim', 'terkirim', 'selesai', 'refunded'] },
+            },
+            attributes: ['totalAmount', 'shippingCost', 'createdAt'],
+            raw: true,
+        });
+
         const revenueConsultation = consultations.reduce((s, c) => s + (c.amount || 0), 0);
-        const revenuePharmacy     = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+        const revenuePharmacy     = dbOrders.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0);
 
-        const completedConsultations = await Consultation.countDocuments({ status: 'completed', updatedAt: { $gte: start, $lte: end } });
-        const completedOrders        = await Order.countDocuments({ status: 'selesai', completedAt: { $gte: start, $lte: end } });
-        const completedAppointments  = await Appointment.countDocuments({ status: 'completed', updatedAt: { $gte: start, $lte: end } });
+        // FIX: countDocuments hanya untuk Mongoose; Order pakai Sequelize count
+        const completedConsultations = await Consultation.countDocuments({
+            status   : 'completed',
+            updatedAt: { $gte: start, $lte: end },
+        });
+        const completedOrders = await Order.count({
+            where: {
+                status     : 'selesai',
+                completedAt: { [Op.between]: [start, end] },
+            },
+        });
+        const completedAppointments = await Appointment.countDocuments({
+            status   : 'completed',
+            updatedAt: { $gte: start, $lte: end },
+        });
 
-        // Rating rata-rata
-        const ratingData = await Consultation.find({ rating: { $gt: 0 }, updatedAt: { $gte: start, $lte: end } }).select('rating');
-        const avgRating  = ratingData.length > 0
+        // Rating rata-rata — tetap Mongoose
+        const ratingData = await Consultation.find({
+            rating   : { $gt: 0 },
+            updatedAt: { $gte: start, $lte: end },
+        }).select('rating');
+        const avgRating = ratingData.length > 0
             ? (ratingData.reduce((s, c) => s + c.rating, 0) / ratingData.length).toFixed(1)
             : 0;
 
         res.json({
             revenue: {
-                total        : revenueConsultation + revenuePharmacy,
-                consultation : revenueConsultation,
-                pharmacy     : revenuePharmacy,
+                total       : revenueConsultation + revenuePharmacy,
+                consultation: revenueConsultation,
+                pharmacy    : revenuePharmacy,
             },
             completed: {
                 consultations: completedConsultations,
@@ -220,15 +253,27 @@ router.get('/analytics/growth', guard, async (req, res) => {
         const { period, from, to } = req.query;
         const { start, end } = dateRange(period, from, to);
 
+        // FIX: User & Doctor pakai Sequelize count() + Op, bukan countDocuments()
         const [newPatients, totalPatients, totalDoctors, activeDoctors] = await Promise.all([
-            User.countDocuments({ role: { $in: ['user','mahasiswa'] }, createdAt: { $gte: start, $lte: end } }),
-            User.countDocuments({ role: { $in: ['user','mahasiswa'] } }),
-            Doctor.countDocuments({}),
-            Doctor.countDocuments({ isActive: true }),
+            User.count({
+                where: {
+                    role     : { [Op.in]: ['user', 'mahasiswa'] },
+                    createdAt: { [Op.between]: [start, end] },
+                },
+            }),
+            User.count({
+                where: { role: { [Op.in]: ['user', 'mahasiswa'] } },
+            }),
+            Doctor.count({}),
+            Doctor.count({ where: { isActive: true } }),
         ]);
 
-        // Rating per dokter
-        const doctors = await Doctor.find({ isActive: true }).select('name rating totalReviews specialization');
+        // FIX: Doctor pakai Sequelize findAll + attributes, bukan .find().select()
+        const doctors = await Doctor.findAll({
+            where     : { isActive: true },
+            attributes: ['id', 'name', 'rating', 'totalReviews', 'specialization'],
+            raw       : true,
+        });
 
         res.json({ newPatients, totalPatients, totalDoctors, activeDoctors, doctors, period: { start, end } });
     } catch (err) {
@@ -243,41 +288,60 @@ router.get('/analytics/growth', guard, async (req, res) => {
 // GET /admin/doctors?specialization=
 router.get('/doctors', guard, async (req, res) => {
     try {
-        const filter = {};
-        if (req.query.specialization) filter.specialization = req.query.specialization;
-        const doctors = await Doctor.find(filter).populate('userId', 'name email phone isActive').lean();
-        res.json({ success: true, doctors });
+        // FIX: pakai Sequelize findAll + include, bukan .find().populate()
+        const where = {};
+        if (req.query.specialization) where.specialization = req.query.specialization;
+
+        const doctors = await Doctor.findAll({
+            where,
+            include: [{
+                model     : User,
+                as        : 'user',
+                attributes: ['name', 'email', 'phone', 'isActive'],
+            }],
+        });
+
+        // Normalise: jadikan userId = user (kompatibel frontend)
+        const result = doctors.map(d => {
+            const json = d.toJSON();
+            json.userId = json.user;
+            json._id    = json.id;
+            return json;
+        });
+
+        res.json({ success: true, doctors: result });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
 // POST /admin/doctors — buat akun dokter baru
 router.post('/doctors', guard, async (req, res) => {
     try {
-        const { name, email, password, specialization, gender, consultationFee, bio, experience,
-                strNumber, alumnus, practiceLocation, titlePrefix, titleSuffix } = req.body;
+        const {
+            name, email, password, specialization, gender, consultationFee, bio, experience,
+            strNumber, alumnus, practiceLocation, titlePrefix, titleSuffix,
+        } = req.body;
 
         if (!name?.trim())           return res.status(400).json({ message: 'Nama wajib diisi' });
         if (!email?.trim())          return res.status(400).json({ message: 'Email wajib diisi' });
         if (!password || password.length < 6) return res.status(400).json({ message: 'Password minimal 6 karakter' });
         if (!specialization?.trim()) return res.status(400).json({ message: 'Spesialisasi wajib diisi' });
 
-        // Cek email sudah ada
-        const existing = await User.findOne({ email: email.toLowerCase().trim() });
+        // FIX: Sequelize findOne pakai { where: {} }
+        const existing = await User.findOne({ where: { email: email.toLowerCase().trim() } });
         if (existing) return res.status(400).json({ message: 'Email sudah digunakan' });
 
-        // Buat akun User dengan role doctor
-        const user = new User({
-            name    : name.trim(),
-            email   : email.toLowerCase().trim(),
-            password,           // pre-save hook akan hash
-            role    : 'doctor',
-            isVerified: true,   // langsung verified karena dibuat admin
+        // FIX: Sequelize User.create() bukan new User().save()
+        const user = await User.create({
+            name      : name.trim(),
+            email     : email.toLowerCase().trim(),
+            password,
+            phone     : '',
+            role      : 'doctor',
+            isVerified: true,
         });
-        await user.save();
 
-        // Buat profil Doctor
         const doctor = await Doctor.create({
             userId          : user.id,
             name            : name.trim(),
@@ -294,12 +358,12 @@ router.post('/doctors', guard, async (req, res) => {
             isActive        : true,
         });
 
-        // Populate untuk response
         const populated = await Doctor.findByPk(doctor.id, {
-            include: [{ model: User, as: 'user', attributes: ['name', 'email'] }]
+            include: [{ model: User, as: 'user', attributes: ['name', 'email'] }],
         });
         const result = populated.toJSON();
         result.userId = result.user;
+        result._id    = result.id;
         res.status(201).json({ success: true, message: 'Dokter berhasil ditambahkan', doctor: result });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
@@ -310,15 +374,15 @@ router.post('/doctors', guard, async (req, res) => {
 router.get('/doctors/:id', guard, async (req, res) => {
     try {
         const docRow = await Doctor.findByPk(req.params.id, {
-            include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone', 'isActive', 'gender', 'dateOfBirth'] }]
+            include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone', 'isActive', 'gender', 'dateOfBirth'] }],
         });
         if (!docRow) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+
         const doctor = docRow.toJSON();
         doctor.userId = doctor.user;
-        doctor._id = doctor.id;
-        // doctor null check handled above
+        doctor._id    = doctor.id;
 
-        // Statistik rating
+        // Rating dari MongoDB Consultation (tetap Mongoose)
         const reviews = await Consultation.find({ doctorId: doctor.id, rating: { $gt: 0 } })
             .select('rating ratingComment ratedAt userId')
             .populate('userId', 'name')
@@ -326,12 +390,12 @@ router.get('/doctors/:id', guard, async (req, res) => {
             .limit(10)
             .lean();
 
-        const ratingDist = { 1:0, 2:0, 3:0, 4:0, 5:0 };
+        const ratingDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         reviews.forEach(r => { if (ratingDist[r.rating] !== undefined) ratingDist[r.rating]++; });
 
         res.json({ success: true, doctor, reviews, ratingDist });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -340,19 +404,21 @@ router.put('/doctors/:id', guard, async (req, res) => {
     try {
         const { name, specialization, consultationFee, bio, gender, consultationSettings } = req.body;
         const updates = {};
-        if (name)               updates.name               = name;
-        if (specialization)     updates.specialization     = specialization;
-        if (consultationFee !== undefined) updates.consultationFee = Number(consultationFee);
-        if (bio !== undefined)  updates.bio                = bio;
-        if (gender)             updates.gender             = gender;
-        if (consultationSettings) updates.consultationSettings = consultationSettings;
+        if (name)                        updates.name               = name;
+        if (specialization)              updates.specialization     = specialization;
+        if (consultationFee !== undefined) updates.consultationFee  = Number(consultationFee);
+        if (bio !== undefined)           updates.bio                = bio;
+        if (gender)                      updates.gender             = gender;
+        if (consultationSettings)        updates.consultationSettings = consultationSettings;
 
         await Doctor.update(updates, { where: { id: req.params.id } });
         const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
-        res.json({ success: true, doctor });
+        const result = doctor.toJSON();
+        result._id = result.id;
+        res.json({ success: true, doctor: result });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -366,9 +432,9 @@ router.put('/doctors/:id/toggle-status', guard, async (req, res) => {
         if (doctor.userId) {
             await User.update({ isActive: doctor.isActive }, { where: { id: doctor.userId } });
         }
-        res.json({ success: true, isActive: doctor.isActive });
+        res.json({ success: true, doctor: { ...doctor.toJSON(), _id: doctor.id }, isActive: doctor.isActive });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -382,13 +448,14 @@ router.post('/doctors/:id/photo', guard, uploadDoctorPhoto.single('photo'), asyn
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json({ success: true, photoUrl });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// GET /admin/doctors/:id/schedule — ambil jadwal + list override
+// GET /admin/doctors/:id/schedule
 router.get('/doctors/:id/schedule', guard, async (req, res) => {
     try {
+        // DoctorAvailability, AppointmentAvailability, DoctorScheduleOverride tetap Mongoose
         const [consultAvail, apptAvail, overrides] = await Promise.all([
             DoctorAvailability.findOne({ doctorId: req.params.id }).lean(),
             AppointmentAvailability.findOne({ doctorId: req.params.id }).lean(),
@@ -396,12 +463,11 @@ router.get('/doctors/:id/schedule', guard, async (req, res) => {
         ]);
         res.json({ success: true, consultAvail, apptAvail, overrides });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// PUT /admin/doctors/:id/schedule/override — blokir rentang tanggal
-// Body: { dates: ['2025-04-07','2025-04-08'], reason }
+// PUT /admin/doctors/:id/schedule/override
 router.put('/doctors/:id/schedule/override', guard, async (req, res) => {
     try {
         const { dates, reason } = req.body;
@@ -418,7 +484,6 @@ router.put('/doctors/:id/schedule/override', guard, async (req, res) => {
             results.push(date);
         }
 
-        // Batalkan semua appointment yang sudah ada di tanggal tersebut
         let cancelledCount = 0;
         for (const date of dates) {
             const dayStart = new Date(date + 'T00:00:00+07:00');
@@ -426,13 +491,13 @@ router.put('/doctors/:id/schedule/override', guard, async (req, res) => {
             const toCancel = await Appointment.find({
                 doctorId   : req.params.id,
                 scheduledAt: { $gte: dayStart, $lte: dayEnd },
-                status     : { $in: ['scheduled','checked_in'] },
+                status     : { $in: ['scheduled', 'checked_in'] },
             }).populate('userId', 'name');
 
             for (const appt of toCancel) {
                 await Appointment.findByIdAndUpdate(appt.id, {
-                    status     : 'cancelled_by_admin',
-                    cancelledAt: new Date(),
+                    status      : 'cancelled_by_admin',
+                    cancelledAt : new Date(),
                     cancelReason: reason || 'Dokter tidak hadir (override jadwal oleh admin)',
                 });
                 await createNotification({
@@ -459,7 +524,7 @@ router.delete('/doctors/:id/schedule/override/:date', guard, async (req, res) =>
         await DoctorScheduleOverride.findOneAndDelete({ doctorId: req.params.id, date: req.params.date });
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -471,25 +536,27 @@ router.delete('/doctors/:id/schedule/override/:date', guard, async (req, res) =>
 router.get('/users', guard, async (req, res) => {
     try {
         const { role, search, page = 1, limit = 30 } = req.query;
-        const filter = { role: { [Op.in]: ['user','mahasiswa'] } };
-        if (role && ['user','mahasiswa'].includes(role)) filter.role = role;
-        if (search) filter[Op.or] = [
-            { name  : { [Op.like]: `%${search}%` } },
-            { email : { [Op.like]: `%${search}%` } },
-            { phone : { [Op.like]: `%${search}%` } },
-        ];
-        const total = await User.count({ where: filter });
-        let users = await User.findAll({
-            where: filter,
+        const where = { role: { [Op.in]: ['user', 'mahasiswa'] } };
+        if (role && ['user', 'mahasiswa'].includes(role)) where.role = role;
+        if (search) {
+            where[Op.or] = [
+                { name : { [Op.like]: `%${search}%` } },
+                { email: { [Op.like]: `%${search}%` } },
+                { phone: { [Op.like]: `%${search}%` } },
+            ];
+        }
+        const total = await User.count({ where });
+        const users = await User.findAll({
+            where,
             attributes: { exclude: ['password', 'emailOtp', 'resetPasswordToken'] },
-            order: [['createdAt', 'DESC']],
+            order : [['createdAt', 'DESC']],
             offset: (page - 1) * limit,
-            limit: Number(limit),
-            raw: true
+            limit : Number(limit),
+            raw   : true,
         });
         res.json({ success: true, users, total, page: Number(page), pages: Math.ceil(total / limit) });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -498,10 +565,11 @@ router.get('/users/:id', guard, async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id, {
             attributes: { exclude: ['password', 'emailOtp', 'resetPasswordToken'] },
-            raw: true
+            raw: true,
         });
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
 
+        // Consultation & Appointment tetap Mongoose
         let consultations = await Consultation.find({ userId: req.params.id })
             .select('status scheduledAt amount paidAt createdAt consultationType doctorId')
             .sort('-createdAt').limit(20).lean();
@@ -512,55 +580,55 @@ router.get('/users/:id', guard, async (req, res) => {
             .sort('-createdAt').limit(20).lean();
         appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name specialization titlePrefix titleSuffix');
 
+        // Order pakai Sequelize
         const orders = await Order.findAll({
-            where: { userId: req.params.id },
+            where     : { userId: req.params.id },
             attributes: ['id', 'orderNumber', 'status', 'totalAmount', 'createdAt', 'completedAt', 'deliveryMethod'],
-            order: [['createdAt', 'DESC']],
-            limit: 20,
-            raw: true
+            order     : [['createdAt', 'DESC']],
+            limit     : 20,
+            raw       : true,
         });
 
         res.json({ success: true, user, consultations, appointments, orders });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// GET /admin/users/:id/quota — kuota mahasiswa
+// GET /admin/users/:id/quota
 router.get('/users/:id/quota', guard, async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id, { raw: true });
         if (!user) return res.status(404).json({ message: 'User tidak ditemukan' });
 
         const STUDENT_MAX_PCS = 8;
-        const now = new Date();
+        const now        = new Date();
         const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endMonth   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
         const orders = await Order.findAll({
             where: {
-                userId          : req.params.id,
+                userId           : req.params.id,
                 isStudentDiscount: true,
-                studentFreeQty  : { [Op.gt]: 0 },
-                status          : { [Op.notIn]: ['cancelled','expired','prescription_rejected'] },
-                createdAt       : { [Op.between]: [startMonth, endMonth] },
+                studentFreeQty   : { [Op.gt]: 0 },
+                status           : { [Op.notIn]: ['cancelled', 'expired', 'prescription_rejected'] },
+                createdAt        : { [Op.between]: [startMonth, endMonth] },
             },
             attributes: ['orderNumber', 'studentFreeQty', 'createdAt'],
-            raw: true
+            raw: true,
         });
 
-        const used = orders.reduce((s, o) => s + (o.studentFreeQty || 0), 0);
-        const manualExtra = user.quotaBonus || 0; // bonus manual dari admin
-        const max  = STUDENT_MAX_PCS + manualExtra;
+        const used        = orders.reduce((s, o) => s + (o.studentFreeQty || 0), 0);
+        const manualExtra = user.quotaBonus || 0;
+        const max         = STUDENT_MAX_PCS + manualExtra;
 
         res.json({ success: true, used, max, remaining: Math.max(0, max - used), manualExtra, orders, month: startMonth });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// PUT /admin/users/:id/quota — reset atau tambah kuota manual
-// Body: { action: 'add'|'reset', amount? }
+// PUT /admin/users/:id/quota
 router.put('/users/:id/quota', guard, async (req, res) => {
     try {
         const { action, amount } = req.body;
@@ -579,7 +647,7 @@ router.put('/users/:id/quota', guard, async (req, res) => {
         await user.save();
         res.json({ success: true, quotaBonus: user.quotaBonus });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -592,45 +660,33 @@ router.put('/users/:id/toggle-status', guard, async (req, res) => {
         await user.save();
         res.json({ success: true, isActive: user.isActive });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
 // POST /admin/users/upgrade-mahasiswa
-// Upgrade semua user dengan email @apps.ipb.ac.id ke role mahasiswa
 router.post('/users/upgrade-mahasiswa', guard, async (req, res) => {
     try {
         const [affectedCount] = await User.update(
             { role: 'mahasiswa' },
-            {
-                where: {
-                    email: { [Op.like]: '%@apps.ipb.ac.id' },
-                    role: 'user',
-                }
-            }
+            { where: { email: { [Op.like]: '%@apps.ipb.ac.id' }, role: 'user' } }
         );
         res.json({
-            success  : true,
-            upgraded : affectedCount,
-            message  : `${affectedCount} akun berhasil diupgrade ke mahasiswa`,
+            success : true,
+            upgraded: affectedCount,
+            message : `${affectedCount} akun berhasil diupgrade ke mahasiswa`,
         });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-
-// POST /admin/users/reset-quota-bonus — reset quotaBonus semua mahasiswa ke 0
+// POST /admin/users/reset-quota-bonus
 router.post('/users/reset-quota-bonus', guard, async (req, res) => {
     try {
         const [affectedCount] = await User.update(
             { quotaBonus: 0 },
-            {
-                where: {
-                    role: 'mahasiswa',
-                    quotaBonus: { [Op.gt]: 0 },
-                }
-            }
+            { where: { role: 'mahasiswa', quotaBonus: { [Op.gt]: 0 } } }
         );
         res.json({ success: true, reset: affectedCount, message: `Kuota bonus ${affectedCount} mahasiswa berhasil direset ke 0` });
     } catch (err) {
@@ -639,28 +695,25 @@ router.post('/users/reset-quota-bonus', guard, async (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
-// KONSULTASI
+// KONSULTASI — tetap Mongoose
 // ════════════════════════════════════════════════════════════════════════════════
 
-// GET /admin/consultations?period=today|7d|30d&from=&to=&doctorId=&status=
 router.get('/consultations', guard, async (req, res) => {
     try {
         const { period, from, to, doctorId, status, page = 1, limit = 50 } = req.query;
         const { start, end } = dateRange(period, from, to);
 
-        // Filter by scheduledAt OR createdAt so bookings appear regardless of schedule time
         const filter = {
             $or: [
                 { scheduledAt: { $gte: start, $lte: end } },
-                { createdAt:   { $gte: start, $lte: end } },
-            ]
+                { createdAt  : { $gte: start, $lte: end } },
+            ],
         };
         if (doctorId) filter.doctorId = doctorId;
         if (status)   filter.status   = status;
 
         const total = await Consultation.countDocuments(filter);
         const consultations = await Consultation.find(filter)
-            // PRIVASI: TIDAK populate messages atau medicalRecord
             .select('status scheduledAt scheduledEnd consultationType startTime endTime paidAt amount xenditExternalId doctorId userId createdAt')
             .populate('doctorId', 'name specialization titlePrefix titleSuffix')
             .populate('userId',   'name email')
@@ -669,7 +722,6 @@ router.get('/consultations', guard, async (req, res) => {
             .limit(Number(limit))
             .lean();
 
-        // Hitung durasi sesi
         const data = consultations.map(c => ({
             ...c,
             durationMin: c.startTime && c.endTime
@@ -679,15 +731,14 @@ router.get('/consultations', guard, async (req, res) => {
 
         res.json({ success: true, consultations: data, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
-// JANJI TEMU
+// JANJI TEMU — tetap Mongoose
 // ════════════════════════════════════════════════════════════════════════════════
 
-// GET /admin/appointments?period=today|7d|30d&from=&to=&doctorId=&status=
 router.get('/appointments', guard, async (req, res) => {
     try {
         const { period, from, to, doctorId, status, page = 1, limit = 50 } = req.query;
@@ -696,8 +747,8 @@ router.get('/appointments', guard, async (req, res) => {
         const filter = {
             $or: [
                 { scheduledAt: { $gte: start, $lte: end } },
-                { createdAt:   { $gte: start, $lte: end } },
-            ]
+                { createdAt  : { $gte: start, $lte: end } },
+            ],
         };
         if (doctorId) filter.doctorId = doctorId;
         if (status)   filter.status   = status;
@@ -714,18 +765,20 @@ router.get('/appointments', guard, async (req, res) => {
 
         res.json({ success: true, appointments, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// PUT /admin/appointments/:id/check-in
 router.put('/appointments/:id/check-in', guard, async (req, res) => {
     try {
-        const appt = await Appointment.findById(req.params.id).populate('userId', 'name').populate('doctorId', 'name userId');
+        const appt = await Appointment.findById(req.params.id)
+            .populate('userId',   'name')
+            .populate('doctorId', 'name userId');
         if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
-        if (appt.status !== 'scheduled') return res.status(400).json({ message: `Status harus scheduled, saat ini: ${appt.status}` });
+        if (appt.status !== 'scheduled')
+            return res.status(400).json({ message: `Status harus scheduled, saat ini: ${appt.status}` });
 
-        appt.status = 'checked_in';
+        appt.status      = 'checked_in';
         appt.checkedInAt = new Date();
         await appt.save();
 
@@ -740,31 +793,29 @@ router.put('/appointments/:id/check-in', guard, async (req, res) => {
 
         res.json({ success: true, appointment: appt });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// PUT /admin/appointments/:id/cancel
 router.put('/appointments/:id/cancel', guard, async (req, res) => {
     try {
-        const { reason, cancelledFor } = req.body; // cancelledFor: 'doctor'|'admin'
+        const { reason, cancelledFor } = req.body;
         if (!reason?.trim()) return res.status(400).json({ message: 'Alasan pembatalan wajib diisi' });
 
         const appt = await Appointment.findById(req.params.id)
             .populate('userId',   'name phone')
             .populate('doctorId', 'name userId');
         if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
-        if (!['scheduled','checked_in'].includes(appt.status))
+        if (!['scheduled', 'checked_in'].includes(appt.status))
             return res.status(400).json({ message: `Tidak bisa batalkan dari status: ${appt.status}` });
 
-        appt.status      = cancelledFor === 'doctor' ? 'cancelled_by_doctor' : 'cancelled_by_admin';
+        appt.status       = cancelledFor === 'doctor' ? 'cancelled_by_doctor' : 'cancelled_by_admin';
         appt.cancelReason = reason;
         appt.cancelledAt  = new Date();
         await appt.save();
 
         const io = req.app.get('io');
 
-        // Notifikasi ke pasien
         await createNotification({
             userId : appt.userId.id,
             type   : 'appointment_cancelled',
@@ -774,7 +825,6 @@ router.put('/appointments/:id/cancel', guard, async (req, res) => {
             io,
         });
 
-        // Notifikasi ke dokter jika pembatalan dari sisi admin/user
         if (appt.doctorId?.userId && cancelledFor !== 'doctor') {
             await createNotification({
                 userId : appt.doctorId.userId,
@@ -788,22 +838,21 @@ router.put('/appointments/:id/cancel', guard, async (req, res) => {
 
         res.json({ success: true, appointment: appt });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
-// FARMASI
+// FARMASI — Order pakai Sequelize
 // ════════════════════════════════════════════════════════════════════════════════
 
-// GET /admin/pharmacy/low-stock
 router.get('/pharmacy/low-stock', guard, async (req, res) => {
     try {
         const meds = await Medicine.findAll({ where: { isActive: true }, raw: true });
         const lowStock = meds.filter(m => (m.stock - (m.lockedStock || 0)) <= (m.minStock ?? 10));
         res.json({ success: true, medicines: lowStock });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -811,33 +860,34 @@ router.get('/pharmacy/low-stock', guard, async (req, res) => {
 router.get('/pharmacy/best-sellers', guard, async (req, res) => {
     try {
         const limitN = parseInt(req.query.limit) || 5;
-        // Best sellers from Order items (JSON field in MySQL)
+
+        // FIX: Order pakai Sequelize include items, bukan fetch raw 'items' field
         const allOrders = await Order.findAll({
-            where: { status: { [Op.in]: ['selesai','terkirim','dikirim','diproses'] } },
-            attributes: ['items'],
-            raw: true
+            where  : { status: { [Op.in]: ['selesai', 'terkirim', 'dikirim', 'diproses'] } },
+            include: [{ association: 'items', attributes: ['medicineId', 'medicineName', 'quantity'] }],
         });
+
         const itemMap = {};
         for (const order of allOrders) {
-            const items = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+            const items = order.items || [];
             for (const item of items) {
-                const key = item.medicineId || item.name;
-                if (!itemMap[key]) itemMap[key] = { _id: key, name: item.name, totalQty: 0 };
+                const key  = item.medicineId || item.medicineName;
+                const name = item.medicineName;
+                if (!itemMap[key]) itemMap[key] = { id: key, name, totalQty: 0 };
                 itemMap[key].totalQty += (item.quantity || 0);
             }
         }
         const result = Object.values(itemMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, limitN);
         res.json({ success: true, bestSellers: result });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
-// SURAT SAKIT
+// SURAT SAKIT — tetap Mongoose
 // ════════════════════════════════════════════════════════════════════════════════
 
-// GET /admin/sick-letters?doctorId=&from=&to=&status=
 router.get('/sick-letters', guard, async (req, res) => {
     try {
         const { doctorId, from, to, status, page = 1, limit = 30 } = req.query;
@@ -850,7 +900,7 @@ router.get('/sick-letters', guard, async (req, res) => {
             if (to)   filter.createdAt.$lte = new Date(to   + 'T23:59:59');
         }
 
-        const total = await SickLetter.countDocuments(filter);
+        const total   = await SickLetter.countDocuments(filter);
         const letters = await SickLetter.find(filter)
             .populate('userId',   'name email')
             .populate('doctorId', 'name specialization')
@@ -862,7 +912,7 @@ router.get('/sick-letters', guard, async (req, res) => {
 
         res.json({ success: true, letters, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -870,77 +920,77 @@ router.get('/sick-letters', guard, async (req, res) => {
 // LAPORAN & KEUANGAN
 // ════════════════════════════════════════════════════════════════════════════════
 
-// GET /admin/reports/revenue?period=&from=&to=&format=json|csv
 router.get('/reports/revenue', guard, async (req, res) => {
     try {
         const { period, from, to, format = 'json' } = req.query;
         const { start, end } = dateRange(period, from, to);
-
-        // BUG-30 fix: add limit to prevent OOM on large datasets in revenue report
-        // 5000 rows is sufficient for any realistic report period; warn if truncated
         const REPORT_LIMIT = 5000;
+
+        // Consultation & Appointment tetap Mongoose
         const consultations = await Consultation.find({
             paidAt: { $gte: start, $lte: end },
-            status: { $nin: ['pending_payment','expired','cancelled','cancelled_by_user'] },
+            status: { $nin: ['pending_payment', 'expired', 'cancelled', 'cancelled_by_user'] },
         })
-        .limit(REPORT_LIMIT)
-        .populate('userId',   'name email')
-        .populate('doctorId', 'name')
-        .select('paidAt amount xenditExternalId consultationType status userId doctorId')
-        .lean();
+            .limit(REPORT_LIMIT)
+            .populate('userId',   'name email')
+            .populate('doctorId', 'name')
+            .select('paidAt amount xenditExternalId consultationType status userId doctorId')
+            .lean();
 
+        // FIX: Order pakai Sequelize
         const dbOrders = await Order.findAll({
             where: {
                 createdAt: { [Op.between]: [start, end] },
-                status   : { [Op.notIn]: ['pending','expired','cancelled'] },
+                status   : { [Op.notIn]: ['pending', 'expired', 'cancelled'] },
             },
-            limit: REPORT_LIMIT,
+            limit  : REPORT_LIMIT,
             include: [{ model: User, as: 'user', attributes: ['name', 'email'] }],
-            attributes: ['orderNumber', 'createdAt', 'totalAmount', 'shippingCost', 'xenditExternalId', 'status', 'userId', 'deliveryMethod', 'items'],
+            attributes: ['orderNumber', 'createdAt', 'totalAmount', 'shippingCost', 'xenditExternalId', 'status', 'userId', 'deliveryMethod'],
         });
         const orders = dbOrders.map(o => {
-            const json = o.toJSON();
-            json.userId = json.user; 
+            const json   = o.toJSON();
+            json.userId  = json.user;
+            // Ambil items via relasi
+            json.items   = o.items || [];
             return json;
         });
 
         const appointments = await Appointment.find({
             scheduledAt: { $gte: start, $lte: end },
-            status     : { $in: ['checked_in','completed'] },
+            status     : { $in: ['checked_in', 'completed'] },
         })
-        .limit(REPORT_LIMIT)
-        .populate('userId',   'name email')
-        .populate('doctorId', 'name')
-        .select('scheduledAt appointmentTime userId doctorId status')
-        .lean();
+            .limit(REPORT_LIMIT)
+            .populate('userId',   'name email')
+            .populate('doctorId', 'name')
+            .select('scheduledAt appointmentTime userId doctorId status')
+            .lean();
 
-        // Build rows for export
         const rows = [
             ...consultations.map(c => ({
-                tanggal          : new Date(c.paidAt).toLocaleDateString('id-ID'),
-                jenis            : 'Konsultasi',
-                id_transaksi     : c.xenditExternalId || '-',
-                nama_pasien      : c.userId?.name || '-',
-                email_pasien     : c.userId?.email || '-',
-                nama_dokter      : c.doctorId?.name || '-',
-                nominal          : c.amount || 0,
-                metode_bayar     : 'Xendit',
-                ongkir           : 0,
-                total_qty        : '-',
-                status           : c.status,
+                tanggal     : new Date(c.paidAt).toLocaleDateString('id-ID'),
+                jenis       : 'Konsultasi',
+                id_transaksi: c.xenditExternalId || '-',
+                nama_pasien : c.userId?.name     || '-',
+                email_pasien: c.userId?.email    || '-',
+                nama_dokter : c.doctorId?.name   || '-',
+                nominal     : c.amount || 0,
+                metode_bayar: 'Xendit',
+                ongkir      : 0,
+                total_qty   : '-',
+                status      : c.status,
             })),
             ...orders.map(o => ({
-                tanggal          : new Date(o.createdAt).toLocaleDateString('id-ID'),
-                jenis            : 'Farmasi',
-                id_transaksi     : o.xenditExternalId || o.orderNumber || '-',
-                nama_pasien      : o.userId?.name || '-',
-                email_pasien     : o.userId?.email || '-',
-                nama_dokter      : '-',
-                nominal          : o.totalAmount || 0,
-                metode_bayar     : 'Xendit',
-                ongkir           : o.shippingCost || 0,
-                total_qty        : (o.items || []).reduce((s, i) => s + (i.quantity || 0), 0),
-                status           : o.status,
+                tanggal     : new Date(o.createdAt).toLocaleDateString('id-ID'),
+                jenis       : 'Farmasi',
+                id_transaksi: o.xenditExternalId || o.orderNumber || '-',
+                nama_pasien : o.userId?.name     || '-',
+                email_pasien: o.userId?.email    || '-',
+                nama_dokter : '-',
+                nominal     : Number(o.totalAmount) || 0,
+                metode_bayar: 'Xendit',
+                ongkir      : Number(o.shippingCost) || 0,
+                total_qty   : (o.items || []).reduce((s, i) => s + (i.quantity || 0), 0),
+                status      : o.status,
             })),
         ].sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
 
@@ -950,7 +1000,7 @@ router.get('/reports/revenue', guard, async (req, res) => {
                 `"${r.tanggal}","${r.jenis}","${r.id_transaksi}","${r.nama_pasien}","${r.email_pasien}","${r.nama_dokter}",${r.nominal},"${r.metode_bayar}",${r.ongkir},"${r.total_qty}","${r.status}"`
             ).join('\n');
             res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', `attachment; filename="laporan-pendapatan-${from||'all'}-${to||'all'}.csv"`);
+            res.setHeader('Content-Disposition', `attachment; filename="laporan-pendapatan-${from || 'all'}-${to || 'all'}.csv"`);
             return res.send(csv);
         }
 
@@ -960,39 +1010,36 @@ router.get('/reports/revenue', guard, async (req, res) => {
     }
 });
 
-// GET /admin/reports/subsidi-mahasiswa?from=&to=&format=json|csv
 router.get('/reports/subsidi-mahasiswa', guard, async (req, res) => {
     try {
         const { from, to, format = 'json' } = req.query;
         const start = from ? new Date(from + 'T00:00:00') : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
         const end   = to   ? new Date(to   + 'T23:59:59') : new Date();
 
-        const dbOrders2 = await Order.findAll({
+        // FIX: Order pakai Sequelize
+        const dbOrders = await Order.findAll({
             where: {
                 isStudentDiscount: true,
-                status           : { [Op.notIn]: ['cancelled','expired','prescription_rejected'] },
+                status           : { [Op.notIn]: ['cancelled', 'expired', 'prescription_rejected'] },
                 createdAt        : { [Op.between]: [start, end] },
             },
-            include: [{ model: User, as: 'user', attributes: ['name', 'email'] }],
-            attributes: ['createdAt', 'userId', 'items', 'studentFreeQty'],
-        });
-        const orders = dbOrders2.map(o => {
-            const json = o.toJSON();
-            json.userId = json.user;
-            return json;
+            include   : [{ model: User, as: 'user', attributes: ['name', 'email'] }],
+            attributes: ['createdAt', 'userId', 'studentFreeQty'],
         });
 
         const rows = [];
-        for (const order of orders) {
-            const freeItems = (order.items || []).filter(i => i.isFreeForStudent);
+        for (const order of dbOrders) {
+            const json  = order.toJSON();
+            const items = order.items || [];
+            const freeItems = items.filter(i => i.isFreeForStudent);
             for (const item of freeItems) {
                 rows.push({
-                    tanggal        : new Date(order.createdAt).toLocaleDateString('id-ID'),
-                    email_mahasiswa: order.userId?.email || '-',
-                    nama_mahasiswa : order.userId?.name  || '-',
-                    nama_obat      : item.name     || '-',
-                    qty            : item.quantity  || 0,
-                    harga_satuan   : item.price     || 0,
+                    tanggal        : new Date(json.createdAt).toLocaleDateString('id-ID'),
+                    email_mahasiswa: json.user?.email || '-',
+                    nama_mahasiswa : json.user?.name  || '-',
+                    nama_obat      : item.name        || '-',
+                    qty            : item.quantity    || 0,
+                    harga_satuan   : item.price       || 0,
                     total_subsidi  : (item.price || 0) * (item.quantity || 0),
                 });
             }
@@ -1006,7 +1053,7 @@ router.get('/reports/subsidi-mahasiswa', guard, async (req, res) => {
                 `"${r.tanggal}","${r.email_mahasiswa}","${r.nama_mahasiswa}","${r.nama_obat}",${r.qty},${r.harga_satuan},${r.total_subsidi}`
             ).join('\n');
             res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', `attachment; filename="laporan-subsidi-mahasiswa-${from||'all'}-${to||'all'}.csv"`);
+            res.setHeader('Content-Disposition', `attachment; filename="laporan-subsidi-mahasiswa-${from || 'all'}-${to || 'all'}.csv"`);
             return res.send(csv);
         }
 
@@ -1018,9 +1065,9 @@ router.get('/reports/subsidi-mahasiswa', guard, async (req, res) => {
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CHAT ADMIN ↔ DOKTER
+// AdminChat tetap Mongoose; Doctor pakai Sequelize
 // ════════════════════════════════════════════════════════════════════════════════
 
-// GET /admin/chat/threads — semua thread + unread count
 router.get('/chat/threads', guard, async (req, res) => {
     try {
         const threads = await AdminChat.find()
@@ -1031,39 +1078,38 @@ router.get('/chat/threads', guard, async (req, res) => {
             .lean();
         res.json({ success: true, threads });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// GET /admin/chat/:doctorId — ambil pesan di thread
 router.get('/chat/:doctorId', guard, async (req, res) => {
     try {
         let thread = await AdminChat.findOne({ doctorId: req.params.doctorId }).lean();
         if (!thread) {
-            // Thread belum ada — cari userId dokter
+            // FIX: Doctor.findByPk — sudah benar (Sequelize)
             const doctor = await Doctor.findByPk(req.params.doctorId);
             if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
             thread = { doctorId: doctor.id, doctorUserId: doctor.userId, messages: [] };
         }
         res.json({ success: true, messages: thread.messages || [], doctorId: req.params.doctorId });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
-// POST /admin/chat/:doctorId — kirim pesan (text atau file)
 router.post('/chat/:doctorId', guard, uploadChatFile.single('file'), async (req, res) => {
     try {
         const { text } = req.body;
         if (!text?.trim() && !req.file) return res.status(400).json({ message: 'Pesan atau file wajib ada' });
 
+        // FIX: Doctor.findByPk — sudah benar (Sequelize)
         const doctor = await Doctor.findByPk(req.params.doctorId, {
-            include: [{ model: User, as: 'user', attributes: ['id', 'name'] }]
+            include: [{ model: User, as: 'user', attributes: ['id', 'name'] }],
         });
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
-        // Map user to userId for compatibility
-        const doctorJson = doctor.toJSON();
-        doctorJson.userId = doctorJson.user || { id: doctor.userId };
+
+        const doctorJson   = doctor.toJSON();
+        doctorJson.userId  = doctorJson.user || { id: doctor.userId };
 
         let fileUrl = null, fileName = null, fileType = null;
         if (req.file) {
@@ -1083,18 +1129,17 @@ router.post('/chat/:doctorId', guard, uploadChatFile.single('file'), async (req,
             createdAt : new Date(),
         };
 
-        const thread = await AdminChat.findOneAndUpdate(
+        await AdminChat.findOneAndUpdate(
             { doctorId: req.params.doctorId },
             {
-                $push: { messages: msg },
-                $set : { lastMessage: text?.trim() || `📎 ${fileName}`, lastAt: new Date(), adminId: req.userId },
-                $inc : { unreadDoctor: 1 },
+                $push       : { messages: msg },
+                $set        : { lastMessage: text?.trim() || `📎 ${fileName}`, lastAt: new Date(), adminId: req.userId },
+                $inc        : { unreadDoctor: 1 },
                 $setOnInsert: { doctorUserId: doctorJson.userId.id },
             },
             { upsert: true, new: true }
         );
 
-        // Notifikasi in-app ke dokter
         await createNotification({
             userId : doctorJson.userId.id,
             type   : 'new_message',
@@ -1104,7 +1149,6 @@ router.post('/chat/:doctorId', guard, uploadChatFile.single('file'), async (req,
             io     : req.app.get('io'),
         });
 
-        // Socket emit ke dokter
         const io = req.app.get('io');
         if (io) {
             io.to(`user-${doctorJson.userId.id}`).emit('admin-chat-message', {
@@ -1119,17 +1163,18 @@ router.post('/chat/:doctorId', guard, uploadChatFile.single('file'), async (req,
     }
 });
 
-// PUT /admin/chat/:doctorId/read — tandai pesan sudah dibaca oleh admin
 router.put('/chat/:doctorId/read', guard, async (req, res) => {
     try {
         await AdminChat.findOneAndUpdate(
             { doctorId: req.params.doctorId },
-            { $set: { unreadAdmin: 0, 'messages.$[elem].isRead': true } },
+            {
+                $set: { unreadAdmin: 0, 'messages.$[elem].isRead': true },
+            },
             { arrayFilters: [{ 'elem.senderRole': 'doctor', 'elem.isRead': false }] }
         );
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 

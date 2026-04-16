@@ -259,5 +259,6 @@ OrderItem.belongsTo(Medicine, { foreignKey: 'medicineId', as: 'medicine' });
 
 Payment.belongsTo(User,  { foreignKey: 'userId',  as: 'user'  });
 Payment.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+Order.hasOne(Payment,    { foreignKey: 'orderId', as: 'payment' });
 
 module.exports = { sequelize, User, Doctor, DoctorSchedule, Medicine, Order, OrderItem, Payment };
