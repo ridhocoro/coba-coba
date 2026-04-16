@@ -38,10 +38,17 @@ const ManageDoctors = () => {
       const r = await api.get(`/api/admin/doctors/${doc._id}`);
       setSelected(r.data);
       setEditForm({
+        titlePrefix: r.data.doctor.titlePrefix || '',
         name: r.data.doctor.name,
+        titleSuffix: r.data.doctor.titleSuffix || '',
         specialization: r.data.doctor.specialization,
         consultationFee: r.data.doctor.consultationFee,
         bio: r.data.doctor.bio || '',
+        gender: r.data.doctor.gender || '',
+        experience: r.data.doctor.experience || '',
+        strNumber: r.data.doctor.strNumber || '',
+        alumnus: r.data.doctor.alumnus || '',
+        practiceLocation: r.data.doctor.practiceLocation || '',
       });
       setEditMode(false);
     } catch { toast.error('Gagal memuat detail dokter'); }
@@ -257,16 +264,74 @@ const ManageDoctors = () => {
               </>
             ) : (
               <>
-                {[['Nama', 'name', 'text'], ['Spesialisasi', 'specialization', 'text'], ['Biaya Konsultasi (Rp)', 'consultationFee', 'number']].map(([lbl, key, type]) => (
-                  <div key={key} style={{ marginBottom: 12 }}>
-                    <label style={S.label}>{lbl}</label>
-                    <input type={type} style={S.field} value={editForm[key] || ''} onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))} />
+                {/* Gelar & Nama */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={S.label}>Gelar Depan</label>
+                    <input style={S.field} placeholder="dr." value={editForm.titlePrefix || ''} onChange={e => setEditForm(f => ({ ...f, titlePrefix: e.target.value }))} />
                   </div>
-                ))}
+                  <div>
+                    <label style={S.label}>Nama Lengkap <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input style={S.field} value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>Gelar Belakang</label>
+                    <input style={S.field} placeholder="Sp.PD" value={editForm.titleSuffix || ''} onChange={e => setEditForm(f => ({ ...f, titleSuffix: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* Spesialisasi & Fee */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={S.label}>Spesialisasi <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input style={S.field} value={editForm.specialization || ''} onChange={e => setEditForm(f => ({ ...f, specialization: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>Biaya Konsultasi (Rp)</label>
+                    <input type="number" style={S.field} value={editForm.consultationFee || ''} onChange={e => setEditForm(f => ({ ...f, consultationFee: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* Gender & Pengalaman */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={S.label}>Jenis Kelamin</label>
+                    <select style={S.field} value={editForm.gender || ''} onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}>
+                      <option value="">— Pilih —</option>
+                      <option value="Laki-laki">Laki-laki</option>
+                      <option value="Perempuan">Perempuan</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={S.label}>Pengalaman (tahun)</label>
+                    <input type="number" style={S.field} placeholder="mis. 5" value={editForm.experience || ''} onChange={e => setEditForm(f => ({ ...f, experience: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* STR & Alumnus */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={S.label}>Nomor STR</label>
+                    <input style={S.field} placeholder="mis. 37.1.2.3.2024.0001" value={editForm.strNumber || ''} onChange={e => setEditForm(f => ({ ...f, strNumber: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>Alumnus</label>
+                    <input style={S.field} placeholder="mis. Universitas Indonesia" value={editForm.alumnus || ''} onChange={e => setEditForm(f => ({ ...f, alumnus: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* Lokasi Praktik */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={S.label}>Lokasi Praktik</label>
+                  <input style={S.field} placeholder="mis. Klinik Sehat, Jakarta" value={editForm.practiceLocation || ''} onChange={e => setEditForm(f => ({ ...f, practiceLocation: e.target.value }))} />
+                </div>
+
+                {/* Bio */}
                 <div style={{ marginBottom: 16 }}>
                   <label style={S.label}>Bio / Deskripsi</label>
                   <textarea rows={3} style={{ ...S.field, resize: 'vertical' }} value={editForm.bio || ''} onChange={e => setEditForm(f => ({ ...f, bio: e.target.value }))} />
                 </div>
+
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button style={S.btnOutline('#64748b')} onClick={() => setEditMode(false)}>Batal</button>
                   <button style={S.btn('#16a34a')} disabled={saving} onClick={handleSave}>{saving ? 'Menyimpan...' : 'Simpan'}</button>

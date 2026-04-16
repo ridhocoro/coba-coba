@@ -40,7 +40,9 @@ const Reports = () => {
   const handleExportCSV = () => {
     const base  = tab === 'revenue' ? '/api/admin/reports/revenue' : '/api/admin/reports/subsidi-mahasiswa';
     const token = localStorage.getItem('token');
-    const url   = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${base}?${getParams()}&format=csv`;
+    const params = getParams();
+    const subFilter = (tab === 'revenue' && subTab !== 'all') ? `&jenis=${subTab === 'consultation' ? 'Konsultasi' : 'Farmasi'}` : '';
+    const url   = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${base}?${params}&format=csv${subFilter}`;
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => res.blob())
       .then(blob => {

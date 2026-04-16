@@ -30,7 +30,7 @@ const ManageAppointments = () => {
   const [cancelFor, setCancelFor] = useState('admin');
   const [cancelling, setCancelling] = useState(false);
 
-  const fetch = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 30 });
@@ -44,13 +44,13 @@ const ManageAppointments = () => {
     finally { setLoading(false); }
   }, [period, from, to, status, page]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleCheckIn = async (id) => {
     try {
       await api.put(`/api/admin/appointments/${id}/check-in`);
       toast.success('Check-in berhasil');
-      fetch();
+      fetchData();
     } catch (err) { toast.error(err.response?.data?.message || 'Gagal check-in'); }
   };
 
@@ -60,7 +60,7 @@ const ManageAppointments = () => {
     try {
       await api.put(`/api/admin/appointments/${cancelModal._id}/cancel`, { reason: cancelReason, cancelledFor: cancelFor });
       toast.success('Janji temu dibatalkan & notifikasi terkirim');
-      setCancelModal(null); setCancelReason(''); fetch();
+      setCancelModal(null); setCancelReason(''); fetchData();
     } catch (err) { toast.error(err.response?.data?.message || 'Gagal membatalkan'); }
     finally { setCancelling(false); }
   };

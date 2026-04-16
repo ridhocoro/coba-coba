@@ -154,7 +154,7 @@ const AdminChat = () => {
               <div style={S.avatar}>👨‍⚕️</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>fmtDoctorName(doc)</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{fmtDoctorName(doc)}</span>
                   {unread > 0 && (
                     <span style={{ background: '#ef4444', color: '#fff', borderRadius: 20, padding: '1px 7px', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{unread}</span>
                   )}
@@ -180,7 +180,7 @@ const AdminChat = () => {
             <div style={S.chatHeader}>
               <div style={S.avatar}>👨‍⚕️</div>
               <div>
-                <div>fmtDoctorName(activeDoctor)</div>
+                <div>{fmtDoctorName(activeDoctor)}</div>
                 <div style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>{activeDoctor?.specialization}</div>
               </div>
             </div>
@@ -190,7 +190,7 @@ const AdminChat = () => {
               {!loadingMsgs && messages.length === 0 && (
                 <div style={{ textAlign: 'center', color: '#94a3b8', marginTop: 40 }}>
                   <p style={{ fontSize: 32 }}>👋</p>
-                  <p style={{ fontSize: 13 }}>Belum ada pesan. Mulai percakapan dengan fmtDoctorName(activeDoctor).</p>
+                  <p style={{ fontSize: 13 }}>Belum ada pesan. Mulai percakapan dengan {fmtDoctorName(activeDoctor)}.</p>
                 </div>
               )}
               {messages.map((msg, i) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
 import { fmtDoctorName } from '../../utils/format';
@@ -17,6 +17,17 @@ const ManageUsers = () => {
   const [quotaAmount, setQuotaAmount] = useState('');
   const [savingQuota, setSavingQuota] = useState(false);
   const [showMahasiswaMenu, setShowMahasiswaMenu] = useState(false);
+  const mahasiswaMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (mahasiswaMenuRef.current && !mahasiswaMenuRef.current.contains(e.target)) {
+        setShowMahasiswaMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -93,7 +104,7 @@ const ManageUsers = () => {
           <option value="user">User</option>
           <option value="mahasiswa">Mahasiswa</option>
         </select>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={mahasiswaMenuRef}>
           <button style={{ ...S.btn('#7c3aed'), gap: 6 }}
             onClick={() => setShowMahasiswaMenu(v => !v)}>
             ⚙️ Manajemen Mahasiswa ▾

@@ -16,6 +16,7 @@ import ManagePharmacy    from './ManagePharmacy';
 import Reports           from './Reports';
 import SickLetters       from './SickLetters';
 import AdminChat         from './AdminChat';
+import ClinicSettings    from './ClinicSettings';
 
 const TABS = [
   { key: 'dashboard',     label: '📊 Dashboard',     icon: '📊' },
@@ -27,6 +28,7 @@ const TABS = [
   { key: 'reports',       label: '📈 Laporan',         icon: '📈' },
   { key: 'sick-letters',  label: '📄 Surat Sakit',     icon: '📄' },
   { key: 'chat',          label: '💭 Chat',             icon: '💭' },
+  { key: 'clinic-settings', label: '⚙️ Pengaturan',    icon: '⚙️' },
 ];
 
 const AdminIndex = () => {
@@ -184,6 +186,7 @@ const AdminIndex = () => {
           {activeTab === 'reports'       && <Reports />}
           {activeTab === 'sick-letters'  && <SickLetters />}
           {activeTab === 'chat'          && <AdminChat />}
+          {activeTab === 'clinic-settings' && <ClinicSettings />}
         </div>
       </main>
     </div>
