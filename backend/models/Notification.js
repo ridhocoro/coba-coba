@@ -1,3 +1,4 @@
+// models/Notification.js
 const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema({
@@ -9,30 +10,52 @@ const notificationSchema = new mongoose.Schema({
     type: {
         type: String,
         enum: [
+            // Consultation related
             'consultation_request',
             'consultation_started',
             'consultation_ended',
             'consultation_cancelled',
             'consultation_expired',
+            'consultation_confirmed',
+            'consultation_rescheduled',
             'new_message',
+            
+            // Payment related
             'payment_success',
             'payment_verified',
+            
+            // Refund related
             'refund_requested',
             'refund_processed',
+            
+            // Doctor related
             'doctor_no_show',
             'schedule_reminder',
+            
+            // Prescription related
             'prescription_sent',
             'prescription_submitted',
+            
+            // Order related
             'order_shipped',
             'order_delivered',
+            'order_expired',
+            'order_items_adjusted',
+            
+            // Appointment related
             'appointment_reminder',
             'appointment_request',
             'appointment_confirmed',
             'appointment_rejected',
             'appointment_cancelled',
             'appointment_completed',
+            'appointment_rescheduled',
+            
+            // Sick letter related
             'sick_letter_draft',
             'sick_letter_issued',
+            
+            // System
             'system'
         ],
         required: true

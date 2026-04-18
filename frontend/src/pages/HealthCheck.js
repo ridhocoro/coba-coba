@@ -6,7 +6,8 @@ import {
     FaHeartbeat,
     FaArrowRight,
     FaUserMd,
-    FaCalendarAlt
+    FaCalendarAlt,
+    FaVideo,
 } from 'react-icons/fa';
 
 const features = [
@@ -36,6 +37,16 @@ const features = [
         accent     : '#16a34a',
         lightBg    : '#f0fdf4',
         time       : '1 menit',
+    },
+    {
+        icon       : <FaVideo size={22} />,
+        title      : 'Vital Sign Scanner',
+        description: 'Ukur detak jantung, HRV, laju napas, hemoglobin & tekanan darah via kamera wajah (rPPG)',
+        link       : '/health-check/vital-scan',
+        accent     : '#7c3aed',
+        lightBg    : '#f5f3ff',
+        time       : '30 detik',
+        badge      : 'Baru 🆕',
     },
 ];
 
@@ -161,7 +172,7 @@ const HealthCheck = () => (
                 className="hci-grid"
                 style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
                     gap: 16,
                     marginBottom: 20,
                     alignItems: 'stretch',
@@ -195,13 +206,22 @@ const HealthCheck = () => (
 
                         {/* Footer */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                            <span style={{
-                                fontSize: 11, fontWeight: 600, color: '#94a3b8',
-                                background: '#f8fafc', border: '1px solid #e5e7eb',
-                                borderRadius: 6, padding: '3px 9px',
-                            }}>
-                                ⏱ {f.time}
-                            </span>
+                            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                                <span style={{
+                                    fontSize: 11, fontWeight: 600, color: '#94a3b8',
+                                    background: '#f8fafc', border: '1px solid #e5e7eb',
+                                    borderRadius: 6, padding: '3px 9px',
+                                }}>
+                                    ⏱ {f.time}
+                                </span>
+                                {f.badge && (
+                                    <span style={{
+                                        fontSize: 11, fontWeight: 700, color: '#7c3aed',
+                                        background: '#f5f3ff', border: '1px solid #ddd6fe',
+                                        borderRadius: 6, padding: '3px 9px',
+                                    }}>{f.badge}</span>
+                                )}
+                            </div>
                             <span className="hci-arrow" style={{ color: f.accent, fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
                                 Mulai <FaArrowRight size={11} />
                             </span>

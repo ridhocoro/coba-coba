@@ -36,18 +36,30 @@ const run = async (io) => {
             o.updatedAt = now;
             await o.save();
 
-            await createNotification({
-                userId : o.userId,
-                type   : 'order_expired',
-                title  : 'Pesanan Kedaluwarsa ⏰',
-                message: `Pesanan ${o.orderNumber} kedaluwarsa karena tidak dibayar dalam 15 menit. Silakan pesan kembali.`,
-                data   : { orderId: o.id },
-                io,
-            });
-            if (io) io.to(`user-${o.userId}`).emit('order-status-update', {
-                orderId: o.id.toString(),
-                status : 'expired',
-            });
+            // Gunakan try-catch untuk notifikasi agar tidak mengganggu cron
+            try {
+                await createNotification({
+                    userId : o.userId,
+                    type   : 'order_expired',
+                    title  : 'Pesanan Kedaluwarsa ⏰',
+                    message: `Pesanan ${o.orderNumber} kedaluwarsa karena tidak dibayar dalam 15 menit. Silakan pesan kembali.`,
+                    data   : { orderId: o.id },
+                    io,
+                });
+            } catch (notifErr) {
+                console.error(`[CRON] Gagal kirim notifikasi expired untuk ${o.orderNumber}:`, notifErr.message);
+            }
+            
+            if (io) {
+                try {
+                    io.to(`user-${o.userId}`).emit('order-status-update', {
+                        orderId: o.id.toString(),
+                        status : 'expired',
+                    });
+                } catch (socketErr) {
+                    // ignore socket error
+                }
+            }
             console.log(`[CRON] ${o.orderNumber} → expired`);
         }
 
@@ -67,18 +79,29 @@ const run = async (io) => {
             o.updatedAt    = now;
             await o.save();
 
-            await createNotification({
-                userId : o.userId,
-                type   : 'order_shipped',
-                title  : 'Obat Siap Diambil 🏥',
-                message: `Pesanan ${o.orderNumber} siap diambil di Klinik Pratama IPB. Bawa bukti pesanan ini. Batas pengambilan 48 jam.`,
-                data   : { orderId: o.id },
-                io,
-            });
-            if (io) io.to(`user-${o.userId}`).emit('order-status-update', {
-                orderId: o.id.toString(),
-                status : 'siap_diambil',
-            });
+            try {
+                await createNotification({
+                    userId : o.userId,
+                    type   : 'order_shipped',
+                    title  : 'Obat Siap Diambil 🏥',
+                    message: `Pesanan ${o.orderNumber} siap diambil di Klinik Pratama IPB. Bawa bukti pesanan ini. Batas pengambilan 48 jam.`,
+                    data   : { orderId: o.id },
+                    io,
+                });
+            } catch (notifErr) {
+                console.error(`[CRON] Gagal kirim notifikasi siap_diambil untuk ${o.orderNumber}:`, notifErr.message);
+            }
+            
+            if (io) {
+                try {
+                    io.to(`user-${o.userId}`).emit('order-status-update', {
+                        orderId: o.id.toString(),
+                        status : 'siap_diambil',
+                    });
+                } catch (socketErr) {
+                    // ignore socket error
+                }
+            }
             console.log(`[CRON] ${o.orderNumber} → siap_diambil`);
         }
 
@@ -86,8 +109,8 @@ const run = async (io) => {
         const t48 = new Date(now - 48 * 3600000);
         const expiredPickup = await Order.findAll({
             where: {
-                status      : 'siap_diambil',
-                siapDiambilAt: { [Op.lt]: t48 },
+                status        : 'siap_diambil',
+                siapDiambilAt : { [Op.lt]: t48 },
             },
             include: [{ association: 'items' }],
         });
@@ -106,18 +129,29 @@ const run = async (io) => {
             o.updatedAt   = now;
             await o.save();
 
-            await createNotification({
-                userId : o.userId,
-                type   : 'order_shipped',
-                title  : 'Pesanan Dibatalkan Otomatis ❌',
-                message: `Pesanan ${o.orderNumber} dibatalkan karena tidak diambil dalam 48 jam. Hubungi klinik jika ada pertanyaan.`,
-                data   : { orderId: o.id },
-                io,
-            });
-            if (io) io.to(`user-${o.userId}`).emit('order-status-update', {
-                orderId: o.id.toString(),
-                status : 'cancelled',
-            });
+            try {
+                await createNotification({
+                    userId : o.userId,
+                    type   : 'order_shipped',
+                    title  : 'Pesanan Dibatalkan Otomatis ❌',
+                    message: `Pesanan ${o.orderNumber} dibatalkan karena tidak diambil dalam 48 jam. Hubungi klinik jika ada pertanyaan.`,
+                    data   : { orderId: o.id },
+                    io,
+                });
+            } catch (notifErr) {
+                console.error(`[CRON] Gagal kirim notifikasi cancelled untuk ${o.orderNumber}:`, notifErr.message);
+            }
+            
+            if (io) {
+                try {
+                    io.to(`user-${o.userId}`).emit('order-status-update', {
+                        orderId: o.id.toString(),
+                        status : 'cancelled',
+                    });
+                } catch (socketErr) {
+                    // ignore socket error
+                }
+            }
             console.log(`[CRON] ${o.orderNumber} → cancelled (pickup 48jam)`);
         }
 
@@ -136,18 +170,29 @@ const run = async (io) => {
             o.updatedAt   = now;
             await o.save();
 
-            await createNotification({
-                userId : o.userId,
-                type   : 'order_delivered',
-                title  : 'Pesanan Selesai Otomatis ✅',
-                message: `Pesanan ${o.orderNumber} otomatis diselesaikan setelah 24 jam dari status terkirim.`,
-                data   : { orderId: o.id },
-                io,
-            });
-            if (io) io.to(`user-${o.userId}`).emit('order-status-update', {
-                orderId: o.id.toString(),
-                status : 'selesai',
-            });
+            try {
+                await createNotification({
+                    userId : o.userId,
+                    type   : 'order_delivered',
+                    title  : 'Pesanan Selesai Otomatis ✅',
+                    message: `Pesanan ${o.orderNumber} otomatis diselesaikan setelah 24 jam dari status terkirim.`,
+                    data   : { orderId: o.id },
+                    io,
+                });
+            } catch (notifErr) {
+                console.error(`[CRON] Gagal kirim notifikasi selesai untuk ${o.orderNumber}:`, notifErr.message);
+            }
+            
+            if (io) {
+                try {
+                    io.to(`user-${o.userId}`).emit('order-status-update', {
+                        orderId: o.id.toString(),
+                        status : 'selesai',
+                    });
+                } catch (socketErr) {
+                    // ignore socket error
+                }
+            }
             console.log(`[CRON] ${o.orderNumber} → selesai (auto 24jam)`);
         }
 

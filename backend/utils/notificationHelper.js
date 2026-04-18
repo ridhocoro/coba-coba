@@ -1,3 +1,4 @@
+// utils/notificationHelper.js
 const Notification = require('../models/Notification');
 
 const createNotification = async ({
@@ -17,11 +18,13 @@ const createNotification = async ({
             case 'consultation_confirmed':
             case 'consultation_cancelled':
             case 'consultation_expired':
+            case 'consultation_rescheduled':
             case 'doctor_no_show':
             case 'new_message':
             case 'sick_letter_draft':
             case 'sick_letter_issued':
             case 'prescription_sent':
+            case 'prescription_submitted':
             case 'refund_requested':
             case 'refund_processed':
                 url = data.consultationId ? `/consultations/${data.consultationId}` : '/consultations';
@@ -32,29 +35,21 @@ const createNotification = async ({
                 break;
             case 'order_shipped':
             case 'order_delivered':
+            case 'order_expired':
+            case 'order_items_adjusted':
                 url = data.orderId ? `/pharmacy/orders/${data.orderId}` : '/pharmacy';
                 break;
             case 'appointment_reminder':
+            case 'appointment_request':
             case 'appointment_confirmed':
-            case 'appointment_completed':
+            case 'appointment_rejected':
             case 'appointment_cancelled':
+            case 'appointment_completed':
             case 'appointment_rescheduled':
-                // BUG-22 fix: /appointments/:id route doesn't exist in App.js — use query param instead
                 url = data.appointmentId ? `/appointments?id=${data.appointmentId}` : '/appointments';
                 break;
-            case 'consultation_rescheduled':
-                url = data.consultationId ? `/consultations/${data.consultationId}` : '/consultations';
-                break;
-            // BUG-20 fix: schedule_reminder was missing → fell to default '/'
             case 'schedule_reminder':
                 url = '/doctor';
-                break;
-            // BUG-25/BUG-29 fix: proper types for expired order and adjusted items
-            case 'order_expired':
-                url = data.orderId ? `/pharmacy?orderId=${data.orderId}` : '/pharmacy';
-                break;
-            case 'order_items_adjusted':
-                url = data.orderId ? `/pharmacy?orderId=${data.orderId}` : '/pharmacy';
                 break;
             default:
                 url = '/';

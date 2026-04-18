@@ -40,7 +40,10 @@ const ManageAppointments = () => {
       const r = await api.get(`/api/admin/appointments?${params}`);
       setItems(r.data.appointments || []);
       setTotal(r.data.total || 0);
-    } catch { }
+    } catch (err) {
+      console.error('Gagal memuat janji temu:', err);
+      toast.error('Gagal memuat data janji temu');
+    }
     finally { setLoading(false); }
   }, [period, from, to, status, page]);
 

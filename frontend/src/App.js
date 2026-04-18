@@ -18,6 +18,7 @@ import HealthCheck from './pages/HealthCheck';
 import BMICalculator from './pages/HealthCheck/BMICalculator';
 import CalorieCalculator from './pages/HealthCheck/CalorieCalculator';
 import BloodPressureChecker from './pages/HealthCheck/BloodPressureChecker';
+import VitalScanPage from './pages/HealthCheck/VitalScanPage';
 
 // User Pages
 import Consultations from './pages/Consultations';
@@ -91,6 +92,7 @@ function AppContent() {
                     <Route path="/health-check/bmi"         element={<BMICalculator />} />
                     <Route path="/health-check/calories"    element={<CalorieCalculator />} />
                     <Route path="/health-check/blood-pressure" element={<BloodPressureChecker />} />
+                    <Route path="/health-check/vital-scan"     element={<VitalScanPage />} />
 
                     {/* ===== USER PROFILE ===== */}
                     <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />
