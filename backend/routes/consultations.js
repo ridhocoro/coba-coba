@@ -40,7 +40,7 @@ const attachStorage = multer.diskStorage({
 });
 const uploadAttachment = multer({
     storage: attachStorage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB untuk PDF
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowed = /jpeg|jpg|png|gif|webp|pdf|doc|docx/i;
         const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
@@ -64,15 +64,13 @@ const uploadRefundProof = multer({
     limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// ── Helper: cek apakah user/dokter bisa akses konsultasi (Diperbaiki jadi Async) ──
+// ── Helper: cek apakah user/dokter bisa akses konsultasi ──
 const canAccess = async (consultation, userId, userRole) => {
     if (userRole === 'admin') return true;
     
-    // User: cek userId
     const patientId = consultation.userId?.id || consultation.userId;
     if (patientId?.toString() === userId) return true;
     
-    // Dokter: Query ke MySQL untuk mencocokkan UUID
     if (userRole === 'doctor') {
         const doctor = await Doctor.findOne({ where: { userId: userId } });
         const consultDocId = consultation.doctorId?.id || consultation.doctorId;
@@ -86,7 +84,6 @@ const canAccess = async (consultation, userId, userRole) => {
 // 1. ROUTE STATIS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Daftar konsultasi user
 router.get('/my-consultations', auth, async (req, res) => {
     try {
         const consultations = await Consultation.find({ userId: req.userId })
@@ -108,7 +105,6 @@ router.get('/my-consultations', auth, async (req, res) => {
     }
 });
 
-// Daftar konsultasi dokter (aktif: confirmed, in_progress)
 router.get('/doctor/pending', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -129,7 +125,6 @@ router.get('/doctor/pending', auth, doctorAuth, async (req, res) => {
     }
 });
 
-// Seluruh riwayat dokter (completed, etc)
 router.get('/doctor/history', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -147,7 +142,6 @@ router.get('/doctor/history', auth, doctorAuth, async (req, res) => {
     }
 });
 
-// Alias /doctor/all → semua konsultasi dokter dengan populate lengkap (backward compat)
 router.get('/doctor/all', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -183,7 +177,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 
         const settings = doctor.consultationSettings || {};
         const typeAllowed = {
-            chat:       settings.allowChat      !== false,
+            chat: settings.allowChat !== false,
             video_call: settings.allowVideoCall !== false,
         };
         if (!typeAllowed[consultationType]) {
@@ -195,7 +189,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         }
 
         const slotStart = new Date(scheduledAt);
-        const slotEnd   = new Date(scheduledEnd);
+        const slotEnd = new Date(scheduledEnd);
         const now = new Date();
 
         const CONS_CUTOFF_MS = 20 * 60 * 1000;
@@ -237,7 +231,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
             return res.status(400).json({ message: 'Dokter tidak praktik pada hari tersebut' });
         }
 
-        const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2,'0')}:${String(slotWIB.getUTCMinutes()).padStart(2,'0')}`;
+        const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2, '0')}:${String(slotWIB.getUTCMinutes()).padStart(2, '0')}`;
 
         if (!avail.isSlotActive(dayOfWeek, slotHHMM)) {
             return res.status(400).json({
@@ -245,16 +239,16 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
             });
         }
 
-        const slotEndWIB  = new Date(slotEnd.getTime() + WIB_OFFSET_MS);
-        const slotEndHHMM = `${String(slotEndWIB.getUTCHours()).padStart(2,'0')}:${String(slotEndWIB.getUTCMinutes()).padStart(2,'0')}`;
-        const toMin = (hhmm) => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
+        const slotEndWIB = new Date(slotEnd.getTime() + WIB_OFFSET_MS);
+        const slotEndHHMM = `${String(slotEndWIB.getUTCHours()).padStart(2, '0')}:${String(slotEndWIB.getUTCMinutes()).padStart(2, '0')}`;
+        const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
         const SESSION_DURATION = 30;
         const expectedEndMin = toMin(slotHHMM) + SESSION_DURATION;
         if (toMin(slotEndHHMM) !== expectedEndMin) {
             return res.status(400).json({ message: 'Waktu selesai slot tidak sesuai' });
         }
 
-        const paymentDeadline = new Date(Date.now() + 15 * 60 * 1000); 
+        const paymentDeadline = new Date(Date.now() + 15 * 60 * 1000);
 
         const attachmentUrls = (req.files || []).map(f => `/uploads/attachments/${f.filename}`);
 
@@ -269,7 +263,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
             symptoms,
             medicalHistory,
             attachmentUrls,
-            amount: doctor.consultationFee, 
+            amount: doctor.consultationFee,
             status: 'pending_payment',
             paymentDeadline
         });
@@ -321,18 +315,18 @@ router.post('/:id/initiate-payment', auth, async (req, res) => {
         const xenditRes = await axios.post(
             'https://api.xendit.co/v2/invoices',
             {
-                external_id         : externalId,
+                external_id: externalId,
                 amount,
-                description         : `Konsultasi Online – ${fmtDoctorName(consultation.doctorId)}`,
-                invoice_duration    : 900,
+                description: `Konsultasi Online – ${fmtDoctorName(consultation.doctorId)}`,
+                invoice_duration: 900,
                 success_redirect_url: `${FRONTEND_URL}/payment/success?external_id=${externalId}`,
                 failure_redirect_url: `${FRONTEND_URL}/payment/failed?external_id=${externalId}`,
-                currency            : 'IDR',
-                payment_methods     : ['BCA','BNI','BRI','MANDIRI','PERMATA','OVO','DANA','SHOPEEPAY','LINKAJA','QRIS'],
+                currency: 'IDR',
+                payment_methods: ['BCA', 'BNI', 'BRI', 'MANDIRI', 'PERMATA', 'OVO', 'DANA', 'SHOPEEPAY', 'LINKAJA', 'QRIS'],
             },
             {
                 headers: {
-                    Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
+                    Authorization: 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
                     'Content-Type': 'application/json',
                 },
             }
@@ -340,15 +334,15 @@ router.post('/:id/initiate-payment', auth, async (req, res) => {
 
         const invoice = xenditRes.data;
 
-        consultation.xenditInvoiceId  = invoice.id;
+        consultation.xenditInvoiceId = invoice.id;
         consultation.xenditExternalId = externalId;
         await consultation.save();
 
         res.json({
-            success    : true,
-            invoiceUrl : invoice.invoice_url,
+            success: true,
+            invoiceUrl: invoice.invoice_url,
             externalId,
-            invoiceId  : invoice.id,
+            invoiceId: invoice.id,
             amount,
             paymentDeadline: consultation.paymentDeadline,
         });
@@ -406,13 +400,11 @@ router.put('/:id/cancel-by-doctor', auth, async (req, res) => {
     }
 });
 
-// ── Dokter: Start → in_progress (Diperbaiki) ──────────────────────────────────
 router.put('/:id/start', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id);
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        // Cek Otorisasi Aman (menggunakan DB MySQL)
         let isAuthorized = req.userRole === 'admin';
         if (req.userRole === 'doctor') {
             const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -487,13 +479,11 @@ router.put('/:id/start', auth, async (req, res) => {
     }
 });
 
-// ── Dokter: End → completed / no_show (Diperbaiki) ────────────────────────────
 router.put('/:id/end', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id);
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        // Cek Otorisasi Aman
         let isAuthorized = req.userRole === 'admin';
         if (req.userRole === 'doctor') {
             const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -505,7 +495,7 @@ router.put('/:id/end', auth, async (req, res) => {
         if (!isAuthorized) {
             return res.status(403).json({ message: 'Hanya dokter yang bersangkutan yang dapat mengakhiri' });
         }
-        
+
         if (consultation.status !== 'in_progress') {
             return res.status(400).json({ message: `Status harus in_progress, saat ini: ${consultation.status}` });
         }
@@ -533,11 +523,11 @@ router.put('/:id/end', auth, async (req, res) => {
                     diagnosis: assessment.trim(),
                     medicalRecord: {
                         objectiveFindings: objectiveFindings?.trim() || '',
-                        assessment:        assessment.trim(),
-                        plan:              plan.trim(),
-                        doctorNotes:       doctorNotes?.trim() || '',
-                        isCompleted:       true,
-                        completedAt:       now,
+                        assessment: assessment.trim(),
+                        plan: plan.trim(),
+                        doctorNotes: doctorNotes?.trim() || '',
+                        isCompleted: true,
+                        completedAt: now,
                     },
                 },
             },
@@ -563,7 +553,7 @@ router.put('/:id/end', auth, async (req, res) => {
         if (io) {
             io.to(`user-${updated.userId}`).emit('consultation-status-update', {
                 consultationId: updated.id.toString(),
-                status        : finalStatus,
+                status: finalStatus,
             });
             io.to(`consultation-${updated.id}`).emit('medical-record-update', {
                 medicalRecord: updated.medicalRecord,
@@ -688,7 +678,7 @@ router.put('/:id/cancel', auth, async (req, res) => {
                 return res.status(403).json({ message: 'Akses ditolak' });
 
             if (consultation.status === 'pending_payment') {
-                consultation.status      = 'expired';
+                consultation.status = 'expired';
                 consultation.cancelledBy = 'user';
                 consultation.cancelledAt = new Date();
                 await consultation.save();
@@ -699,19 +689,19 @@ router.put('/:id/cancel', auth, async (req, res) => {
 
             } else if (consultation.status === 'confirmed' || consultation.status === 'cancelled_by_user') {
                 if (consultation.status === 'confirmed') {
-                if (!consultation.scheduledAt)
-                    return res.status(400).json({ message: 'Data jadwal tidak ditemukan' });
-                const msUntil = new Date(consultation.scheduledAt).getTime() - Date.now();
-                if (msUntil < CANCEL_DEADLINE_MS) {
-                    const dl = new Date(new Date(consultation.scheduledAt).getTime() - CANCEL_DEADLINE_MS);
-                    return res.status(400).json({
-                        message: `Batas pembatalan sudah lewat. Hanya bisa dibatalkan sebelum ${dl.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB.`,
-                    });
-                }
+                    if (!consultation.scheduledAt)
+                        return res.status(400).json({ message: 'Data jadwal tidak ditemukan' });
+                    const msUntil = new Date(consultation.scheduledAt).getTime() - Date.now();
+                    if (msUntil < CANCEL_DEADLINE_MS) {
+                        const dl = new Date(new Date(consultation.scheduledAt).getTime() - CANCEL_DEADLINE_MS);
+                        return res.status(400).json({
+                            message: `Batas pembatalan sudah lewat. Hanya bisa dibatalkan sebelum ${dl.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB.`,
+                        });
+                    }
                 }
 
                 if (consultation.status === 'confirmed') {
-                    consultation.status      = 'cancelled_by_user';
+                    consultation.status = 'cancelled_by_user';
                     consultation.cancelledBy = 'user';
                     consultation.cancelledAt = new Date();
                     consultation.cancelReason = req.body.reason || 'Dibatalkan oleh pasien';
@@ -720,7 +710,7 @@ router.put('/:id/cancel', auth, async (req, res) => {
                 }
 
                 const REFUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-                const paidAt   = consultation.paidAt ? new Date(consultation.paidAt) : null;
+                const paidAt = consultation.paidAt ? new Date(consultation.paidAt) : null;
                 const within7d = paidAt && (Date.now() - paidAt.getTime()) < REFUND_WINDOW_MS;
                 const hasBankInfo = req.body.bankCode && req.body.accountNumber && req.body.accountName;
 
@@ -765,7 +755,7 @@ router.put('/:id/cancel', auth, async (req, res) => {
                 return res.status(400).json({ message: `Tidak bisa batalkan dari status ${consultation.status}` });
 
             const wasPaid = consultation.status === 'confirmed' && consultation.paidAt;
-            consultation.status      = 'cancelled_by_admin';
+            consultation.status = 'cancelled_by_admin';
             consultation.cancelledBy = 'admin';
             consultation.cancelledAt = new Date();
             consultation.cancelReason = req.body.reason || '';
@@ -815,9 +805,9 @@ router.put('/:id/reschedule', auth, async (req, res) => {
             }
         }
 
-        const newSlot    = new Date(scheduledAt);
+        const newSlot = new Date(scheduledAt);
         const newSlotEnd = new Date(scheduledEnd);
-        const now        = new Date();
+        const now = new Date();
 
         if (reschedulableFromUser.includes(consultation.status)) {
             const msUntil = new Date(consultation.scheduledAt).getTime() - now.getTime();
@@ -838,18 +828,18 @@ router.put('/:id/reschedule', auth, async (req, res) => {
         if (newSlot < avail.weekStart || newSlot > avail.weekEnd)
             return res.status(400).json({ message: 'Slot baru di luar rentang jadwal minggu ini.' });
 
-        const slotWIB  = new Date(newSlot.getTime() + WIB_OFFSET_MS);
-        const dow      = slotWIB.getUTCDay();
-        const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2,'0')}:${String(slotWIB.getUTCMinutes()).padStart(2,'0')}`;
+        const slotWIB = new Date(newSlot.getTime() + WIB_OFFSET_MS);
+        const dow = slotWIB.getUTCDay();
+        const slotHHMM = `${String(slotWIB.getUTCHours()).padStart(2, '0')}:${String(slotWIB.getUTCMinutes()).padStart(2, '0')}`;
         if (dow === 0) return res.status(400).json({ message: 'Konsultasi tidak tersedia hari Minggu.' });
         if (!avail.isSlotActive(dow, slotHHMM))
             return res.status(400).json({ message: 'Slot tidak tersedia pada hari tersebut.' });
 
         const slotConflict = await Consultation.findOne({
-            doctorId   : consultation.doctorId,
+            doctorId: consultation.doctorId,
             scheduledAt: newSlot,
-            status     : { $in: ['pending_payment','waiting_verification','confirmed','in_progress'] },
-            _id        : { $ne: consultation.id },
+            status: { $in: ['pending_payment', 'waiting_verification', 'confirmed', 'in_progress'] },
+            _id: { $ne: consultation.id },
         });
         if (slotConflict) return res.status(409).json({ message: 'Slot ini baru saja diambil orang lain. Pilih slot lain.' });
 
@@ -857,8 +847,8 @@ router.put('/:id/reschedule', auth, async (req, res) => {
         const updated = await Consultation.findOneAndUpdate(
             { _id: consultation.id },
             {
-                $set  : { status: 'confirmed', scheduledAt: newSlot, scheduledEnd: newSlotEnd, postCancelChoice: 'reschedule' },
-                $push : { rescheduleHistory: { from: { scheduledAt: consultation.scheduledAt, scheduledEnd: consultation.scheduledEnd }, to: { scheduledAt: newSlot, scheduledEnd: newSlotEnd } } },
+                $set: { status: 'confirmed', scheduledAt: newSlot, scheduledEnd: newSlotEnd, postCancelChoice: 'reschedule' },
+                $push: { rescheduleHistory: { from: { scheduledAt: consultation.scheduledAt, scheduledEnd: consultation.scheduledEnd }, to: { scheduledAt: newSlot, scheduledEnd: newSlotEnd } } },
             },
             { new: true }
         );
@@ -867,7 +857,7 @@ router.put('/:id/reschedule', auth, async (req, res) => {
             title: '🔄 Jadwal Konsultasi Diubah',
             message: `Konsultasi Anda dijadwalkan ulang ke ${_fmtWIB(newSlot)}.`,
             data: { consultationId: consultation.id }, io });
-        
+
         const doctorData = await Doctor.findByPk(consultation.doctorId);
         if (doctorData?.userId) {
             await createNotification({ userId: doctorData.userId, type: 'appointment_reminder',
@@ -896,14 +886,14 @@ async function processRefundInternal(consultationId, bankInfo = {}, io = null) {
     if (!consultation) throw new Error('Konsultasi tidak ditemukan');
 
     let amount = consultation.amount;
-    if(!amount) {
+    if (!amount) {
         const doctorData = await Doctor.findByPk(consultation.doctorId);
         amount = doctorData?.consultationFee;
     }
 
     if (!amount) throw new Error('Nominal refund tidak diketahui');
 
-    const paidAt     = consultation.paidAt ? new Date(consultation.paidAt) : null;
+    const paidAt = consultation.paidAt ? new Date(consultation.paidAt) : null;
     const isWithin7d = consultation.xenditInvoiceId && (!paidAt || (Date.now() - paidAt.getTime()) < REFUND_WINDOW_MS);
 
     if (isWithin7d && consultation.xenditInvoiceId) {
@@ -954,7 +944,7 @@ async function processRefundInternal(consultationId, bankInfo = {}, io = null) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 4. CHAT & UPLOAD FOTO (Diperbaiki)
+// 4. CHAT & UPLOAD FOTO
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.post('/:id/messages', auth, async (req, res) => {
@@ -966,7 +956,6 @@ router.post('/:id/messages', auth, async (req, res) => {
             return res.status(403).json({ message: 'Konsultasi tidak aktif. Pesan hanya bisa dikirim saat konsultasi sedang berlangsung.' });
         }
 
-        // Ambil data dari MySQL
         const patient = await User.findByPk(consultation.userId);
         const doctor = await Doctor.findByPk(consultation.doctorId);
 
@@ -1077,19 +1066,19 @@ router.put('/:id/prescription', auth, doctorAuth, async (req, res) => {
         if (req.body.medicines && Array.isArray(req.body.medicines)) {
             const count = await require('../models/Consultation').countDocuments({ 'prescriptionData.prescriptionNumber': { $exists: true } });
             const rxNum = 'RX-' + Date.now().toString().slice(-6) + '-' + (count + 1).toString().padStart(3, '0');
-            const issuedAt  = new Date();
+            const issuedAt = new Date();
             const validUntil = new Date(issuedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
 
             consultation.prescriptionData = {
                 prescriptionNumber: rxNum,
                 issuedAt,
                 validUntil,
-                patientAge:    req.body.patientAge    || '',
+                patientAge: req.body.patientAge || '',
                 patientGender: req.body.patientGender || '',
                 patientWeight: req.body.patientWeight || '',
-                medicines:     req.body.medicines,
-                doctorNotes:   req.body.doctorNotes   || '',
-                isUsed:        false,
+                medicines: req.body.medicines,
+                doctorNotes: req.body.doctorNotes || '',
+                isUsed: false,
             };
             consultation.prescription = req.body.medicines.map((m, i) =>
                 `${i + 1}. ${m.name}${m.dose ? ' ' + m.dose : ''} — ${m.frequency || ''} ${m.instructions ? '(' + m.instructions + ')' : ''}`
@@ -1113,9 +1102,9 @@ router.put('/:id/prescription', auth, doctorAuth, async (req, res) => {
         const io = req.app.get('io');
         if (io) {
             io.to(`consultation-${consultation.id}`).emit('prescription-update', {
-                prescription:     consultation.prescription,
+                prescription: consultation.prescription,
                 prescriptionData: consultation.prescriptionData,
-                diagnosis:        consultation.diagnosis
+                diagnosis: consultation.diagnosis
             });
         }
 
@@ -1129,7 +1118,7 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id);
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        
+
         const isAuthorized = await canAccess(consultation, req.userId, req.userRole);
         if (!isAuthorized) return res.status(403).json({ message: 'Akses ditolak' });
 
@@ -1139,79 +1128,227 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         const patient = await User.findByPk(consultation.userId);
         const doctor = await Doctor.findByPk(consultation.doctorId);
 
+        const ClinicSettings = require('../models/ClinicSettings');
+        const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
+        const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
+        const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+
+        const fs = require('fs');
+        const pathMod = require('path');
+        const getImagePath = (fileUrl, fileType) => {
+            if (!fileUrl) return null;
+            const filePath = pathMod.join(__dirname, '..', fileUrl.replace(/^\//, ''));
+            if (!fs.existsSync(filePath)) {
+                console.warn(`[prescription/pdf] ${fileType} file tidak ditemukan:`, filePath);
+                return null;
+            }
+            try {
+                const buf = Buffer.alloc(4);
+                const fd = fs.openSync(filePath, 'r');
+                fs.readSync(fd, buf, 0, 4, 0);
+                fs.closeSync(fd);
+                const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+                const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+                return (isJpeg || isPng) ? filePath : null;
+            } catch (e) { return null; }
+        };
+
+        const logoPath = getImagePath(clinicSettings.logoUrl, 'Logo klinik');
+        const signaturePath = getImagePath(doctor?.signatureUrl, 'Tanda tangan dokter');
+
         const doc = new PDFDocument({ margin: 50 });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=resep-${rx?.prescriptionNumber || consultation.id}.pdf`);
+        doc.on('error', (pdfErr) => {
+            console.error('[prescription/pdf] PDFDocument error:', pdfErr);
+            if (!res.headersSent) res.status(500).json({ message: 'Gagal generate PDF resep', error: pdfErr.message });
+            else res.destroy();
+        });
         doc.pipe(res);
 
-        doc.fontSize(18).font('Helvetica-Bold').text('RESEP DIGITAL', { align: 'center' });
-        doc.fontSize(11).font('Helvetica').text('Klinik Pratama IPB', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
+        // ──────────────────────────────────────────────────────────────────────
+        // HEADER
+        // ──────────────────────────────────────────────────────────────────────
+        const headerStartX = 50;
+        const headerStartY = doc.y;
+        const logoSize = 55;
 
-        if (rx) {
-            doc.fontSize(10).text(`Nomor Resep : ${rx.prescriptionNumber || '-'}`);
-            doc.text(`Tanggal     : ${rx.issuedAt ? new Date(rx.issuedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}`);
-            doc.text(`Berlaku s/d : ${rx.validUntil ? new Date(rx.validUntil).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}`);
-        } else {
-            doc.fontSize(10).text(`Tanggal: ${new Date(consultation.createdAt).toLocaleDateString('id-ID')}`);
+        if (logoPath) {
+            try {
+                doc.image(logoPath, headerStartX, headerStartY, { height: logoSize, width: logoSize });
+            } catch (imgErr) {
+                console.warn('[prescription/pdf] Failed to load logo:', imgErr.message);
+            }
         }
+
+        const headerTextStartY = headerStartY;
+        doc.font('Times-Bold').fontSize(14).text('KLINIK PRATAMA IPB', 50, headerTextStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Jln. Tanjung Kampus IPB Dramaga, Babakan, Dramaga,', 50, headerTextStartY + 16, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Bogor Kota, Jawa Barat 16680', 50, headerTextStartY + 28, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Telp. (62251) 8422094', 50, headerTextStartY + 40, { align: 'center', width: 500 });
+
+        doc.y = headerStartY + logoSize + 5;
+        doc.moveDown(0.2);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.6);
+
+        // ──────────────────────────────────────────────────────────────────────
+        // TITLE
+        // ──────────────────────────────────────────────────────────────────────
+        doc.font('Times-Bold').fontSize(12).text('RESEP DIGITAL', { align: 'center' });
         doc.moveDown(0.5);
 
-        doc.font('Helvetica-Bold').text('Identitas Pasien');
-        doc.font('Helvetica');
-        doc.text(`Nama           : ${patient?.name || 'Pasien'}`);
-        if (rx?.patientAge)    doc.text(`Umur           : ${rx.patientAge}`);
-        if (rx?.patientGender) doc.text(`Jenis Kelamin  : ${rx.patientGender}`);
-        if (rx?.patientWeight) doc.text(`Berat Badan    : ${rx.patientWeight}`);
-        doc.moveDown(0.5);
+        // ──────────────────────────────────────────────────────────────────────
+        // PATIENT INFO
+        // ──────────────────────────────────────────────────────────────────────
+        const labelX = 50;
+        const valueX = 130;
+        doc.font('Times-Roman').fontSize(11);
+        
+        doc.text('Nama', labelX, doc.y, { width: 100 });
+        doc.text(`: ${patient?.name || 'Pasien'}`, valueX, doc.y - 14);
+        doc.moveDown(0.4);
+        
+        if (rx?.patientAge) {
+            doc.text('Umur', labelX, doc.y, { width: 100 });
+            doc.text(`: ${rx.patientAge}`, valueX, doc.y - 14);
+            doc.moveDown(0.4);
+        }
+        
+        if (rx?.patientGender) {
+            doc.text('Jenis Kelamin', labelX, doc.y, { width: 100 });
+            doc.text(`: ${rx.patientGender}`, valueX, doc.y - 14);
+            doc.moveDown(0.4);
+        }
+        
+        if (rx?.patientWeight) {
+            doc.text('Berat Badan', labelX, doc.y, { width: 100 });
+            doc.text(`: ${rx.patientWeight}`, valueX, doc.y - 14);
+            doc.moveDown(0.4);
+        }
 
+        doc.moveDown(0.3);
         doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
         doc.moveDown(0.5);
-        doc.font('Helvetica-Bold').fontSize(12).text('R/');
-        doc.font('Helvetica').fontSize(10);
+
+        // ──────────────────────────────────────────────────────────────────────
+        // MEDICINES - R/
+        // ──────────────────────────────────────────────────────────────────────
+        doc.font('Times-Bold').fontSize(11).text('R/', 50);
         doc.moveDown(0.3);
 
         if (rx?.medicines?.length > 0) {
             rx.medicines.forEach((m, i) => {
-                doc.font('Helvetica-Bold').text(`${i + 1}. ${m.name}${m.dose ? ' ' + m.dose : ''}${m.form ? ' ' + m.form : ''}`);
-                doc.font('Helvetica');
-                if (m.frequency)    doc.text(`   Dosis      : ${m.frequency}`);
-                if (m.instructions) doc.text(`   Cara Pakai : ${m.instructions}`);
-                if (m.quantity)     doc.text(`   Jumlah     : ${m.quantity}`);
+                // Nama obat - Times-Bold size 11
+                doc.font('Times-Bold').fontSize(11).text(`${i + 1}. ${m.name}${m.dose ? ' ' + m.dose : ''}${m.form ? ' ' + m.form : ''}`, 50);
+                
+                // Dosis, Cara Pakai, Jumlah - SEJAJAR
+                const dosisX = 70;
+                const caraX = 250;
+                const jumlahX = 430;
+                let medicineY = doc.y;
+                
+                doc.font('Times-Roman').fontSize(10);
+                if (m.frequency) {
+                    doc.text('Dosis', dosisX, medicineY, { width: 170 });
+                    if (m.instructions) doc.text('Cara Pakai', caraX, medicineY, { width: 170 });
+                    if (m.quantity) doc.text('Jumlah', jumlahX, medicineY, { width: 100 });
+                    medicineY += 12;
+                    
+                    doc.text(`: ${m.frequency}`, dosisX, medicineY, { width: 170 });
+                    if (m.instructions) doc.text(`: ${m.instructions}`, caraX, medicineY, { width: 170 });
+                    if (m.quantity) doc.text(`: ${m.quantity}`, jumlahX, medicineY, { width: 100 });
+                } else {
+                    if (m.instructions) doc.text('Cara Pakai', caraX, medicineY, { width: 170 });
+                    if (m.quantity) doc.text('Jumlah', jumlahX, medicineY, { width: 100 });
+                    medicineY += 12;
+                    if (m.instructions) doc.text(`: ${m.instructions}`, caraX, medicineY, { width: 170 });
+                    if (m.quantity) doc.text(`: ${m.quantity}`, jumlahX, medicineY, { width: 100 });
+                }
                 doc.moveDown(0.3);
             });
         } else if (consultation.prescription) {
-            doc.text(consultation.prescription);
+            doc.font('Times-Roman').fontSize(11).text(consultation.prescription, 50, doc.y, { width: 500 });
         }
 
-        doc.moveDown(0.5);
+        doc.moveDown(0.4);
         doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
+        doc.moveDown(0.4);
 
+        // ──────────────────────────────────────────────────────────────────────
+        // CATATAN DOKTER & DIAGNOSIS
+        // Catatan Dokter: Rata KIRI, Times-Roman size 11 (TIDAK BOLD)
+        // ──────────────────────────────────────────────────────────────────────
         if (rx?.doctorNotes || consultation.diagnosis) {
-            doc.font('Helvetica-Bold').text('Catatan Dokter:');
-            doc.font('Helvetica');
-            if (consultation.diagnosis) doc.text(`Diagnosis: ${consultation.diagnosis}`);
-            if (rx?.doctorNotes) doc.text(rx.doctorNotes);
-            doc.moveDown(0.5);
+            // Label "Catatan Dokter" - Rata kiri, Times-Roman (TIDAK BOLD)
+            doc.font('Times-Roman').fontSize(11).text('Catatan Dokter', 50);
+            
+            // Diagnosis - Rata kiri, Times-Roman
+            if (consultation.diagnosis) {
+                doc.font('Times-Roman').fontSize(11).text(`Diagnosis: ${consultation.diagnosis}`, 50, doc.y, { width: 500 });
+            }
+            
+            // Doctor Notes - Rata kiri, Times-Roman
+            if (rx?.doctorNotes) {
+                doc.font('Times-Roman').fontSize(11).text(rx.doctorNotes, 50, doc.y, { width: 500 });
+            }
+            doc.moveDown(0.4);
         }
 
-        doc.moveDown(1);
-        doc.text(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { align: 'right' });
-        doc.moveDown(2.5);
-        doc.text(`${fmtDoctorName(doctor)}`, { align: 'right' });
-        if (doctor?.specialization) {
-            doc.fontSize(9).text(doctor.specialization, { align: 'right' });
+        doc.moveDown(1.5);
+
+        // ──────────────────────────────────────────────────────────────────────
+        // TANGGAL DAN TANDA TANGAN - GESER KE KANAN
+        // ──────────────────────────────────────────────────────────────────────
+        const tglResep = rx?.issuedAt ? new Date(rx.issuedAt) : new Date();
+        const signatureX = 380;
+        const signatureWidth = 160;
+        
+        doc.font('Times-Roman').fontSize(11);
+        doc.text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglResep.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 
+            signatureX, doc.y, { width: signatureWidth, align: 'center' });
+        doc.moveDown(1.6);
+
+        const signY = doc.y;
+        const imgSize = 65;
+
+        if (signaturePath) {
+            try {
+                const sigImgX = signatureX + (signatureWidth - imgSize) / 2;
+                doc.image(signaturePath, sigImgX, signY, { width: imgSize, height: imgSize });
+                const nameY = signY + imgSize + 3;
+                doc.fontSize(10).font('Times-Bold').text(`${fmtDoctorName(doctor)}`, signatureX, nameY, { width: signatureWidth, align: 'center' });
+                // SPESIALISASI DOKTER DIHAPUS
+                // if (doctor?.specialization) {
+                //     doc.fontSize(9).font('Times-Roman').text(doctor.specialization, signatureX, nameY + 12, { width: signatureWidth, align: 'center' });
+                // }
+            } catch (imgErr) {
+                console.warn('[prescription/pdf] Failed to load signature:', imgErr.message);
+                doc.font('Times-Bold').fontSize(10).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+                // SPESIALISASI DOKTER DIHAPUS
+                // if (doctor?.specialization) {
+                //     doc.fontSize(9).font('Times-Roman').text(doctor.specialization, signatureX, signY + 14, { width: signatureWidth, align: 'center' });
+                // }
+            }
+        } else {
+            doc.font('Times-Bold').fontSize(10).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+            // SPESIALISASI DOKTER DIHAPUS
+            // if (doctor?.specialization) {
+            //     doc.fontSize(9).font('Times-Roman').text(doctor.specialization, signatureX, signY + 14, { width: signatureWidth, align: 'center' });
+            // }
         }
 
-        doc.moveDown(1);
-        doc.fontSize(8).fillColor('#666').text('*Resep berlaku 7 hari dan hanya dapat digunakan 1x pembelian.', { align: 'center' });
+        doc.moveDown(0.8);
+        doc.fontSize(8).fillColor('#666').text('*Resep berlaku 7 hari dan hanya dapat digunakan 1x pembelian.', 50, doc.y, { width: 500, align: 'center' });
 
         doc.end();
     } catch (err) {
-        res.status(500).json({ message: 'Gagal generate PDF resep', error: err.message });
+        console.error('[prescription/pdf] error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Gagal generate PDF resep', error: err.message });
+        } else {
+            res.destroy();
+        }
     }
 });
 
@@ -1238,11 +1375,11 @@ router.put('/:id/medical-record', auth, doctorAuth, async (req, res) => {
 
         consultation.medicalRecord = {
             objectiveFindings: objectiveFindings || '',
-            assessment:        assessment       || '',
-            plan:              plan             || '',
-            doctorNotes:       doctorNotes      || '',
-            isCompleted:       markComplete === true || markComplete === 'true',
-            completedAt:       (markComplete === true || markComplete === 'true') ? new Date() : consultation.medicalRecord?.completedAt,
+            assessment: assessment || '',
+            plan: plan || '',
+            doctorNotes: doctorNotes || '',
+            isCompleted: markComplete === true || markComplete === 'true',
+            completedAt: (markComplete === true || markComplete === 'true') ? new Date() : consultation.medicalRecord?.completedAt,
         };
 
         if (assessment) consultation.diagnosis = assessment;
@@ -1266,70 +1403,177 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id);
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-        
+ 
         const isAuthorized = await canAccess(consultation, req.userId, req.userRole);
         if (!isAuthorized) return res.status(403).json({ message: 'Akses ditolak' });
-
+ 
         const mr = consultation.medicalRecord;
         if (!mr) return res.status(404).json({ message: 'Rekam medis belum dibuat' });
-
+ 
         const patient = await User.findByPk(consultation.userId);
         const doctor = await Doctor.findByPk(consultation.doctorId);
-
+ 
+        const ClinicSettings = require('../models/ClinicSettings');
+        const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
+        const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+ 
+        const fs = require('fs');
+        const pathMod = require('path');
+        const getImagePath = (fileUrl, fileType) => {
+            if (!fileUrl) return null;
+            const filePath = pathMod.join(__dirname, '..', fileUrl.replace(/^\//, ''));
+            if (!fs.existsSync(filePath)) {
+                console.warn(`[medical-record/pdf] ${fileType} file tidak ditemukan:`, filePath);
+                return null;
+            }
+            try {
+                const buf = Buffer.alloc(4);
+                const fd = fs.openSync(filePath, 'r');
+                fs.readSync(fd, buf, 0, 4, 0);
+                fs.closeSync(fd);
+                const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+                const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+                return (isJpeg || isPng) ? filePath : null;
+            } catch (e) { return null; }
+        };
+ 
+        const logoPath = getImagePath(clinicSettings.logoUrl, 'Logo klinik');
+        const signaturePath = getImagePath(doctor?.signatureUrl, 'Tanda tangan dokter');
+ 
         const doc = new PDFDocument({ margin: 50 });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=rekam-medis-${consultation.id}.pdf`);
+        doc.on('error', (pdfErr) => {
+            console.error('[medical-record/pdf] PDFDocument error:', pdfErr);
+            if (!res.headersSent) res.status(500).json({ message: 'Gagal generate PDF rekam medis', error: pdfErr.message });
+            else res.destroy();
+        });
         doc.pipe(res);
-
-        doc.fontSize(18).font('Helvetica-Bold').text('REKAM MEDIS', { align: 'center' });
-        doc.fontSize(11).font('Helvetica').text('Klinik Pratama IPB', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
-
-        const tgl = new Date(consultation.endTime || consultation.scheduledAt || consultation.createdAt)
-            .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-
-        doc.fontSize(10);
-        doc.text(`Pasien         : ${patient?.name || 'Pasien'}`);
-        doc.text(`ID Pasien      : ${consultation.userId.toString().slice(-8).toUpperCase()}`);
-        doc.text(`Tanggal        : ${tgl}`);
-        doc.text(`Dokter         : ${fmtDoctorName(doctor)}`);
-        if (doctor?.specialization) {
-            doc.text(`Spesialisasi   : ${doctor.specialization}`);
+ 
+        // HEADER
+        const headerStartX = 50;
+        const headerStartY = doc.y;
+        const logoSize = 55;
+ 
+        if (logoPath) {
+            try {
+                doc.image(logoPath, headerStartX, headerStartY, { height: logoSize, width: logoSize });
+            } catch (imgErr) {
+                console.warn('[medical-record/pdf] Failed to load logo:', imgErr.message);
+            }
         }
-        doc.moveDown(0.5);
+ 
+        const headerTextStartY = headerStartY;
+        doc.font('Times-Bold').fontSize(14).text('KLINIK PRATAMA IPB', 50, headerTextStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Jln. Tanjung Kampus IPB Dramaga, Babakan, Dramaga,', 50, headerTextStartY + 16, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Bogor Kota, Jawa Barat 16680', 50, headerTextStartY + 28, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Telp. (62251) 8422094', 50, headerTextStartY + 40, { align: 'center', width: 500 });
+ 
+        doc.y = headerStartY + logoSize + 5;
+        doc.moveDown(0.3);
         doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
-
-        const section = (label, content) => {
-            doc.font('Helvetica-Bold').text(label);
-            doc.font('Helvetica').text(content || '-');
-            doc.moveDown(0.5);
-        };
-
-        section('S — Keluhan (Subjective)', consultation.symptoms || '-');
+        doc.moveDown(0.4);
+ 
+        doc.font('Times-Bold').fontSize(12).text('REKAM MEDIS', { align: 'center' });
+        doc.moveDown(0.3);
+ 
+        const tgl = new Date(consultation.endTime || consultation.scheduledAt || consultation.createdAt);
+ 
+        // FORM PASIEN - SPASI MINIMAL, RATA KIRI
+        const labelX = 50;
+        const valueX = 130;
+        let currentY = doc.y;
+ 
+        doc.font('Times-Roman').fontSize(9);
+        
+        doc.text('Pasien', labelX, currentY);
+        doc.text(`: ${patient?.name || 'Pasien'}`, valueX, currentY);
+        currentY += 10;
+        
+        doc.text('ID Pasien', labelX, currentY);
+        doc.text(`: ${consultation.userId.toString().slice(-8).toUpperCase()}`, valueX, currentY);
+        currentY += 10;
+        
+        doc.text('Tanggal', labelX, currentY);
+        doc.text(`: ${tgl.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, valueX, currentY);
+        currentY += 10;
+        
+        doc.text('Dokter', labelX, currentY);
+        doc.text(`: ${fmtDoctorName(doctor)}`, valueX, currentY);
+        currentY += 12;
+ 
+        doc.y = currentY;
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.3);
+ 
+        // SOAP - RATA KIRI, TANPA GARIS PEMISAH LAINNYA
+        doc.font('Times-Bold').fontSize(9.5).text('S — Keluhan (Subjective)', 50);
+        doc.font('Times-Roman').fontSize(9).text(consultation.symptoms || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.25);
+ 
         if (consultation.medicalHistory) {
-            doc.font('Helvetica-Bold').text('Riwayat Penyakit');
-            doc.font('Helvetica').text(consultation.medicalHistory);
-            doc.moveDown(0.5);
+            doc.font('Times-Bold').fontSize(9.5).text('Riwayat Penyakit', 50);
+            doc.font('Times-Roman').fontSize(9).text(consultation.medicalHistory, 50, doc.y, { width: 500 });
+            doc.moveDown(0.25);
         }
-        section('O — Pemeriksaan (Objective)', mr.objectiveFindings);
-        section('A — Diagnosis (Assessment)',  mr.assessment);
-        section('P — Rencana (Plan)',          mr.plan);
-        if (mr.doctorNotes) section('Catatan Dokter', mr.doctorNotes);
-
-        doc.moveDown(1);
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+ 
+        doc.font('Times-Bold').fontSize(9.5).text('O — Pemeriksaan (Objective)', 50);
+        doc.font('Times-Roman').fontSize(9).text(mr.objectiveFindings || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.25);
+ 
+        doc.font('Times-Bold').fontSize(9.5).text('A — Diagnosis (Assessment)', 50);
+        doc.font('Times-Roman').fontSize(9).text(mr.assessment || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.25);
+ 
+        doc.font('Times-Bold').fontSize(9.5).text('P — Rencana (Plan)', 50);
+        doc.font('Times-Roman').fontSize(9).text(mr.plan || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.25);
+ 
+        if (mr.doctorNotes) {
+            doc.font('Times-Bold').fontSize(9.5).text('Catatan Dokter', 50);
+            doc.font('Times-Roman').fontSize(9).text(mr.doctorNotes, 50, doc.y, { width: 500 });
+            doc.moveDown(0.25);
+        }
+ 
         doc.moveDown(0.5);
-        doc.text(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { align: 'right' });
-        doc.moveDown(2.5);
-        doc.font('Helvetica-Bold').text(`${fmtDoctorName(doctor)}`, { align: 'right' });
-        doc.font('Helvetica').fontSize(9).text(doctor?.specialization || '', { align: 'right' });
-
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.3);
+ 
+        // TANGGAL DAN TANDA TANGAN - SEJAJAR, DALAM BATAS HEADER
+        const tglRekamMedis = mr.completedAt ? new Date(mr.completedAt) : tgl;
+        const signatureX = 350;
+        const signatureWidth = 180;
+        
+        doc.font('Times-Roman').fontSize(9);
+        doc.text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglRekamMedis.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 
+            signatureX, doc.y, { width: signatureWidth, align: 'center' });
+        doc.moveDown(1.6);
+ 
+        const signY = doc.y;
+        const imgSize = 65;
+ 
+        if (signaturePath) {
+            try {
+                const sigImgX = signatureX + (signatureWidth - imgSize) / 2;
+                doc.image(signaturePath, sigImgX, signY, { width: imgSize, height: imgSize });
+                const nameY = signY + imgSize + 3;
+                doc.fontSize(8.5).font('Times-Bold').text(`${fmtDoctorName(doctor)}`, signatureX, nameY, { width: signatureWidth, align: 'center' });
+            } catch (imgErr) {
+                console.warn('[medical-record/pdf] Failed to load signature:', imgErr.message);
+                doc.font('Times-Bold').fontSize(9).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+            }
+        } else {
+            doc.font('Times-Bold').fontSize(9).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+        }
+ 
         doc.end();
     } catch (err) {
-        res.status(500).json({ message: 'Gagal generate PDF rekam medis', error: err.message });
+        console.error('[medical-record/pdf] error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Gagal generate PDF rekam medis', error: err.message });
+        } else {
+            res.destroy();
+        }
     }
 });
 
@@ -1359,7 +1603,7 @@ router.post('/:id/rating', auth, async (req, res) => {
         if (consultation.status === 'completed') {
             const doctor = await Doctor.findByPk(consultation.doctorId);
             if (doctor) {
-                const prevTotal  = doctor.totalReviews || 0;
+                const prevTotal = doctor.totalReviews || 0;
                 const prevRating = doctor.rating || 0;
                 doctor.totalReviews = prevTotal + 1;
                 doctor.rating = Math.round(((prevRating * prevTotal) + rating) / doctor.totalReviews * 10) / 10;
@@ -1481,137 +1725,209 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
 
         const ClinicSettings = require('../models/ClinicSettings');
         const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
-        const clinicName    = clinicSettings.clinicName    || 'Klinik Pratama IPB';
+        const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
-        const stampPath     = clinicSettings.stampUrl
-            ? require('path').join(__dirname, '..', clinicSettings.stampUrl.replace(/^\//, ''))
-            : null;
-        const signaturePath = doctor?.signatureUrl
-            ? require('path').join(__dirname, '..', doctor.signatureUrl.replace(/^\//, ''))
-            : null;
+
+        const fs = require('fs');
+        const pathMod = require('path');
+
+        const getImagePath = (fileUrl, fileType) => {
+            if (!fileUrl) {
+                console.log(`[sick-letter/pdf] ${fileType} tidak ditemukan (URL kosong)`);
+                return null;
+            }
+
+            const filePath = pathMod.join(__dirname, '..', fileUrl.replace(/^\//, ''));
+
+            if (!fs.existsSync(filePath)) {
+                console.warn(`[sick-letter/pdf] ${fileType} file tidak ditemukan di disk:`, filePath);
+                return null;
+            }
+
+            try {
+                const buf = Buffer.alloc(4);
+                const fd = fs.openSync(filePath, 'r');
+                fs.readSync(fd, buf, 0, 4, 0);
+                fs.closeSync(fd);
+
+                const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+                const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+                const isWebP = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
+
+                if (isPng) {
+                    console.log(`[sick-letter/pdf] ✓ ${fileType} (PNG):`, filePath);
+                } else if (isJpeg) {
+                    console.log(`[sick-letter/pdf] ✓ ${fileType} (JPEG):`, filePath);
+                } else if (isWebP) {
+                    console.warn(`[sick-letter/pdf] ⚠ ${fileType} detected as WebP, akan dicoba di-load (mungkin gagal):`, filePath);
+                } else {
+                    console.warn(`[sick-letter/pdf] ⚠ ${fileType} format tidak dikenal [bytes: ${buf.map(b => '0x' + b.toString(16)).join(' ')}]:`, filePath);
+                }
+            } catch (e) {
+                console.warn(`[sick-letter/pdf] Could not read ${fileType} header:`, e.message);
+            }
+
+            return filePath;
+        };
+
+        const logoPath = getImagePath(clinicSettings.logoUrl, 'Logo klinik');
+        const stampPath = getImagePath(clinicSettings.stampUrl, 'Stempel klinik');
+        const signaturePath = getImagePath(doctor?.signatureUrl, 'Tanda tangan dokter');
 
         const doc = new PDFDocument({ margin: 70, size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=sick-letter-${sickLetter.letterNumber || 'draft'}.pdf`);
+        doc.on('error', (pdfErr) => {
+            console.error('[sick-letter/pdf] PDFDocument error:', pdfErr);
+            if (!res.headersSent) res.status(500).json({ message: 'Gagal generate PDF', error: pdfErr.message });
+            else res.destroy();
+        });
         doc.pipe(res);
 
         const tglPemeriksaan = new Date(consultation.scheduledAt || consultation.createdAt)
             .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        const tglBogor = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        
+        // Gunakan tanggal dari surat sakit (issuedAt) atau tanggal pembuatan
+        const tglSurat = sickLetter.issuedAt ? new Date(sickLetter.issuedAt) : new Date();
+        const tglBogor = tglSurat;
 
         const days = Math.ceil((new Date(sickLetter.endDate) - new Date(sickLetter.startDate)) / (1000 * 60 * 60 * 24)) + 1;
-        const daysWord = ['nol','satu','dua','tiga','empat','lima','enam','tujuh','delapan','sembilan','sepuluh'][days] || days.toString();
-        const tglMulai   = new Date(sickLetter.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        const tglSelesai = new Date(sickLetter.endDate).toLocaleDateString('id-ID',   { day: 'numeric', month: 'long', year: 'numeric' });
+        const daysWord = ['nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh'][days] || days.toString();
+        const tglMulai = new Date(sickLetter.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglSelesai = new Date(sickLetter.endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-        doc.fontSize(16).font('Helvetica-Bold').text('SURAT KETERANGAN SAKIT', { align: 'center' });
-        doc.fontSize(11).font('Helvetica').text(clinicName, { align: 'center' });
-        if (clinicAddress) doc.fontSize(9).text(clinicAddress, { align: 'center' });
+        // Header dengan logo klinik
+        const headerStartX = 50;
+        const headerStartY = doc.y;
+        const logoSize = 55;
+
+        if (logoPath) {
+            try {
+                doc.image(logoPath, headerStartX, headerStartY, { height: logoSize, width: logoSize });
+                console.log('[sick-letter/pdf] ✓ Logo loaded successfully');
+            } catch (imgErr) {
+                console.warn('[sick-letter/pdf] Failed to load logo in header:', imgErr.message);
+            }
+        }
+
+        const headerTextStartY = headerStartY;
+
+        doc.font('Times-Bold').fontSize(14).text('KLINIK PRATAMA IPB', 50, headerTextStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Jln. Tanjung Kampus IPB Dramaga, Babakan, Dramaga,', 50, headerTextStartY + 16, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Bogor Kota, Jawa Barat 16680', 50, headerTextStartY + 28, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text('Telp. (62251) 8422094', 50, headerTextStartY + 40, { align: 'center', width: 500 });
+        doc.font('Times-Bold').fontSize(10).text(`NOMOR : ${sickLetter.letterNumber || 'DRAFT'}`, 50, headerTextStartY + 52, { align: 'center', width: 500 });
+
+        doc.y = headerStartY + logoSize + 5;
+
         doc.moveDown(0.3);
-        doc.fontSize(10).text(`Nomor : ${sickLetter.letterNumber || 'DRAFT'}`, { align: 'center' });
-        doc.moveDown(0.8);
-        doc.moveTo(70, doc.y).lineTo(525, doc.y).strokeColor('#cccccc').stroke();
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
         doc.moveDown(0.8);
 
-        doc.font('Helvetica').fontSize(11);
-        doc.text('Yang bertanda tangan di bawah ini menerangkan bahwa:');
+        doc.font('Times-Bold').fontSize(12).text('SURAT KETERANGAN SAKIT', { align: 'center' });
         doc.moveDown(0.8);
 
-        const col1 = 70, col2 = 170;
-        const rows = [
-            ['Nama Pasien', `: ${patient?.name || 'Pasien'}`],
-            ...(sickLetter.patientAge    ? [['Umur',          `: ${sickLetter.patientAge}`]]    : []),
-            ...(sickLetter.patientGender ? [['Jenis Kelamin',  `: ${sickLetter.patientGender}`]] : []),
-        ];
-        rows.forEach(([k, v]) => {
-            doc.text(k, col1, doc.y, { continued: true, width: col2 - col1 });
-            doc.text(v);
-            doc.moveDown(0.2);
-        });
+        doc.font('Times-Roman').fontSize(11);
+        doc.text('Yang bertanda tangan di bawah ini menerangkan bahwa:', { align: 'left' });
+        doc.moveDown(0.5);
 
-        doc.moveDown(0.8);
-        doc.text('Telah menjalani pemeriksaan pada:');
-        doc.moveDown(0.4);
-        doc.text('Tanggal', col1, doc.y, { continued: true, width: col2 - col1 });
-        doc.text(`: ${tglPemeriksaan}`);
-        doc.moveDown(0.8);
-
-        doc.text('Berdasarkan hasil pemeriksaan, yang bersangkutan didiagnosis mengalami:');
-        doc.moveDown(0.4);
-        doc.font('Helvetica-Bold').text(`       ${sickLetter.diagnosis}`);
-        doc.font('Helvetica').moveDown(0.8);
-
-        doc.text('Sehubungan dengan hal tersebut, pasien disarankan untuk beristirahat selama:');
-        doc.moveDown(0.4);
-        doc.font('Helvetica-Bold').text(`       ${days} (${daysWord}) hari`);
-        doc.font('Helvetica').text(`terhitung mulai tanggal ${tglMulai} sampai dengan ${tglSelesai}.`);
-        doc.moveDown(0.8);
-
-        if (sickLetter.notes) {
-            doc.text(`Catatan: ${sickLetter.notes}`);
-            doc.moveDown(0.8);
+        // Data Pasien dengan format rapi (sejajar ':')
+        const labelX = 70;
+        const valueX = 180;
+        let currentY = doc.y;
+        
+        doc.fontSize(10);
+        
+        doc.text('Nama', labelX, currentY, { width: 100 });
+        doc.text(`: ${patient?.name || '-'}`, valueX, currentY);
+        currentY += 16;
+        
+        if (sickLetter.patientAge) {
+            doc.text('Umur', labelX, currentY, { width: 100 });
+            doc.text(`: ${sickLetter.patientAge} tahun`, valueX, currentY);
+            currentY += 16;
+        }
+        
+        if (sickLetter.patientGender) {
+            doc.text('Jenis Kelamin', labelX, currentY, { width: 100 });
+            doc.text(`: ${sickLetter.patientGender}`, valueX, currentY);
+            currentY += 16;
         }
 
-        doc.text('Demikian surat keterangan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.');
-        doc.moveDown(2);
+        doc.y = currentY;
+        doc.moveDown(0.4);
 
+        doc.font('Times-Roman').fontSize(10);
+        const pemeriksaanText = `Berdasarkan hasil pemeriksaan pada tanggal ${tglPemeriksaan}. Pasien didiagnosis ${sickLetter.diagnosis}, dan memerlukan istirahat ${days} (${daysWord}) hari terhitung mulai tanggal ${tglMulai} sampai dengan ${tglSelesai}. Demikian surat keterangan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.`;
+        doc.text(pemeriksaanText, 50, doc.y, { align: 'left', width: 500 });
+
+        doc.moveDown(0.6);
+
+        if (sickLetter.notes && sickLetter.notes.toLowerCase() !== '-') {
+            doc.text(`Catatan: ${sickLetter.notes}`, 50, doc.y, { align: 'left', width: 500 });
+            doc.moveDown(0.6);
+        }
+
+        doc.moveDown(1.5);
+
+        // FOOTER / SIGNATURE
+        doc.font('Times-Roman').fontSize(10);
         const signY = doc.y;
-        const pageW  = doc.page.width;   
-        const margin = 70;
-        const colW   = (pageW - margin * 2) / 2 - 10; 
-        const leftX  = margin;
-        const rightX = margin + colW + 20;
-        const imgSize = 80;
+        const rightX = 360;
+        const imgSize = 52;
 
-        doc.fontSize(10).font('Helvetica').text('Stempel Klinik', leftX, signY, { width: colW, align: 'center' });
-        const stampLabelY = signY + 14;
+        doc.text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglBogor.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightX, signY, { align: 'center', width: 200 });
+        doc.moveDown(0.5);
+        doc.text('Dokter yang memeriksa', rightX, doc.y, { align: 'center', width: 200 });
+        doc.moveDown(0.7);
 
-        const fs = require('fs');
-        const stampLoaded = stampPath && fs.existsSync(stampPath);
-        if (stampLoaded) {
-            const stampImgX = leftX + (colW - imgSize) / 2;
-            doc.image(stampPath, stampImgX, stampLabelY + 4, { width: imgSize, height: imgSize });
-        } else {
-            doc.rect(leftX + (colW - imgSize) / 2, stampLabelY + 4, imgSize, imgSize)
-               .strokeColor('#cccccc').stroke();
-            doc.fontSize(8).fillColor('#aaaaaa')
-               .text('(stempel)', leftX, stampLabelY + imgSize / 2 - 4, { width: colW, align: 'center' });
-            doc.fillColor('#000000');
+        const sigAndStampY = doc.y;
+        const sigImgX = rightX + (190 - imgSize) / 2;
+
+        if (signaturePath) {
+            try {
+                doc.image(signaturePath, sigImgX, sigAndStampY, { width: imgSize, height: imgSize });
+                console.log('[sick-letter/pdf] ✓ Signature loaded at X:', sigImgX, 'Y:', sigAndStampY);
+            } catch (imgErr) {
+                console.warn('[sick-letter/pdf] Failed to load signature image:', imgErr.message);
+            }
         }
 
-        const sigLoaded = signaturePath && fs.existsSync(signaturePath);
-        doc.fontSize(10).font('Helvetica')
-           .text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglBogor}`, rightX, signY, { width: colW, align: 'center' });
-        doc.text('Dokter yang memeriksa,', rightX, signY + 14, { width: colW, align: 'center' });
-
-        if (sigLoaded) {
-            const sigImgX = rightX + (colW - imgSize) / 2;
-            doc.image(signaturePath, sigImgX, signY + 28, { width: imgSize, height: imgSize });
-        } else {
-            doc.moveDown(3.5);
+        if (stampPath) {
+            try {
+                const stampSize = 40;
+                const stampX = sigImgX + (imgSize - stampSize) / 2;
+                const stampY = sigAndStampY + (imgSize * 0.45) - (stampSize / 2);
+                doc.image(stampPath, stampX, stampY, { width: stampSize, height: stampSize });
+                console.log('[sick-letter/pdf] ✓ Stamp loaded at X:', stampX, 'Y:', stampY);
+            } catch (imgErr) {
+                console.warn('[sick-letter/pdf] Failed to load stamp overlay:', imgErr.message);
+            }
         }
 
-        const nameY = signY + 28 + imgSize + 6;
-        doc.fontSize(10).font('Helvetica-Bold')
-           .text(`${fmtDoctorName(doctor)}`, rightX, nameY, { width: colW, align: 'center' });
-        if (doctor?.specialization) {
-            doc.fontSize(9).font('Helvetica')
-               .text(doctor.specialization, rightX, nameY + 14, { width: colW, align: 'center' });
-        }
+        doc.moveDown(2.5);
 
-        doc.moveDown(1);
-        doc.fontSize(8).fillColor('#666')
-           .text('*Surat keterangan ini dibuat berdasarkan hasil pemeriksaan dan berlaku sesuai tanggal yang tertera.',
-               { align: 'center' });
+        doc.font('Times-Bold').fontSize(10)
+            .text(`${fmtDoctorName(doctor)}`, rightX, doc.y, { align: 'center', width: 200 });
+
+        doc.moveDown(1.2);
+        doc.font('Times-Roman').fontSize(8).fillColor('#333333')
+            .text('*Surat keterangan ini dibuat berdasarkan hasil pemeriksaan dan berlaku sesuai tanggal yang tertera.',
+                50, doc.y, { align: 'left', width: 500 });
 
         doc.end();
     } catch (err) {
-        res.status(500).json({ message: 'Gagal generate PDF', error: err.message });
+        console.error('[sick-letter/pdf] error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Gagal generate PDF', error: err.message });
+        } else {
+            res.destroy();
+        }
     }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 8. GET SINGLE (Diperbaiki agar Frontend dapat object Patient dan Doctor lengkap)
+// 8. GET SINGLE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.get('/:id', auth, async (req, res) => {
@@ -1621,11 +1937,9 @@ router.get('/:id', auth, async (req, res) => {
 
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        // Cek Akses Aman
         const isOwnerOrDoctor = await canAccess(consultation, req.userId, req.userRole);
         if (!isOwnerOrDoctor) return res.status(403).json({ message: 'Akses ditolak' });
 
-        // Populate MySQL agar tampilan Frontend bisa membaca `userId.name` dan `doctorId.name`
         const populated = await populateFromMySQL(consultation.toObject(), [
             { field: 'userId', model: 'User', attributes: ['name', 'email', 'phone'] },
             { field: 'doctorId', model: 'Doctor', attributes: ['name', 'specialization', 'photo', 'userId', 'titlePrefix', 'titleSuffix', 'strNumber', 'alumnus', 'practiceLocation'] }
@@ -1635,8 +1949,7 @@ router.get('/:id', auth, async (req, res) => {
             'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin', 'cancelled_by_user',
             'refund_requested', 'refunded', 'refund_rejected',
             'paid', 'scheduled', 'ongoing'];
-            
-        // Blokir akses chat jika belum bayar
+
         if (!chatAllowedStatuses.includes(populated.status) && req.userRole !== 'admin') {
             populated.messages = [];
             return res.json({ ...populated, _accessRestricted: true });
@@ -1648,7 +1961,6 @@ router.get('/:id', auth, async (req, res) => {
     }
 });
 
-// DELETE (hanya jika draft/pending_payment, oleh user sendiri)
 router.delete('/:id', auth, async (req, res) => {
     try {
         const consultation = await Consultation.findById(req.params.id);

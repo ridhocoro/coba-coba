@@ -90,6 +90,9 @@ const SectionPasien = () => {
                                                     <tr key={c._id} style={{ borderBottom: `1px solid #f8fafc`, background: i % 2 ? '#fafafa' : '#fff' }}>
                                                         <td style={TD}>
                                                             <div style={{ fontWeight: 600, color: colors.text }}>{c.userId?.name}</div>
+                                                            <div style={{ fontSize: 11, color: colors.subtle }}>
+                                                                ID: {c.userId?._id?.toString().slice(-8).toUpperCase() || '-'}
+                                                            </div>
                                                             <div style={{ fontSize: 11, color: colors.subtle }}>{c.userId?.phone || c.userId?.email}</div>
                                                         </td>
                                                         <td style={{ ...TD, maxWidth: 170, color: colors.muted }}>
@@ -132,6 +135,9 @@ const SectionPasien = () => {
                                                 <tr key={a._id} style={{ borderBottom: `1px solid #f8fafc`, background: i % 2 ? '#fafafa' : '#fff' }}>
                                                     <td style={TD}>
                                                         <div style={{ fontWeight: 600, color: colors.text }}>{a.userId?.name}</div>
+                                                        <div style={{ fontSize: 11, color: colors.subtle }}>
+                                                            ID: {a.userId?._id?.toString().slice(-8).toUpperCase() || '-'}
+                                                        </div>
                                                         <div style={{ fontSize: 11, color: colors.subtle }}>{a.userId?.phone}</div>
                                                     </td>
                                                     <td style={{ ...TD, whiteSpace: 'nowrap', color: colors.muted }}>{fmtDate(a.appointmentDate)}</td>

@@ -340,9 +340,9 @@ const ManageUsers = () => {
         <table style={S.table}>
           <thead>
             <tr>
-              {['Nama', 'Email', 'HP', 'Role', 'Status', 'Aksi'].map(h => 
-                <th key={h} style={S.th}>{h}</th>
-              )}
+                {['ID Pasien', 'Nama', 'Email', 'HP', 'Role', 'Status', 'Aksi'].map(h => 
+              <th key={h} style={S.th}>{h}</th>
+            )}
             </tr>
           </thead>
           <tbody>
@@ -354,10 +354,13 @@ const ManageUsers = () => {
               return (
                 <tr key={userId}>
                   <td style={S.td}>
-                    <div style={{ fontWeight: 600 }}>{u.name || '-'}</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString('id-ID') : '-'}
-                    </div>
+                      <div style={{ fontWeight: 600 }}>{userId.toString().slice(-8).toUpperCase()}</div>
+                  </td>
+                  <td style={S.td}>
+                      <div style={{ fontWeight: 600 }}>{u.name || '-'}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString('id-ID') : '-'}
+                      </div>
                   </td>
                   <td style={S.td}>{u.email || '-'}</td>
                   <td style={S.td}>{u.phone || '-'}</td>

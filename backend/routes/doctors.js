@@ -232,14 +232,74 @@ router.post('/my/signature', auth, doctorAuth, photoUpload.single('signature'), 
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'File tanda tangan tidak ditemukan' });
 
-        const signatureUrl = `/uploads/doctors/${req.file.filename}`;
+        const uploadedPath = req.file.path;
+        let finalPath = uploadedPath;
+        let finalFilename = req.file.filename;
+
+        // Cek format file dan convert WebP ke PNG jika diperlukan
+        try {
+            const buf = Buffer.alloc(4);
+            const fd = fs.openSync(uploadedPath, 'r');
+            fs.readSync(fd, buf, 0, 4, 0);
+            fs.closeSync(fd);
+
+            const isWebP = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
+            const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+            const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+
+            if (isWebP) {
+                // File adalah WebP, convert ke PNG
+                try {
+                    const sharp = require('sharp');
+                    console.log('[signature upload] ⚠️ WebP detected, converting to PNG...');
+                    
+                    // Generate nama file PNG baru
+                    const pngFilename = req.file.filename.replace(/\.[^/.]+$/, '.png');
+                    const pngPath = path.join(uploadDir, pngFilename);
+
+                    // Convert WebP → PNG
+                    await sharp(uploadedPath)
+                        .png({ quality: 95, compressionLevel: 9 })
+                        .toFile(pngPath);
+
+                    // Hapus file WebP original
+                    try { fs.unlinkSync(uploadedPath); } catch (e) {}
+
+                    finalPath = pngPath;
+                    finalFilename = pngFilename;
+                    console.log('[signature upload] ✓ Converted to PNG:', pngFilename);
+                } catch (sharpErr) {
+                    if (sharpErr.code === 'MODULE_NOT_FOUND') {
+                        console.warn('[signature upload] ⚠️ Sharp tidak terinstall. Lanjut tanpa konversi (mungkin PDF akan gagal)');
+                        console.warn('[signature upload] 💡 Install dengan: npm install sharp --save');
+                        // Lanjut dengan file WebP, tapi tandai warning
+                    } else {
+                        throw sharpErr;
+                    }
+                }
+            } else if (!isJpeg && !isPng) {
+                // Format tidak didukung sama sekali
+                try { fs.unlinkSync(uploadedPath); } catch (e) {}
+                return res.status(400).json({
+                    success: false,
+                    message: 'Format file tidak didukung. Gunakan PNG, JPEG, atau WebP.'
+                });
+            }
+        } catch (formatCheckErr) {
+            console.warn('[signature upload] Could not check file format:', formatCheckErr.message);
+            // Lanjut dengan file seperti yang diupload
+        }
+
+        const signatureUrl = `/uploads/doctors/${finalFilename}`;
 
         // Hapus tanda tangan lama
         const existing = await Doctor.findOne({ where: { userId: req.userId }, attributes: ['signatureUrl'] });
         if (existing?.signatureUrl?.includes('/uploads/doctors/')) {
             const oldFilename = existing.signatureUrl.split('/uploads/doctors/').pop();
             const oldPath = path.join(uploadDir, oldFilename);
-            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+            if (fs.existsSync(oldPath)) {
+                try { fs.unlinkSync(oldPath); } catch (e) {}
+            }
         }
 
         await Doctor.update(
