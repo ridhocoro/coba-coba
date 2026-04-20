@@ -14,6 +14,35 @@ const doctorAuth = require('../middleware/doctorAuth');
 const { createNotification } = require('../utils/notificationHelper');
 const { populateFromMySQL } = require('../utils/hybridJoin');
 
+const parseAddress = (fullAddress) => {
+    if (!fullAddress || fullAddress.trim() === '') {
+        return {
+            street: 'Jln. Tanjung Kampus IPB Dramaga, Babakan, Dramaga,',
+            city_province: 'Bogor Kota, Jawa Barat 16680'
+        };
+    }
+    
+    const parts = fullAddress.split(',').map(p => p.trim());
+    
+    if (parts.length === 1) {
+        return {
+            street: parts[0],
+            city_province: ''
+        };
+    } else if (parts.length === 2) {
+        return {
+            street: parts[0],
+            city_province: parts[1]
+        };
+    } else {
+        // parts.length >= 3: "Jln. X, City, Province" etc
+        return {
+            street: parts.slice(0, -2).join(', ') + ',',
+            city_province: parts.slice(-2).join(', ')
+        };
+    }
+};
+
 // ── Multer untuk upload foto chat ─────────────────────────────────────────────
 const chatStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -1182,10 +1211,16 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         }
 
         const headerTextStartY = headerStartY;
-        doc.font('Times-Bold').fontSize(14).text('KLINIK PRATAMA IPB', 50, headerTextStartY, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Jln. Tanjung Kampus IPB Dramaga, Babakan, Dramaga,', 50, headerTextStartY + 16, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Bogor Kota, Jawa Barat 16680', 50, headerTextStartY + 28, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Telp. (62251) 8422094', 50, headerTextStartY + 40, { align: 'center', width: 500 });
+        const addressParts = parseAddress(clinicAddress);
+        const clinicPhoneDisplay = clinicSettings.clinicPhone || '(62251) 8422094';
+        
+        doc.font('Times-Bold').fontSize(14).text(clinicName, 50, headerTextStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text(addressParts.street, 50, headerTextStartY + 16, { align: 'center', width: 500 });
+        if (addressParts.city_province) {
+            doc.font('Times-Roman').fontSize(10).text(addressParts.city_province, 50, headerTextStartY + 28, { align: 'center', width: 500 });
+        }
+        doc.font('Times-Roman').fontSize(10).text(`Telp. ${clinicPhoneDisplay}`, 50, headerTextStartY + 40, { align: 'center', width: 500 });
+        doc.fontSize(10).text(`${rx.prescriptionNumber}`, 50, doc.y, { align: 'center' });
 
         doc.y = headerStartY + logoSize + 5;
         doc.moveDown(0.2);
@@ -1415,6 +1450,7 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
  
         const ClinicSettings = require('../models/ClinicSettings');
         const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
+        const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
  
         const fs = require('fs');
@@ -1466,10 +1502,15 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         }
  
         const headerTextStartY = headerStartY;
-        doc.font('Times-Bold').fontSize(14).text('KLINIK PRATAMA IPB', 50, headerTextStartY, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Jln. Tanjung Kampus IPB Dramaga, Babakan, Dramaga,', 50, headerTextStartY + 16, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Bogor Kota, Jawa Barat 16680', 50, headerTextStartY + 28, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Telp. (62251) 8422094', 50, headerTextStartY + 40, { align: 'center', width: 500 });
+        const addressParts = parseAddress(clinicAddress);
+        const clinicPhone = clinicSettings.clinicPhone || '(62251) 8422094';
+        
+        doc.font('Times-Bold').fontSize(14).text(clinicName, 50, headerTextStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text(addressParts.street, 50, headerTextStartY + 16, { align: 'center', width: 500 });
+        if (addressParts.city_province) {
+            doc.font('Times-Roman').fontSize(10).text(addressParts.city_province, 50, headerTextStartY + 28, { align: 'center', width: 500 });
+        }
+        doc.font('Times-Roman').fontSize(10).text(`Telp. ${clinicPhone}`, 50, headerTextStartY + 40, { align: 'center', width: 500 });
  
         doc.y = headerStartY + logoSize + 5;
         
@@ -1564,8 +1605,7 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         // ──────────────────────────────────────────────────────────────────────
         // TANGGAL DAN TANDA TANGAN - GESER KE KANAN
         // ──────────────────────────────────────────────────────────────────────
-        const tglRekamMedis = mr.completedAt ? new Date(mr.completedAt) : tgl;
-        const signatureX = 380;
+        const tglRekamMedis = mr.completedAt ? new Date(mr.completedAt) : new Date(consultation.endTime || consultation.scheduledAt || consultation.createdAt);        const signatureX = 380;
         const signatureWidth = 160;
         
         doc.font('Times-Roman').fontSize(11);
@@ -1845,12 +1885,16 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
 
         const headerTextStartY = headerStartY;
 
-        doc.font('Times-Bold').fontSize(14).text('KLINIK PRATAMA IPB', 50, headerTextStartY, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Jln. Tanjung Kampus IPB Dramaga, Babakan, Dramaga,', 50, headerTextStartY + 16, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Bogor Kota, Jawa Barat 16680', 50, headerTextStartY + 28, { align: 'center', width: 500 });
-        doc.font('Times-Roman').fontSize(10).text('Telp. (62251) 8422094', 50, headerTextStartY + 40, { align: 'center', width: 500 });
-        doc.font('Times-Bold').fontSize(10).text(`NOMOR : ${sickLetter.letterNumber || 'DRAFT'}`, 50, headerTextStartY + 52, { align: 'center', width: 500 });
-
+        const addressParts = parseAddress(clinicAddress);
+        const clinicPhone = clinicSettings.clinicPhone || '(62251) 8422094'; 
+        
+        doc.font('Times-Bold').fontSize(14).text(clinicName, 50, headerTextStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text(addressParts.street, 50, headerTextStartY + 16, { align: 'center', width: 500 });
+        if (addressParts.city_province) {
+            doc.font('Times-Roman').fontSize(10).text(addressParts.city_province, 50, headerTextStartY + 28, { align: 'center', width: 500 });
+        }
+        doc.font('Times-Bold').fontSize(10).text(`${sickLetter.letterNumber || 'DRAFT'}`, 50, headerTextStartY + 52, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text(`Telp. ${clinicPhone}`, 50, headerTextStartY + 40, { align: 'center', width: 500 });
         doc.y = headerStartY + logoSize + 5;
 
         doc.moveDown(0.3);

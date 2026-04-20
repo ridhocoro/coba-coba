@@ -28,8 +28,8 @@ const Footer = () => {
                             </div>
                             <div>
                                 <span className="text-white-50">
-                                    Jln Tanjung Kampus IPB Dramaga, Babakan, Dramaga,<br />
-                                    Bogor City, West Java 16680
+                                    Jl. Raya Dramaga, Babakan, Kecamatan Dramaga, Kabupaten Bogor, Jawa Barat 16680<br />
+                                    
                                 </span>
                             </div>
                         </div>
