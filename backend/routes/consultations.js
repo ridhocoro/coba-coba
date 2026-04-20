@@ -1656,20 +1656,23 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
 
 router.post('/:id/rating', auth, async (req, res) => {
     try {
-        const { rating, comment } = req.body;
+        const { rating } = req.body;
         if (!rating || rating < 1 || rating > 5) return res.status(400).json({ message: 'Rating 1–5' });
 
         const consultation = await Consultation.findById(req.params.id);
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
         if (consultation.userId.toString() !== req.userId) return res.status(403).json({ message: 'Bukan konsultasi Anda' });
 
+        // User tidak bisa rating jika status no_show (mereka tidak hadir)
+        // Tapi dokter bisa rating user no_show (dokter hadir tapi user tidak)
         const ratableStatuses = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'];
         if (!ratableStatuses.includes(consultation.status))
-            return res.status(400).json({ message: 'Rating hanya bisa diberikan setelah konsultasi selesai atau dibatalkan.' });
+            return res.status(400).json({ message: 'Rating hanya bisa diberikan untuk konsultasi selesai atau dibatalkan dokter.' });
+        if (consultation.status === 'no_show')
+            return res.status(400).json({ message: 'Anda tidak hadir pada konsultasi ini, sehingga tidak dapat memberikan rating.' });
         if (consultation.rating) return res.status(400).json({ message: 'Sudah pernah memberi rating' });
 
         consultation.rating = rating;
-        consultation.ratingComment = comment || '';
         consultation.ratedAt = new Date();
         await consultation.save();
 

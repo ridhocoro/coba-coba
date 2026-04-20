@@ -101,7 +101,7 @@ const AdminIndex = () => {
     },
     // SIDEBAR - FIXED POSITION
     sidebar: { 
-      width: 260, 
+      width: 230, 
       background: '#0f172a', 
       display: 'flex', 
       flexDirection: 'column', 

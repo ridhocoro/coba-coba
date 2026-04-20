@@ -33,17 +33,52 @@ const NAV_ITEMS = [
     { key: 'chat',       icon: '💬', label: 'Chat Admin',  badge: true },
 ];
 
+// Helper function untuk format nama lengkap dengan gelar
+const formatFullDoctorName = (doctor) => {
+    if (!doctor) return 'Dokter';
+    
+    const titlePrefix = doctor.titlePrefix || '';
+    const name = doctor.name || '';
+    const titleSuffix = doctor.titleSuffix || '';
+    const specialization = doctor.specialization || '';
+    
+    // Format: dr. Reza Arap Sp.PD
+    let fullName = '';
+    if (titlePrefix) fullName += `${titlePrefix} `;
+    fullName += name;
+    if (titleSuffix) fullName += ` ${titleSuffix}`;
+    
+    return fullName;
+};
+
+// Helper function untuk format nama pendek untuk di card
+const formatShortDoctorName = (doctor) => {
+    if (!doctor) return 'Dokter';
+    
+    const titlePrefix = doctor.titlePrefix || '';
+    const name = doctor.name || '';
+    
+    // Format: dr. Reza
+    let shortName = '';
+    if (titlePrefix) shortName += `${titlePrefix} `;
+    
+    // Ambil nama depan (first word)
+    const firstName = name.split(' ')[0];
+    shortName += firstName;
+    
+    return shortName;
+};
+
 const DoctorDashboard = () => {
     const { user, logout } = useAuth();
     const navigate         = useNavigate();
     const [active, setActive]       = useState('beranda');
-    const [collapsed, setCollapsed] = useState(false);
     const [doctorInfo, setDoctorInfo] = useState(null);
     const [pendingAppt, setPendingAppt] = useState(0);
     const [pendingCons, setPendingCons] = useState(0);
     const [unreadChat,  setUnreadChat]  = useState(0);
     const socketRef  = useRef(null);
-    const activeRef  = useRef('beranda'); // ref to avoid stale closure in socket handler
+    const activeRef  = useRef('beranda');
 
     // Socket.IO init
     useEffect(() => {
@@ -57,7 +92,6 @@ const DoctorDashboard = () => {
         socketRef.current = io;
         io.on('connect', () => { io.emit('join-user', user?._id || user?.id); });
         io.on('admin-chat-message', () => {
-            // Only increment badge if user is NOT currently on the chat tab
             if (activeRef.current !== 'chat') {
                 setUnreadChat(prev => prev + 1);
             }
@@ -105,7 +139,7 @@ const DoctorDashboard = () => {
         ? (doctorInfo.photo.startsWith('http') ? doctorInfo.photo : `${API_URL}${doctorInfo.photo}`)
         : null;
 
-    const SIDEBAR_W = collapsed ? 68 : 230;
+    const SIDEBAR_W = 230;
 
     const renderSection = () => {
         switch (active) {
@@ -121,6 +155,11 @@ const DoctorDashboard = () => {
             default:           return <SectionBeranda />;
         }
     };
+
+    // Nama dokter dengan gelar lengkap untuk ditampilkan
+    const fullDoctorName = formatFullDoctorName(doctorInfo);
+    const shortDoctorName = formatShortDoctorName(doctorInfo);
+    const doctorSpecialization = doctorInfo?.specialization || 'Dokter';
 
     return (
         <>
@@ -146,55 +185,53 @@ const DoctorDashboard = () => {
                     {/* Header */}
                     <div style={{
                         display: 'flex', alignItems: 'center',
-                        padding: collapsed ? '16px 0' : '16px 14px',
-                        justifyContent: collapsed ? 'center' : 'space-between',
+                        padding: '16px 14px',
+                        justifyContent: 'space-between',
                         borderBottom: '1px solid rgba(255,255,255,.07)',
                         minHeight: 64, gap: 8,
                     }}>
-                        {!collapsed && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                                <span style={{ fontSize: 20, flexShrink: 0 }}>⚕️</span>
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 800, fontSize: 13, color: '#fff', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Klinik IPB</div>
-                                    <div style={{ fontSize: 10, color: '#475569' }}>Dokter Dashboard</div>
-                                </div>
-                                <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
-                                    <NotifBell socketRef={socketRef} />
-                                </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: 20, flexShrink: 0 }}>⚕️</span>
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 800, fontSize: 13, color: '#fff', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Klinik IPB</div>
+                                <div style={{ fontSize: 10, color: '#475569' }}>Dokter Dashboard</div>
                             </div>
-                        )}
-                        {collapsed && <NotifBell socketRef={socketRef} />}
-                        {!collapsed && (
-                            <button onClick={() => setCollapsed(c => !c)} style={{ background: 'rgba(255,255,255,.07)', border: 'none', color: '#94a3b8', cursor: 'pointer', borderRadius: 8, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>←</button>
-                        )}
-                        {collapsed && (
-                            <button onClick={() => setCollapsed(c => !c)} style={{ background: 'rgba(255,255,255,.07)', border: 'none', color: '#94a3b8', cursor: 'pointer', borderRadius: 8, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, marginTop: 6 }}>→</button>
-                        )}
-                    </div>
-
-                    {/* Doctor identity card */}
-                    {!collapsed && (
-                        <div
-                            onClick={() => handleNav('profile')}
-                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,.07)', transition: 'background .15s' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,.04)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        >
-                            <div style={{ width: 40, height: 40, borderRadius: 12, overflow: 'hidden', background: '#334155', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid rgba(255,255,255,.1)' }}>
-                                {photoFull
-                                    ? <img src={photoFull} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} />
-                                    : <span style={{ fontSize: 20 }}>👨‍⚕️</span>}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {doctorInfo?.name || user?.name || 'Dokter'}
-                                </div>
-                                <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {doctorInfo?.specialization || 'Dokter'}
-                                </div>
+                            <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                                <NotifBell socketRef={socketRef} />
                             </div>
                         </div>
-                    )}
+                    </div>
+
+                    {/* Doctor identity card - dengan gelar lengkap */}
+                    <div
+                        onClick={() => handleNav('profile')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,.07)', transition: 'background .15s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,.04)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                        <div style={{ width: 40, height: 40, borderRadius: 12, overflow: 'hidden', background: '#334155', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid rgba(255,255,255,.1)' }}>
+                            {photoFull
+                                ? <img src={photoFull} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} />
+                                : <span style={{ fontSize: 20 }}>👨‍⚕️</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            {/* Nama lengkap dengan gelar (dr. Reza Arap Sp.PD) */}
+                            <div style={{ 
+                                fontWeight: 700, fontSize: 12, color: '#e2e8f0', 
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                marginBottom: 2
+                            }}>
+                                {fullDoctorName}
+                            </div>
+                            {/* Spesialisasi */}
+                            <div style={{ 
+                                fontSize: 12, color: '#94a3b8', 
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                            }}>
+                                {doctorSpecialization}
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Nav */}
                     <nav style={{ flex: 1, padding: '10px 8px', overflowY: 'auto' }}>
@@ -202,25 +239,39 @@ const DoctorDashboard = () => {
                             const isAct = active === item.key;
                             const badge = getBadge(item.key);
                             return (
-                                <button key={item.key} onClick={() => handleNav(item.key)} title={collapsed ? item.label : undefined} style={{
-                                    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                                    padding: collapsed ? '11px 0' : '11px 12px',
-                                    justifyContent: collapsed ? 'center' : 'flex-start',
-                                    background: isAct ? 'rgba(37,99,235,.35)' : 'transparent',
-                                    border: isAct ? '1px solid rgba(37,99,235,.4)' : '1px solid transparent',
-                                    borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 3,
-                                    transition: 'all .15s', position: 'relative',
-                                }}>
+                                <button 
+                                    key={item.key} 
+                                    onClick={() => handleNav(item.key)} 
+                                    style={{
+                                        width: '100%', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 12,
+                                        padding: '11px 12px',
+                                        justifyContent: 'flex-start',
+                                        background: isAct ? 'rgba(37,99,235,.35)' : 'transparent',
+                                        border: isAct ? '1px solid rgba(37,99,235,.4)' : '1px solid transparent',
+                                        borderRadius: 10, 
+                                        cursor: 'pointer', 
+                                        fontFamily: 'inherit', 
+                                        marginBottom: 3,
+                                        transition: 'all .15s', 
+                                        position: 'relative',
+                                    }}
+                                >
                                     <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                                    {!collapsed && (
-                                        <span style={{ fontSize: 13, fontWeight: 600, color: isAct ? '#fff' : '#94a3b8', flex: 1, textAlign: 'left' }}>{item.label}</span>
-                                    )}
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: isAct ? '#fff' : '#94a3b8', flex: 1, textAlign: 'left' }}>{item.label}</span>
                                     {badge && (
                                         <span style={{
-                                            background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700,
-                                            padding: '1px 6px', minWidth: 16, textAlign: 'center', lineHeight: '16px',
-                                            position: collapsed ? 'absolute' : 'static',
-                                            top: collapsed ? 4 : undefined, right: collapsed ? 4 : undefined,
+                                            background: '#ef4444', 
+                                            color: '#fff', 
+                                            borderRadius: 10, 
+                                            fontSize: 10, 
+                                            fontWeight: 700,
+                                            padding: '1px 6px', 
+                                            minWidth: 16, 
+                                            textAlign: 'center', 
+                                            lineHeight: '16px',
                                         }}>{badge}</span>
                                     )}
                                 </button>
@@ -230,18 +281,29 @@ const DoctorDashboard = () => {
 
                     {/* Logout */}
                     <div style={{ padding: '12px 8px', borderTop: '1px solid rgba(255,255,255,.07)' }}>
-                        <button onClick={handleLogout} title={collapsed ? 'Logout' : undefined} style={{
-                            width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                            padding: collapsed ? '10px 0' : '10px 12px',
-                            justifyContent: collapsed ? 'center' : 'flex-start',
-                            background: 'transparent', border: '1px solid transparent', borderRadius: 10,
-                            cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444',
-                            fontSize: 13, fontWeight: 600, transition: 'background .15s',
-                        }}
+                        <button 
+                            onClick={handleLogout} 
+                            style={{
+                                width: '100%', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: 10,
+                                padding: '10px 12px',
+                                justifyContent: 'flex-start',
+                                background: 'transparent', 
+                                border: '1px solid transparent', 
+                                borderRadius: 10,
+                                cursor: 'pointer', 
+                                fontFamily: 'inherit', 
+                                color: '#ef4444',
+                                fontSize: 13, 
+                                fontWeight: 600, 
+                                transition: 'background .15s',
+                            }}
                             onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,.12)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                             <span style={{ fontSize: 17 }}>🚪</span>
-                            {!collapsed && 'Logout'}
+                            Logout
                         </button>
                     </div>
                 </aside>

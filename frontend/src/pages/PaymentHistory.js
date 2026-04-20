@@ -648,7 +648,7 @@ const PaymentHistory = () => {
                                         selectedPayment.doctorName ? { label: 'Dokter / Info', value: <span style={{ fontWeight: 600 }}>{selectedPayment.doctorName}{selectedPayment.doctorSpec && ` · ${selectedPayment.doctorSpec}`}</span> } : null,
                                         { label: 'Metode Bayar',   value: <span style={{ fontWeight: 600 }}>{fmtPaymentMethod(selectedPayment.paymentMethod)}</span> },
                                         { label: 'Jumlah',         value: <span style={{ fontWeight: 800, fontSize: 18, color: '#0f172a' }}>{fmtRupiah(selectedPayment.amount)}</span> },
-                                        { label: 'Tanggal',        value: fmtDateFull(selectedPayment.paidAt || selectedPayment.createdAt) },
+                                        { label: 'Waktu Transaksi',        value: fmtDateFull(selectedPayment.paidAt || selectedPayment.createdAt) },
                                     ].filter(Boolean).map((row, i, arr) => (
                                         <div key={row.label} style={{
                                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',

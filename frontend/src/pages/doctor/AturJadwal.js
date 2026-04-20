@@ -6,9 +6,18 @@ import {
     CONS_SLOTS, APPT_SLOTS, DAYS_INFO, makeEmptySchedule, DEF_CONS, DEF_APPT,
     CONS_STATUS, APPT_STATUS,
     Card, Btn, Spinner, Empty, SBadge, Toggle, Modal, SectionHeader,
-    ScheduleGrid, SchedulePreview, TH, TD, ProfileField, InputField,
+    ScheduleGrid, SchedulePreview, TH, TD, ProfileField, InputField, getAPPTSlotsForDay,
 } from './shared';
 
+/**
+ * SectionAturJadwal - Komponen untuk mengatur jadwal dokter
+ * 
+ * PERUBAHAN (20 Apr 2026):
+ * - Menambahkan dukungan jadwal janji temu berbeda per hari
+ * - Senin-Jumat: 08:00 - 20:00
+ * - Sabtu: 08:00 - 18:00
+ * - Props isDynamicSlots=true pada ScheduleGrid untuk Janji Temu
+ */
 const SectionAturJadwal = () => {
     const [tab, setTab]           = useState('online');
     const [consForm, setConsForm] = useState(DEF_CONS);
@@ -167,6 +176,7 @@ const SectionAturJadwal = () => {
                             allowedSlots={CONS_SLOTS}
                             onChange={(dayKey, slot) => toggleSlot(consForm, setConsForm, dayKey, slot)}
                             color={colors.primary}
+                            isDynamicSlots={false}
                         />
                     </Card>
 
@@ -231,7 +241,7 @@ const SectionAturJadwal = () => {
                             <Toggle checked={apptForm.isActive} onChange={() => setApptForm(f => ({ ...f, isActive: !f.isActive }))} label={apptForm.isActive ? 'Aktif' : 'Nonaktif'} />
                         </div>
                         <div style={{ fontSize: 12, color: colors.muted, marginBottom: 20 }}>
-                            Klik slot untuk mengaktifkan / menonaktifkan. Jadwal berlaku dari Senin hingga Sabtu minggu yang ditentukan saat Anda klik Rilis Jadwal.
+                            Klik slot untuk mengaktifkan / menonaktifkan. Jadwal berbeda per hari: Senin-Jumat hingga 20:00, Sabtu hingga 18:00. Jadwal berlaku dari Senin hingga Sabtu minggu yang ditentukan saat Anda klik Rilis Jadwal.
                         </div>
 
                         <ScheduleGrid
@@ -239,6 +249,7 @@ const SectionAturJadwal = () => {
                             allowedSlots={APPT_SLOTS}
                             onChange={(dayKey, slot) => toggleSlot(apptForm, setApptForm, dayKey, slot)}
                             color="#7c3aed"
+                            isDynamicSlots={true}
                         />
                     </Card>
 

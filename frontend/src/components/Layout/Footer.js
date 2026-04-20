@@ -76,18 +76,7 @@ const Footer = () => {
                             </div>
                         </div>
                         
-                        {/* Jam Operasional */}
-                        <div className="d-flex mb-3">
-                            <div className="me-3 mt-1">
-                                <FaClock className="text-primary" size={18} />
-                            </div>
-                            <div>
-                                <span className="text-white-50">
-                                    Senin - Jumat: 08.00 - 20.00 WIB<br />
-                                    Sabtu: 08.00 - 18.00 WIB
-                                </span>
-                            </div>
-                        </div>
+                       
                         
                         {/* Google Maps Link */}
                         <div className="d-flex mt-4">

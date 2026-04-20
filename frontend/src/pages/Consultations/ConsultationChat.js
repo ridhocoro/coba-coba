@@ -318,13 +318,12 @@ const SickLetterModal = ({ onClose, onSave }) => {
 const RatingModal = ({ consultationId, onClose, onSuccess }) => {
   const [rating, setRating] = useState(0);
   const [hovered, setHovered] = useState(0);
-  const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const handleSave = async () => {
     if (!rating) return;
     setSaving(true);
     try {
-      await api.post(`/api/consultations/${consultationId}/rating`, { rating, comment });
+      await api.post(`/api/consultations/${consultationId}/rating`, { rating });
       toast.success('Rating terkirim!');
       onSuccess();
       onClose();
@@ -336,18 +335,20 @@ const RatingModal = ({ consultationId, onClose, onSuccess }) => {
       <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 380, textAlign: 'center', padding: 28 }}>
         <div style={{ fontSize: 48, marginBottom: 8 }}>⭐</div>
         <h5 style={{ color: '#e6edf3', fontWeight: 700, marginBottom: 4 }}>Beri Penilaian</h5>
-        <p style={{ color: '#8b949e', fontSize: 13, marginBottom: 20 }}>Bagaimana pengalaman konsultasi Anda?</p>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 20 }}>
+        <p style={{ color: '#8b949e', fontSize: 13, marginBottom: 24 }}>Bagaimana pengalaman konsultasi Anda?</p>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 28 }}>
           {[1, 2, 3, 4, 5].map(i => (
             <span key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(0)}
-              onClick={() => setRating(i)} style={{ fontSize: 36, cursor: 'pointer', transition: 'transform 0.1s', transform: i <= (hovered || rating) ? 'scale(1.2)' : 'scale(1)' }}>
+              onClick={() => setRating(i)} style={{ fontSize: 48, cursor: 'pointer', transition: 'all 0.15s ease', transform: i <= (hovered || rating) ? 'scale(1.15)' : 'scale(1)', filter: i <= (hovered || rating) ? 'drop-shadow(0 4px 8px rgba(202, 138, 4, 0.4))' : 'none' }}>
               {i <= (hovered || rating) ? '⭐' : '☆'}
             </span>
           ))}
         </div>
-        <textarea value={comment} rows={3} onChange={e => setComment(e.target.value)}
-          placeholder="Komentar (opsional)"
-          style={{ width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14, resize: 'none', marginBottom: 16 }} />
+        {rating > 0 && (
+          <div style={{ color: '#58a6ff', fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
+            Rating: {rating}/5
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Lewati</button>
           <button onClick={handleSave} disabled={!rating || saving}
@@ -881,7 +882,10 @@ const ConsultationChat = () => {
   const isConfirmed = consultation?.status === 'confirmed';
   const isCompleted = ['completed', 'no_show'].includes(consultation?.status);
   // Status yang memungkinkan user beri rating (feedback)
-  const isRatable   = ['completed', 'no_show', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(consultation?.status);
+  // User tidak bisa rating jika mereka no_show, tapi dokter bisa rating user no_show
+  const isRatable   = isDoctor 
+    ? ['completed', 'no_show', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(consultation?.status)
+    : ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(consultation?.status);
 
   // Dokter: bisa akses room kecuali saat pending_payment/expired
   // User: bisa akses room saat confirmed/live/completed/cancelled — untuk lihat history
@@ -1545,11 +1549,11 @@ const ConsultationChat = () => {
             <div style={s.sideSection}>
               <span style={s.label}>Surat Sakit</span>
               <div style={{ background: sickLetter.status === 'issued' ? '#0a3d1e' : '#1a1a2e', border: `1px solid ${sickLetter.status === 'issued' ? '#2ea04330' : '#a371f730'}`, borderRadius: 10, padding: '10px 12px' }}>
-                <div style={{ color: sickLetter.status === 'issued' ? '#3fb950' : '#a371f7', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                <div style={{ color: sickLetter.status === 'issued' ? '#ffffff' : '#a371f7', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
                   {sickLetter.status === 'issued' ? '✓ Sudah Terbit' : '○ Draft'}
                 </div>
-                <div style={{ color: '#374151', fontSize: 12 }}>Diagnosis: {sickLetter.diagnosis}</div>
-                {sickLetter.startDate && <div style={{ color: '#8b949e', fontSize: 11, marginTop: 2 }}>
+                <div style={{ color: '#ffffff', fontSize: 12 }}>Diagnosis: {sickLetter.diagnosis}</div>
+                {sickLetter.startDate && <div style={{ color: '#ffffff', fontSize: 11, marginTop: 2 }}>
                   {new Date(sickLetter.startDate).toLocaleDateString('id-ID')} – {new Date(sickLetter.endDate).toLocaleDateString('id-ID')}
                 </div>}
               </div>
@@ -1688,7 +1692,7 @@ const ConsultationChat = () => {
                   }
                 </div>
               )}
-              {isUser && !consultation.rating && (
+              {isRatable && !consultation.rating && (
                 <button onClick={() => setShowRating(true)}
                   style={{ marginTop: 10, padding: '6px 18px', background: '#ca8a04', color: '#fff', border: 'none', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                   ⭐ Beri Rating

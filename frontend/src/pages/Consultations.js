@@ -1178,7 +1178,7 @@ const Consultations = () => {
                                                         }}
                                                         onMouseEnter={e => { if (canBook) e.target.style.background = '#dbeafe' }}
                                                         onMouseLeave={e => { if (canBook) e.target.style.background = '#eff6ff' }}>
-                                                        {noSchedule ? 'Offline' : 'Pilih Jadwal'}
+                                                        {noSchedule ? 'Tidak Tersedia' : 'Pilih Jadwal'}
                                                     </button>
                                                 </div>
                                             </div>

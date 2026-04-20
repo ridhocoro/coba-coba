@@ -215,7 +215,7 @@ const DoctorProfileModal = ({ doctorEntry, onClose }) => {
                             padding: '2px 7px', borderRadius: 20,
                             border: '2px solid #fff', whiteSpace: 'nowrap',
                         }}>
-                            {showOnline ? '● Online' : '● Offline'}
+                            {showOnline ? 'Tersedia' : 'Tidak Tersedia'}
                         </span>
                     </div>
 
@@ -243,7 +243,7 @@ const DoctorProfileModal = ({ doctorEntry, onClose }) => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>★</span>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>{Number(doc.rating).toFixed(1)}</span>
-                            {doc.totalReviews > 0 && <span style={{ fontSize: 12, color: '#9ca3af' }}>({doc.totalReviews} ulasan)</span>}
+                    
                         </div>
                     )}
 
@@ -878,7 +878,7 @@ const Appointments = () => {
                                                                 color: onlineToday ? '#166534' : '#b91c1c',
                                                                 border: `1px solid ${onlineToday ? '#bbf7d0' : '#fecaca'}`,
                                                             }}>
-                                                                {onlineToday ? ' Online' : ' Offline'}
+                                                                {onlineToday ? ' Tersedia' : 'Jadwal Tidak Tersedia'}
                                                             </span>
                                                         </div>
 
@@ -921,7 +921,7 @@ const Appointments = () => {
                                                         }}
                                                         onMouseEnter={e => { if (canBook) e.target.style.background = '#dbeafe'; }}
                                                         onMouseLeave={e => { if (canBook) e.target.style.background = '#eff6ff'; }}>
-                                                        {noSchedule ? 'Offline' : 'Pilih Jadwal'}
+                                                        {noSchedule ? 'Jadwal Tidak Tersedia' : 'Pilih Jadwal'}
                                                     </button>
                                                 </div>
                                             </div>

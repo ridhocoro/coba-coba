@@ -2,6 +2,11 @@
  * doctor/shared.js
  * Konstanta, helper, dan komponen UI yang digunakan bersama
  * oleh semua section di Doctor Dashboard.
+ * 
+ * PERUBAHAN (20 Apr 2026):
+ * - Menambahkan fungsi getAPPTSlotsForDay() untuk mendukung jadwal janji temu berbeda per hari
+ * - Senin-Jumat: 08:00 - 20:00
+ * - Sabtu: 08:00 - 18:00
  */
 import React from 'react';
 
@@ -29,7 +34,40 @@ const generateConsSlots = () => {
 };
 
 export const CONS_SLOTS = generateConsSlots();
-export const APPT_SLOTS = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00'];
+
+/**
+ * Slot janji temu berbeda per hari
+ * Senin-Jumat (1-5): 08:00 - 20:00
+ * Sabtu (6): 08:00 - 18:00
+ * Dengan istirahat siang pukul 12:00-13:00
+ */
+export const getAPPTSlotsForDay = (dayNum) => {
+    const weekdaySlots = [
+        '08:00','09:00','10:00','11:00',
+        '13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'
+    ];
+    const saturdaySlots = [
+        '08:00','09:00','10:00','11:00',
+        '13:00','14:00','15:00','16:00','17:00','18:00'
+    ];
+    
+    // dayNum: 1=Senin, 2=Selasa, 3=Rabu, 4=Kamis, 5=Jumat, 6=Sabtu
+    if (dayNum >= 1 && dayNum <= 5) {
+        return weekdaySlots;
+    } else if (dayNum === 6) {
+        return saturdaySlots;
+    }
+    return [];
+};
+
+/**
+ * APPT_SLOTS untuk kompatibilitas backward
+ * Gabungan semua slot yang mungkin (untuk ScheduleGrid)
+ */
+export const APPT_SLOTS = [
+    '08:00','09:00','10:00','11:00',
+    '13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'
+];
 
 export const DAYS_INFO = [
     { val: 1, label: 'Senin' },
@@ -168,17 +206,28 @@ export const SectionHeader = ({ title, subtitle, action }) => (
     </div>
 );
 
-export const ScheduleGrid = ({ schedule, allowedSlots, onChange, color = colors.primary }) => (
+/**
+ * ScheduleGrid dengan dukungan slot dinamis per hari
+ * PERUBAHAN: Menambahkan parameter dayNum untuk mendapatkan slot yang sesuai
+ */
+export const ScheduleGrid = ({ schedule, allowedSlots, onChange, color = colors.primary, isDynamicSlots = false }) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {DAYS_INFO.map(day => {
             const key       = String(day.val);
             const activeSet = new Set(schedule[key] || []);
+            
+            // Tentukan slot yang digunakan untuk hari ini
+            let daySlots = allowedSlots;
+            if (isDynamicSlots) {
+                daySlots = getAPPTSlotsForDay(day.val);
+            }
+            
             const hasAny    = activeSet.size > 0;
             return (
                 <div key={day.val} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: hasAny ? `${color}08` : '#f8fafc', border: `1px solid ${hasAny ? color + '30' : colors.border}`, transition: 'all .15s' }}>
                     <div style={{ fontWeight: 700, fontSize: 13, color: hasAny ? color : colors.muted }}>{day.label}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {allowedSlots.map(slot => {
+                        {daySlots.map(slot => {
                             const active = activeSet.has(slot);
                             return (
                                 <button key={slot} type="button" onClick={() => onChange(key, slot)} style={{ padding: '5px 11px', borderRadius: 7, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all .15s', border: `2px solid ${active ? color : colors.border}`, background: active ? color : '#fff', color: active ? '#fff' : colors.muted }}>
