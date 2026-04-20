@@ -1279,21 +1279,21 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         // CATATAN DOKTER & DIAGNOSIS
         // Catatan Dokter: Rata KIRI, Times-Roman size 11 (TIDAK BOLD)
         // ──────────────────────────────────────────────────────────────────────
-        if (rx?.doctorNotes || consultation.diagnosis) {
-            // Label "Catatan Dokter" - Rata kiri, Times-Roman (TIDAK BOLD)
-            doc.font('Times-Roman').fontSize(11).text('Catatan Dokter', 50);
+        // if (rx?.doctorNotes || consultation.diagnosis) {
+        //     // Label "Catatan Dokter" - Rata kiri, Times-Roman (TIDAK BOLD)
+        //     doc.font('Times-Roman').fontSize(11).text('Catatan Dokter', 50);
             
-            // Diagnosis - Rata kiri, Times-Roman
-            if (consultation.diagnosis) {
-                doc.font('Times-Roman').fontSize(11).text(`Diagnosis: ${consultation.diagnosis}`, 50, doc.y, { width: 500 });
-            }
+        //     // Diagnosis - Rata kiri, Times-Roman
+        //     if (consultation.diagnosis) {
+        //         doc.font('Times-Roman').fontSize(11).text(`Diagnosis: ${consultation.diagnosis}`, 50, doc.y, { width: 500 });
+        //     }
             
-            // Doctor Notes - Rata kiri, Times-Roman
-            if (rx?.doctorNotes) {
-                doc.font('Times-Roman').fontSize(11).text(rx.doctorNotes, 50, doc.y, { width: 500 });
-            }
-            doc.moveDown(0.4);
-        }
+        //     // Doctor Notes - Rata kiri, Times-Roman
+        //     if (rx?.doctorNotes) {
+        //         doc.font('Times-Roman').fontSize(11).text(rx.doctorNotes, 50, doc.y, { width: 500 });
+        //     }
+        //     doc.moveDown(0.4);
+        // }
 
         doc.moveDown(1.5);
 
@@ -1450,7 +1450,9 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         });
         doc.pipe(res);
  
+        // ──────────────────────────────────────────────────────────────────────
         // HEADER
+        // ──────────────────────────────────────────────────────────────────────
         const headerStartX = 50;
         const headerStartY = doc.y;
         const logoSize = 55;
@@ -1470,81 +1472,103 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         doc.font('Times-Roman').fontSize(10).text('Telp. (62251) 8422094', 50, headerTextStartY + 40, { align: 'center', width: 500 });
  
         doc.y = headerStartY + logoSize + 5;
-        doc.moveDown(0.3);
+        
+        doc.moveDown(0.2);
         doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.4);
+        doc.moveDown(0.6);
  
+        // ──────────────────────────────────────────────────────────────────────
+        // TITLE
+        // ──────────────────────────────────────────────────────────────────────
         doc.font('Times-Bold').fontSize(12).text('REKAM MEDIS', { align: 'center' });
-        doc.moveDown(0.3);
+        doc.moveDown(0.5);
  
-        const tgl = new Date(consultation.endTime || consultation.scheduledAt || consultation.createdAt);
+        const tgl = new Date(consultation.endTime || consultation.scheduledAt || consultation.createdAt)
+            .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
  
-        // FORM PASIEN - SPASI MINIMAL, RATA KIRI
+        // ──────────────────────────────────────────────────────────────────────
+        // PATIENT INFO - ALL SIZE 11
+        // ──────────────────────────────────────────────────────────────────────
         const labelX = 50;
         const valueX = 130;
-        let currentY = doc.y;
- 
-        doc.font('Times-Roman').fontSize(9);
+        doc.font('Times-Roman').fontSize(11);
         
-        doc.text('Pasien', labelX, currentY);
-        doc.text(`: ${patient?.name || 'Pasien'}`, valueX, currentY);
-        currentY += 10;
+        doc.text('Pasien', labelX, doc.y, { width: 100 });
+        doc.text(`: ${patient?.name || 'Pasien'}`, valueX, doc.y - 14);
+        doc.moveDown(0.4);
         
-        doc.text('ID Pasien', labelX, currentY);
-        doc.text(`: ${consultation.userId.toString().slice(-8).toUpperCase()}`, valueX, currentY);
-        currentY += 10;
+        doc.text('ID Pasien', labelX, doc.y, { width: 100 });
+        doc.text(`: ${consultation.userId.toString().slice(-8).toUpperCase()}`, valueX, doc.y - 14);
+        doc.moveDown(0.4);
         
-        doc.text('Tanggal', labelX, currentY);
-        doc.text(`: ${tgl.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, valueX, currentY);
-        currentY += 10;
+        doc.text('Tanggal', labelX, doc.y, { width: 100 });
+        doc.text(`: ${tgl}`, valueX, doc.y - 14);
+        doc.moveDown(0.4);
         
-        doc.text('Dokter', labelX, currentY);
-        doc.text(`: ${fmtDoctorName(doctor)}`, valueX, currentY);
-        currentY += 12;
- 
-        doc.y = currentY;
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.text('Dokter', labelX, doc.y, { width: 100 });
+        doc.text(`: ${fmtDoctorName(doctor)}`, valueX, doc.y - 14);
+        doc.moveDown(0.4);
+        
+        if (doctor?.specialization) {
+            doc.text('Spesialisasi', labelX, doc.y, { width: 100 });
+            doc.text(`: ${doctor.specialization}`, valueX, doc.y - 14);
+            doc.moveDown(0.4);
+        }
+        
         doc.moveDown(0.3);
- 
-        // SOAP - RATA KIRI, TANPA GARIS PEMISAH LAINNYA
-        doc.font('Times-Bold').fontSize(9.5).text('S — Keluhan (Subjective)', 50);
-        doc.font('Times-Roman').fontSize(9).text(consultation.symptoms || '-', 50, doc.y, { width: 500 });
-        doc.moveDown(0.25);
- 
-        if (consultation.medicalHistory) {
-            doc.font('Times-Bold').fontSize(9.5).text('Riwayat Penyakit', 50);
-            doc.font('Times-Roman').fontSize(9).text(consultation.medicalHistory, 50, doc.y, { width: 500 });
-            doc.moveDown(0.25);
-        }
- 
-        doc.font('Times-Bold').fontSize(9.5).text('O — Pemeriksaan (Objective)', 50);
-        doc.font('Times-Roman').fontSize(9).text(mr.objectiveFindings || '-', 50, doc.y, { width: 500 });
-        doc.moveDown(0.25);
- 
-        doc.font('Times-Bold').fontSize(9.5).text('A — Diagnosis (Assessment)', 50);
-        doc.font('Times-Roman').fontSize(9).text(mr.assessment || '-', 50, doc.y, { width: 500 });
-        doc.moveDown(0.25);
- 
-        doc.font('Times-Bold').fontSize(9.5).text('P — Rencana (Plan)', 50);
-        doc.font('Times-Roman').fontSize(9).text(mr.plan || '-', 50, doc.y, { width: 500 });
-        doc.moveDown(0.25);
- 
-        if (mr.doctorNotes) {
-            doc.font('Times-Bold').fontSize(9.5).text('Catatan Dokter', 50);
-            doc.font('Times-Roman').fontSize(9).text(mr.doctorNotes, 50, doc.y, { width: 500 });
-            doc.moveDown(0.25);
-        }
- 
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
         doc.moveDown(0.5);
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.3);
  
-        // TANGGAL DAN TANDA TANGAN - SEJAJAR, DALAM BATAS HEADER
-        const tglRekamMedis = mr.completedAt ? new Date(mr.completedAt) : tgl;
-        const signatureX = 350;
-        const signatureWidth = 180;
+        // ──────────────────────────────────────────────────────────────────────
+        // SOAP SECTIONS - CLEAN LABELS, ALL SIZE 11
+        // Labels: Subjective, Objective, Assessment, Plan (tanpa prefix S/O/A/P)
+        // ──────────────────────────────────────────────────────────────────────
         
-        doc.font('Times-Roman').fontSize(9);
+        // SUBJECTIVE
+        doc.font('Times-Bold').fontSize(11).text('Subjective', 50);
+        doc.font('Times-Roman').fontSize(11).text(consultation.symptoms || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.4);
+        
+        if (consultation.medicalHistory) {
+            doc.font('Times-Bold').fontSize(11).text('Riwayat Penyakit', 50);
+            doc.font('Times-Roman').fontSize(11).text(consultation.medicalHistory, 50, doc.y, { width: 500 });
+            doc.moveDown(0.4);
+        }
+        
+        // OBJECTIVE
+        doc.font('Times-Bold').fontSize(11).text('Objective', 50);
+        doc.font('Times-Roman').fontSize(11).text(mr.objectiveFindings || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.4);
+        
+        // ASSESSMENT
+        doc.font('Times-Bold').fontSize(11).text('Assessment', 50);
+        doc.font('Times-Roman').fontSize(11).text(mr.assessment || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.4);
+        
+        // PLAN
+        doc.font('Times-Bold').fontSize(11).text('Plan', 50);
+        doc.font('Times-Roman').fontSize(11).text(mr.plan || '-', 50, doc.y, { width: 500 });
+        doc.moveDown(0.4);
+        
+        // CATATAN DOKTER (Optional)
+        if (mr.doctorNotes) {
+            doc.font('Times-Bold').fontSize(11).text('Catatan Dokter', 50);
+            doc.font('Times-Roman').fontSize(11).text(mr.doctorNotes, 50, doc.y, { width: 500 });
+            doc.moveDown(0.4);
+        }
+ 
+        doc.moveDown(0.8);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.4);
+        
+        // ──────────────────────────────────────────────────────────────────────
+        // TANGGAL DAN TANDA TANGAN - GESER KE KANAN
+        // ──────────────────────────────────────────────────────────────────────
+        const tglRekamMedis = mr.completedAt ? new Date(mr.completedAt) : tgl;
+        const signatureX = 380;
+        const signatureWidth = 160;
+        
+        doc.font('Times-Roman').fontSize(11);
         doc.text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglRekamMedis.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 
             signatureX, doc.y, { width: signatureWidth, align: 'center' });
         doc.moveDown(1.6);
@@ -1557,13 +1581,22 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
                 const sigImgX = signatureX + (signatureWidth - imgSize) / 2;
                 doc.image(signaturePath, sigImgX, signY, { width: imgSize, height: imgSize });
                 const nameY = signY + imgSize + 3;
-                doc.fontSize(8.5).font('Times-Bold').text(`${fmtDoctorName(doctor)}`, signatureX, nameY, { width: signatureWidth, align: 'center' });
+                doc.fontSize(10).font('Times-Bold').text(`${fmtDoctorName(doctor)}`, signatureX, nameY, { width: signatureWidth, align: 'center' });
+                if (doctor?.specialization) {
+                    doc.fontSize(9).font('Times-Roman').text(doctor.specialization, signatureX, nameY + 12, { width: signatureWidth, align: 'center' });
+                }
             } catch (imgErr) {
                 console.warn('[medical-record/pdf] Failed to load signature:', imgErr.message);
-                doc.font('Times-Bold').fontSize(9).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+                doc.font('Times-Bold').fontSize(10).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+                if (doctor?.specialization) {
+                    doc.fontSize(9).font('Times-Roman').text(doctor.specialization, signatureX, signY + 14, { width: signatureWidth, align: 'center' });
+                }
             }
         } else {
-            doc.font('Times-Bold').fontSize(9).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+            doc.font('Times-Bold').fontSize(10).text(`${fmtDoctorName(doctor)}`, signatureX, signY, { width: signatureWidth, align: 'center' });
+            if (doctor?.specialization) {
+                doc.fontSize(9).font('Times-Roman').text(doctor.specialization, signatureX, signY + 14, { width: signatureWidth, align: 'center' });
+            }
         }
  
         doc.end();
@@ -1863,10 +1896,10 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
 
         doc.moveDown(0.6);
 
-        if (sickLetter.notes && sickLetter.notes.toLowerCase() !== '-') {
-            doc.text(`Catatan: ${sickLetter.notes}`, 50, doc.y, { align: 'left', width: 500 });
-            doc.moveDown(0.6);
-        }
+        // if (sickLetter.notes && sickLetter.notes.toLowerCase() !== '-') {
+        //     doc.text(`Catatan: ${sickLetter.notes}`, 50, doc.y, { align: 'left', width: 500 });
+        //     doc.moveDown(0.6);
+        // }
 
         doc.moveDown(1.5);
 

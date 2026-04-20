@@ -897,9 +897,7 @@ const Appointments = () => {
                                                                 <span style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>
                                                                     {Number(rating).toFixed(1)}
                                                                 </span>
-                                                                {doc.totalReviews != null && (
-                                                                    <span style={{ fontSize: 11, color: '#9ca3af' }}>({doc.totalReviews})</span>
-                                                                )}
+                                                                
                                                             </div>
                                                         )}
                                                         {/* Pengalaman */}
