@@ -51,6 +51,13 @@ const SectionBeranda = () => {
     const [loading,  setLoading]  = useState(true);
     const [time,     setTime]     = useState(new Date());
     const [tab,      setTab]      = useState('today');
+   
+    
+    // Data untuk card
+    const [completedConsultations, setCompletedConsultations] = useState([]);
+    const [completedAppointments, setCompletedAppointments] = useState([]);
+    const [cancelledConsultations, setCancelledConsultations] = useState([]);
+    const [cancelledAppointments, setCancelledAppointments] = useState([]);
 
     // Jam berjalan
     useEffect(() => {
@@ -68,13 +75,16 @@ const SectionBeranda = () => {
                 api.get('/api/consultations/doctor/all'),
             ]);
 
-            if (statsRes.status === 'fulfilled') setStats(statsRes.value.data.stats);
+            if (statsRes.status === 'fulfilled') {
+                setStats(statsRes.value.data.stats);
+                console.log('Stats:', statsRes.value.data.stats);
+            }
 
+            // Normalize appointments
             const appts = (apptRes.status === 'fulfilled'
                 ? apptRes.value.data.appointments || []
                 : []
-            ).filter(a => ['scheduled','checked_in','completed'].includes(a.status))
-             .map(a => ({
+            ).map(a => ({
                 _id          : a._id,
                 type         : 'appointment',
                 sortAt       : a.scheduledAt || a.appointmentDate,
@@ -85,11 +95,11 @@ const SectionBeranda = () => {
                 scheduledAt  : a.scheduledAt || a.appointmentDate,
             }));
 
+            // Normalize consultations
             const cons = (consRes.status === 'fulfilled'
                 ? consRes.value.data.consultations || consRes.value.data || []
                 : []
-            ).filter(c => ['confirmed','in_progress','paid','scheduled','ongoing','completed'].includes(c.status))
-             .map(c => ({
+            ).map(c => ({
                 _id             : c._id,
                 type            : 'consultation',
                 sortAt          : c.scheduledAt,
@@ -105,11 +115,61 @@ const SectionBeranda = () => {
                 consultationType: c.consultationType || 'chat',
             }));
 
+            // DEBUG: Lihat status yang tersedia
+            console.log('=== STATUS YANG TERSEDIA ===');
+            console.log('Appointment statuses:', [...new Set(appts.map(a => a.status))]);
+            console.log('Consultation statuses:', [...new Set(cons.map(c => c.status))]);
+
             const merged = [...appts, ...cons].sort((a, b) =>
                 new Date(a.sortAt) - new Date(b.sortAt)
             );
             setAllItems(merged);
-        } catch { toast.error('Gagal memuat data beranda'); }
+
+            // ================================================================
+            // 1. SELESAI (COMPLETED)
+            // ================================================================
+            // Konsultasi selesai: status 'completed' atau 'no_show'
+            const completedConsultationStatuses = ['completed', 'no_show'];
+            const completedCons = merged.filter(item => 
+                item.type === 'consultation' && completedConsultationStatuses.includes(item.status)
+            );
+            setCompletedConsultations(completedCons);
+            
+            // Janji temu selesai: status 'completed'
+            const completedAppointmentStatuses = ['completed'];
+            const completedAppts = merged.filter(item => 
+                item.type === 'appointment' && completedAppointmentStatuses.includes(item.status)
+            );
+            setCompletedAppointments(completedAppts);
+
+            // ================================================================
+            // 2. DIBATALKAN (CANCELLED)
+            // ================================================================
+            const cancelledStatuses = [
+                'cancelled', 'cancelled_by_user', 'cancelled_by_doctor', 'cancelled_by_admin',
+                'expired', 'refunded', 'refund_failed', 'doctor_no_show'
+            ];
+            
+            const cancelledCons = merged.filter(item => 
+                item.type === 'consultation' && cancelledStatuses.includes(item.status)
+            );
+            setCancelledConsultations(cancelledCons);
+            
+            const cancelledAppts = merged.filter(item => 
+                item.type === 'appointment' && cancelledStatuses.includes(item.status)
+            );
+            setCancelledAppointments(cancelledAppts);
+
+            console.log('=== HASIL FILTER ===');
+            console.log('Completed Consultations:', completedCons.length);
+            console.log('Completed Appointments:', completedAppts.length);
+            console.log('Cancelled Consultations:', cancelledCons.length);
+            console.log('Cancelled Appointments:', cancelledAppts.length);
+
+        } catch (err) {
+            console.error('Fetch error:', err);
+            toast.error('Gagal memuat data beranda');
+        }
         finally { setLoading(false); }
     }, []);
 
@@ -135,10 +195,17 @@ const SectionBeranda = () => {
         });
     }, [allItems]);
 
-    // ── Filter ──────────────────────────────────────────────────────────────
+    // ── Filter for main schedule ──────────────────────────────────────────────
     const now = new Date();
+    const excludeStatuses = [
+        'completed', 'no_show', 
+        'cancelled', 'cancelled_by_user', 'cancelled_by_doctor', 'cancelled_by_admin',
+        'expired', 'refunded', 'refund_failed', 'doctor_no_show'
+    ];
+    
     const filtered = allItems.filter(s => {
         if (!s.sortAt) return false;
+        if (excludeStatuses.includes(s.status)) return false;
         const d = new Date(s.sortAt);
         if (tab === 'today')    return isToday(d);
         if (tab === 'week')     return isThisWeek(d);
@@ -146,7 +213,7 @@ const SectionBeranda = () => {
         return true;
     });
 
-    // ── Group by date ────────────────────────────────────────────────────────
+    // ── Group by date for main schedule ────────────────────────────────────────
     const grouped = filtered.reduce((acc, s) => {
         const key = s.sortAt ? toDateKey(s.sortAt) : 'Tanggal tidak diketahui';
         if (!acc[key]) acc[key] = [];
@@ -165,15 +232,153 @@ const SectionBeranda = () => {
 
     const doctorName = doctorProfile ? fmtDoctorName(doctorProfile) : user?.name;
 
-    // ── Metric cards yang sudah dirapihkan (Rating dihapus dari sini) ────────
-    const METRIC_CARDS = stats ? [
-        { label: 'Pasien Hari Ini', val: stats.apptToday, icon: '👥', color: '#7c3aed', bg: '#f5f3ff' },
-        { label: 'Konsultasi Hari Ini', val: stats.consToday, icon: '🩺', color: '#2563eb', bg: '#eff6ff' },
-        { label: 'Konsultasi Selesai', val: stats.consCompleted, icon: '✅', color: '#059669', bg: '#f0fdf4' },
-        { label: 'Konsultasi Upcoming', val: stats.consUpcoming, icon: '⏳', color: '#d97706', bg: '#fffbeb' },
-        { label: 'Janji Temu Upcoming', val: stats.apptUpcoming, icon: '📅', color: '#0891b2', bg: '#ecfeff' },
-        { label: 'Dibatalkan', val: (stats.consCancelled || 0) + (stats.apptCancelled || 0), icon: '🚫', color: '#dc2626', bg: '#fef2f2' },
-    ] : [];
+    // Helper render item
+    const renderScheduleItem = (s, isPast = false) => {
+        const isOnline = s.type === 'consultation';
+        const rowAccent = (item) => {
+            if (item.type === 'consultation') return CONS_STATUS[item.status]?.color || colors.primary;
+            return APPT_STATUS[item.status]?.color || colors.border;
+        };
+        
+        return (
+            <div
+                key={s._id}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 16,
+                    padding: '14px 18px', borderRadius: 14,
+                    background: isPast ? '#fafafa' : '#fff',
+                    border: `1px solid ${colors.border}`,
+                    borderLeft: `4px solid ${rowAccent(s)}`,
+                    opacity: isPast ? 0.75 : 1,
+                    cursor: isOnline ? 'pointer' : 'default',
+                    transition: 'all 0.2s',
+                    boxShadow: '0 1px 2px rgba(0,0,0,.03)',
+                }}
+                onClick={() => isOnline && navigate(`/consultations/${s._id}`)}
+                onMouseEnter={e => {
+                    if (isOnline) {
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,.12)';
+                        e.currentTarget.style.transform = 'translateX(2px)';
+                    }
+                }}
+                onMouseLeave={e => {
+                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,.03)';
+                    e.currentTarget.style.transform = 'translateX(0)';
+                }}
+            >
+                <div style={{
+                    fontWeight: 800, fontSize: 15,
+                    color: isPast ? colors.muted : colors.primary,
+                    width: 56, flexShrink: 0, textAlign: 'center',
+                }}>
+                    {s.time}
+                    <div style={{ fontSize: 9, fontWeight: 500, color: colors.subtle }}>WIB</div>
+                </div>
+
+                <div style={{
+                    width: 10, height: 10, borderRadius: '50%',
+                    background: isOnline ? '#2563eb' : '#7c3aed',
+                    flexShrink: 0,
+                }} />
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                        fontWeight: 700, fontSize: 14,
+                        color: colors.text,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                        {s.patientName}
+                    </div>
+                    <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>
+                        {isOnline
+                            ? `💬 Konsultasi Online${s.consultationType === 'video_call' ? ' (Video)' : ' (Chat)'}`
+                            : '📅 Janji Temu Offline'
+                        }
+                        {s.status === 'no_show' && (
+                            <span style={{ marginLeft: 10, color: '#f59e0b' }}>
+                                ⚠️ Pasien Tidak Hadir
+                            </span>
+                        )}
+                        {s.patientPhone && s.status !== 'no_show' && (
+                            <span style={{ marginLeft: 10, color: colors.subtle }}>
+                                📞 {s.patientPhone}
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    <SBadge
+                        status={s.status}
+                        map={{ ...CONS_STATUS, ...APPT_STATUS }}
+                    />
+                    {isOnline && ['confirmed','in_progress','paid','ongoing'].includes(s.status) && (
+                        <Btn
+                            size="sm" variant="outline"
+                            onClick={e => { e.stopPropagation(); navigate(`/consultations/${s._id}`); }}
+                        >
+                            💬 Buka
+                        </Btn>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    // ── METRIC CARDS ──
+    const totalCompleted = completedConsultations.length + completedAppointments.length;
+    const totalCancelled = cancelledConsultations.length + cancelledAppointments.length;
+
+    const METRIC_CARDS = [
+        { 
+            label: 'Janji Temu Hari Ini', 
+            val: stats?.patientsTodayCount || stats?.apptToday || 0, 
+            icon: '👥', 
+            color: '#7c3aed', 
+            bg: '#f5f3ff',
+            key: 'patients'
+        },
+        { 
+            label: 'Konsultasi Hari Ini', 
+            val: stats?.consToday || 0, 
+            icon: '🩺', 
+            color: '#2563eb', 
+            bg: '#eff6ff',
+            key: 'consToday'
+        },
+        { 
+            label: 'Selesai', 
+            val: totalCompleted,
+            icon: '✅', 
+            color: '#059669', 
+            bg: '#f0fdf4',
+            key: 'completed'
+        },
+        { 
+            label: 'Konsultasi Upcoming', 
+            val: stats?.consUpcoming || 0, 
+            icon: '⏳', 
+            color: '#d97706', 
+            bg: '#fffbeb',
+            key: 'consUpcoming'
+        },
+        { 
+            label: 'Janji Temu Upcoming', 
+            val: stats?.apptUpcoming || 0, 
+            icon: '📅', 
+            color: '#0891b2', 
+            bg: '#ecfeff',
+            key: 'apptUpcoming'
+        },
+        { 
+            label: 'Dibatalkan', 
+            val: totalCancelled,
+            icon: '🚫', 
+            color: '#dc2626', 
+            bg: '#fef2f2',
+            key: 'cancelled'
+        },
+    ];
 
     const TABS = [
         { key: 'today',    label: '📅 Hari Ini' },
@@ -182,14 +387,9 @@ const SectionBeranda = () => {
         { key: 'all',      label: '📋 Semua' },
     ];
 
-    const rowAccent = (s) => {
-        if (s.type === 'consultation') return CONS_STATUS[s.status]?.color || colors.primary;
-        return APPT_STATUS[s.status]?.color || colors.border;
-    };
-
     return (
         <div>
-            {/* ── HEADER STRIP dengan Rating di bawah nama dokter ── */}
+            {/* ── HEADER STRIP ── */}
             <div style={{
                 background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #2563eb 100%)',
                 borderRadius: 20, padding: '28px 32px', marginBottom: 28,
@@ -207,7 +407,6 @@ const SectionBeranda = () => {
                         <div style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
                             {doctorName}
                         </div>
-                        {/* ⭐ RATING DIPINDAHKAN KE SINI ⭐ */}
                         {stats?.rating != null && (
                             <div style={{ 
                                 display: 'inline-flex', 
@@ -216,7 +415,6 @@ const SectionBeranda = () => {
                                 background: 'rgba(255,255,255,.1)',
                                 padding: '4px 12px',
                                 borderRadius: 20,
-                                backdropFilter: 'blur(4px)',
                             }}>
                                 <span style={{ fontSize: 14, color: '#fbbf24' }}>★</span>
                                 <span style={{ fontSize: 14, fontWeight: 600, color: '#fde68a' }}>
@@ -275,27 +473,23 @@ const SectionBeranda = () => {
 
             {loading ? <Spinner /> : (
                 <>
-                    {/* ── METRIC CARDS (dirapihkan) ── */}
+                    {/* ── METRIC CARDS dengan GRID ── */}
                     <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                        gap: 16, marginBottom: 32,
+                        gap: 16, 
+                        marginBottom: 32,
                     }}>
-                        {METRIC_CARDS.map((c, i) => (
-                            <Card key={i} style={{ 
-                                padding: '20px 18px', 
-                                borderRadius: 16,
-                                transition: 'transform 0.2s, box-shadow 0.2s',
-                                cursor: 'pointer',
-                            }}
-                            onMouseEnter={e => {
-                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,.08)';
-                            }}
-                            onMouseLeave={e => {
-                                e.currentTarget.style.transform = 'translateY(0)';
-                                e.currentTarget.style.boxShadow = 'none';
-                            }}>
+                        {METRIC_CARDS.map((c) => (
+                            <Card 
+                                key={c.key}
+                                style={{ 
+                                    padding: '20px 18px', 
+                                    borderRadius: 16,
+                                    border: `1px solid ${colors.border}`,
+                                    background: '#fff',
+                                }}
+                            >
                                 <div style={{ 
                                     fontSize: 28, marginBottom: 12,
                                     background: c.bg, width: 48, height: 48,
@@ -347,10 +541,9 @@ const SectionBeranda = () => {
                                 </div>
                             </div>
 
-                            {/* Tab filter yang lebih menarik */}
+                            {/* Tab filter */}
                             <div style={{
-                                display: 'flex', gap: 8,
-                                flexWrap: 'wrap',
+                                display: 'flex', gap: 8, flexWrap: 'wrap',
                             }}>
                                 {TABS.map(t => (
                                     <button
@@ -411,86 +604,8 @@ const SectionBeranda = () => {
 
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                             {grouped[dateKey].map((s, idx) => {
-                                                const isOnline = s.type === 'consultation';
-                                                const isPast   = new Date(s.sortAt) < now;
-                                                return (
-                                                    <div
-                                                        key={`${s._id}-${idx}`}
-                                                        style={{
-                                                            display: 'flex', alignItems: 'center', gap: 16,
-                                                            padding: '14px 18px', borderRadius: 14,
-                                                            background: isPast ? '#fafafa' : '#fff',
-                                                            border: `1px solid ${colors.border}`,
-                                                            borderLeft: `4px solid ${rowAccent(s)}`,
-                                                            opacity: isPast ? 0.75 : 1,
-                                                            cursor: isOnline ? 'pointer' : 'default',
-                                                            transition: 'all 0.2s',
-                                                            boxShadow: '0 1px 2px rgba(0,0,0,.03)',
-                                                        }}
-                                                        onClick={() => isOnline && navigate(`/consultations/${s._id}`)}
-                                                        onMouseEnter={e => {
-                                                            if (isOnline) {
-                                                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,.12)';
-                                                                e.currentTarget.style.transform = 'translateX(2px)';
-                                                            }
-                                                        }}
-                                                        onMouseLeave={e => {
-                                                            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,.03)';
-                                                            e.currentTarget.style.transform = 'translateX(0)';
-                                                        }}
-                                                    >
-                                                        <div style={{
-                                                            fontWeight: 800, fontSize: 15,
-                                                            color: isPast ? colors.muted : colors.primary,
-                                                            width: 56, flexShrink: 0, textAlign: 'center',
-                                                        }}>
-                                                            {s.time}
-                                                            <div style={{ fontSize: 9, fontWeight: 500, color: colors.subtle }}>WIB</div>
-                                                        </div>
-
-                                                        <div style={{
-                                                            width: 10, height: 10, borderRadius: '50%',
-                                                            background: isOnline ? '#2563eb' : '#7c3aed',
-                                                            flexShrink: 0,
-                                                        }} />
-
-                                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{
-                                                                fontWeight: 700, fontSize: 14,
-                                                                color: colors.text,
-                                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                                            }}>
-                                                                {s.patientName}
-                                                            </div>
-                                                            <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>
-                                                                {isOnline
-                                                                    ? `💬 Konsultasi Online${s.consultationType === 'video_call' ? ' (Video)' : ' (Chat)'}`
-                                                                    : '📅 Janji Temu Offline'
-                                                                }
-                                                                {s.patientPhone && (
-                                                                    <span style={{ marginLeft: 10, color: colors.subtle }}>
-                                                                        📞 {s.patientPhone}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                                                            <SBadge
-                                                                status={s.status}
-                                                                map={{ ...CONS_STATUS, ...APPT_STATUS }}
-                                                            />
-                                                            {isOnline && ['confirmed','in_progress','paid','ongoing'].includes(s.status) && (
-                                                                <Btn
-                                                                    size="sm" variant="outline"
-                                                                    onClick={e => { e.stopPropagation(); navigate(`/consultations/${s._id}`); }}
-                                                                >
-                                                                    💬 Buka
-                                                                </Btn>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
+                                                const isPast = new Date(s.sortAt) < now;
+                                                return renderScheduleItem(s, isPast);
                                             })}
                                         </div>
                                     </div>

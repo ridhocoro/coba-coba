@@ -10,57 +10,24 @@ import {
 } from './shared';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION: SURAT SAKIT
+// SECTION: SURAT SAKIT (READ-ONLY)
 // ═══════════════════════════════════════════════════════════════════════════════
 const SectionSuratSakit = () => {
     const [consultations, setConsultations] = useState([]);
     const [loading, setLoading]   = useState(true);
-    const [modalOpen, setModalOpen] = useState(false);
-    const [selCons, setSelCons]   = useState(null);
-    const [form, setForm] = useState({ diagnosis: '', notes: '', restDays: 3, patientAge: '', patientGender: '', patientWeight: '' });
-    const [saving, setSaving]     = useState(false);
-    const [issuing, setIssuing]   = useState({});
+    const [detail, setDetail]     = useState(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             const r = await api.get('/api/consultations/doctor/all');
             const all = r.data.consultations || r.data || [];
-            setConsultations(all.filter(c => ['in_progress','ongoing','completed','confirmed','paid','scheduled'].includes(c.status)));
+            setConsultations(all.filter(c => ['in_progress','ongoing','completed','confirmed','paid','scheduled','no_show'].includes(c.status)));
         } catch { toast.error('Gagal memuat data'); }
         finally { setLoading(false); }
     }, []);
 
     useEffect(() => { fetchData(); }, [fetchData]);
-
-    const openCreate = (c) => {
-        setSelCons(c);
-        setForm({ diagnosis: '', notes: '', restDays: 3, patientAge: '', patientGender: '', patientWeight: '' });
-        setModalOpen(true);
-    };
-
-    const handleCreate = async () => {
-        if (!form.diagnosis.trim()) { toast.error('Diagnosis wajib diisi'); return; }
-        if (!form.restDays || Number(form.restDays) < 1) { toast.error('Lama istirahat minimal 1 hari'); return; }
-        setSaving(true);
-        try {
-            await api.post(`/api/consultations/${selCons._id}/sick-letter`, form);
-            toast.success('Surat sakit (draft) berhasil dibuat ✅');
-            setModalOpen(false);
-            fetchData();
-        } catch (e) { toast.error(e.response?.data?.message || 'Gagal membuat surat sakit'); }
-        finally { setSaving(false); }
-    };
-
-    const handleIssue = async (consultationId) => {
-        setIssuing(p => ({ ...p, [consultationId]: true }));
-        try {
-            await api.put(`/api/consultations/${consultationId}/sick-letter/issue`);
-            toast.success('Surat sakit diterbitkan ✅');
-            fetchData();
-        } catch (e) { toast.error(e.response?.data?.message || 'Gagal menerbitkan'); }
-        finally { setIssuing(p => ({ ...p, [consultationId]: false })); }
-    };
 
     const downloadPDF = async (consultationId, letterNum) => {
         try {
@@ -71,143 +38,205 @@ const SectionSuratSakit = () => {
             link.setAttribute('download', `surat-sakit-${letterNum || consultationId}.pdf`);
             document.body.appendChild(link); link.click(); link.remove();
             window.URL.revokeObjectURL(url);
-            toast.success('PDF berhasil diunduh');
-        } catch { toast.error('Gagal mengunduh PDF'); }
+            toast.success('PDF surat sakit berhasil diunduh');
+        } catch (err) {
+            console.error('Download error:', err);
+            toast.error('Gagal mengunduh PDF surat sakit');
+        }
     };
 
-    const withLetter    = consultations.filter(c => c.sickLetter);
-    const withoutLetter = consultations.filter(c => !c.sickLetter && ['in_progress','ongoing','completed','confirmed','paid','scheduled'].includes(c.status));
+    // ── Filter: hanya konsultasi yang punya surat sakit DENGAN populate ──
+    const withLetter = consultations.filter(c => {
+        // Check sickLetter dengan proper populate
+        const hasSickLetter = c.sickLetter && 
+                             typeof c.sickLetter === 'object' &&  // Sudah di-populate
+                             c.sickLetter.status && 
+                             ['draft', 'issued'].includes(c.sickLetter.status);
+        
+        // Fallback: jika sickLetter masih ID string (old data)
+        const hasLetterId = typeof c.sickLetter === 'string' && c.sickLetter.trim().length > 0;
+        
+        return hasSickLetter || hasLetterId;
+    });
 
+    // Hitung jumlah hari istirahat dengan aman
+    const calcRestDays = (startDate, endDate) => {
+        if (!startDate || !endDate) return 0;
+        try {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const days = Math.ceil((end - start) / 86400000) + 1;
+            return Math.max(0, days);
+        } catch {
+            return 0;
+        }
+    };
 
     return (
         <div>
-            <SectionHeader title="Surat Sakit" subtitle="Buat dan kelola surat keterangan sakit pasien"
+            <SectionHeader title="📄 Riwayat Surat Sakit" subtitle="Lihat dan download surat keterangan sakit pasien"
                 action={<Btn size="sm" variant="ghost" onClick={fetchData}>↻ Refresh</Btn>} />
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22 }}>
+            <Card style={{ padding: 24 }}>
+                {loading && <Spinner />}
+                {!loading && withLetter.length === 0 && (
+                    <Empty icon="📄" text="Belum ada surat sakit yang diterbitkan" />
+                )}
+                {!loading && withLetter.length > 0 && (
+                    <div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+                            {withLetter.map(c => {
+                                const sl = c.sickLetter;
+                                const isDraft  = sl?.status === 'draft';
+                                const isIssued = sl?.status === 'issued';
+                                const restDays = calcRestDays(sl?.startDate, sl?.endDate);
 
-                {/* Konsultasi belum punya surat */}
-                <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: colors.text, marginBottom: 14 }}>📋 Butuh Surat Sakit</div>
-                    {loading ? <Spinner /> : withoutLetter.length === 0 ? <Empty icon="✅" text="Semua konsultasi sudah diproses" /> : (
-                        withoutLetter.map(c => (
-                            <Card key={c._id} style={{ padding: '14px 18px', marginBottom: 10 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                    <div>
-                                        <div style={{ fontWeight: 700, fontSize: 14, color: colors.text }}>{c.userId?.name}</div>
-                                        <div style={{ fontSize: 12, color: colors.muted }}>{fmtDT(c.scheduledAt)}</div>
-                                    </div>
-                                    <SBadge status={c.status} map={CONS_STATUS} />
-                                </div>
-                                {c.symptoms && <div style={{ fontSize: 12, color: colors.muted, marginBottom: 10 }}>Keluhan: {c.symptoms.slice(0, 100)}</div>}
-                                <Btn size="sm" variant="primary" onClick={() => openCreate(c)}>📄 Buat Surat Sakit</Btn>
-                            </Card>
-                        ))
-                    )}
-                </div>
-
-                {/* Surat yang sudah dibuat */}
-                <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: colors.text, marginBottom: 14 }}>📂 Surat Sudah Dibuat</div>
-                    {loading ? <Spinner /> : withLetter.length === 0 ? <Empty icon="📄" text="Belum ada surat sakit" /> : (
-                        withLetter.map(c => {
-                            const sl = c.sickLetter;
-                            const isDraft  = sl?.status === 'draft';
-                            const isIssued = sl?.status === 'issued';
-                            return (
-                                <Card key={c._id} style={{ padding: '14px 18px', marginBottom: 10, borderLeft: `4px solid ${isIssued ? colors.success : colors.warning}` }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                        <div>
-                                            <div style={{ fontWeight: 700, fontSize: 14, color: colors.text }}>{c.userId?.name}</div>
-                                            <div style={{ fontSize: 11, color: colors.muted }}>No: {sl?.letterNumber || '(draft)'}</div>
+                                return (
+                                    <Card
+                                        key={c._id}
+                                        style={{
+                                            padding: '16px 18px',
+                                            borderLeft: `4px solid ${isIssued ? '#22c55e' : '#eab308'}`,
+                                            background: '#fafbfc',
+                                            transition: 'all 0.2s',
+                                            cursor: 'pointer',
+                                        }}
+                                        onClick={() => setDetail(c)}
+                                    >
+                                        {/* Header */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 700, fontSize: 14, color: colors.text, marginBottom: 2 }}>{c.userId?.name || 'Pasien'}</div>
+                                                <div style={{ fontSize: 11, color: colors.muted }}>
+                                                    {sl?.letterNumber ? `No: ${sl.letterNumber}` : '(Draft)'}
+                                                </div>
+                                            </div>
+                                            <span style={{
+                                                background: isIssued ? '#dcfce7' : '#fef9c3',
+                                                color: isIssued ? '#166534' : '#854d0e',
+                                                border: `1px solid ${isIssued ? '#86efac' : '#fde68a'}`,
+                                                borderRadius: 16,
+                                                padding: '3px 10px',
+                                                fontSize: 11,
+                                                fontWeight: 700,
+                                                whiteSpace: 'nowrap',
+                                            }}>
+                                                {isIssued ? '✓ Terbit' : '📝 Draft'}
+                                            </span>
                                         </div>
-                                        <span style={{
-                                            background: isIssued ? '#dcfce7' : '#fef9c3',
-                                            color: isIssued ? '#166534' : '#854d0e',
-                                            border: `1px solid ${isIssued ? '#86efac' : '#fde68a'}`,
-                                            borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700,
-                                        }}>
-                                            {isIssued ? '✓ Terbit' : '📝 Draft'}
-                                        </span>
-                                    </div>
-                                    <div style={{ fontSize: 12, color: colors.muted, marginBottom: 8 }}>
-                                        <div>Diagnosis: <strong style={{ color: colors.text }}>{sl?.diagnosis || '—'}</strong></div>
-                                        <div style={{ marginTop: 3 }}>
-                                            Periode: {fmtDate(sl?.startDate)} – {fmtDate(sl?.endDate)}
+
+                                        {/* Info */}
+                                        <div style={{ fontSize: 12, color: colors.muted, marginBottom: 10, lineHeight: 1.5 }}>
+                                            <div style={{ marginBottom: 4 }}>
+                                                <strong style={{ color: colors.text }}>Diagnosis:</strong> {sl?.diagnosis || '—'}
+                                            </div>
                                             {sl?.startDate && sl?.endDate && (
-                                                <span style={{ marginLeft: 6, fontWeight: 600, color: colors.primary }}>
-                                                    ({Math.ceil((new Date(sl.endDate) - new Date(sl.startDate)) / 86400000) + 1} hari)
-                                                </span>
+                                                <div style={{ marginBottom: 4 }}>
+                                                    <strong style={{ color: colors.text }}>Periode:</strong> {fmtDate(sl.startDate)} – {fmtDate(sl.endDate)}
+                                                    {restDays > 0 && (
+                                                        <span style={{ marginLeft: 6, fontWeight: 600, color: colors.primary }}>
+                                                            ({restDays} hari)
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {isIssued && sl?.issuedAt && (
+                                                <div style={{ color: colors.success }}>
+                                                    Diterbitkan: {fmtDT(sl.issuedAt)}
+                                                </div>
                                             )}
                                         </div>
-                                        {isIssued && sl?.issuedAt && <div style={{ marginTop: 3, color: colors.success }}>Diterbitkan: {fmtDT(sl.issuedAt)}</div>}
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                        {isDraft && (
-                                            <Btn size="sm" variant="success" disabled={issuing[c._id]} onClick={() => handleIssue(c._id)}>
-                                                {issuing[c._id] ? '…' : '✅ Terbitkan'}
-                                            </Btn>
-                                        )}
+
+                                        {/* Action */}
                                         {isIssued && (
-                                            <Btn size="sm" variant="outline" onClick={() => downloadPDF(c._id, sl.letterNumber)}>
+                                            <Btn
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    downloadPDF(c._id, sl.letterNumber);
+                                                }}
+                                                style={{ width: '100%' }}
+                                            >
                                                 ⬇ Download PDF
                                             </Btn>
                                         )}
-                                    </div>
-                                </Card>
-                            );
-                        })
-                    )}
-                </div>
-            </div>
-
-            {/* Modal buat surat */}
-            <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="📄 Buat Surat Sakit" width={560}>
-                {selCons && (
-                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 9, padding: '10px 14px', marginBottom: 18, fontSize: 13 }}>
-                        <strong>{selCons.userId?.name}</strong>
-                        <div style={{ color: colors.muted, marginTop: 2 }}>Keluhan: {selCons.symptoms || '—'}</div>
+                                    </Card>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <ProfileField label="Diagnosis" value={form.diagnosis} onChange={v => setForm(f => ({ ...f, diagnosis: v }))} required />
+            </Card>
+
+            {/* Detail modal - READ ONLY */}
+            <Modal open={!!detail} onClose={() => setDetail(null)} title="📄 Detail Surat Sakit" width={560}>
+                {detail && (
                     <div>
-                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.muted }}>Lama Istirahat (hari) <span style={{ color: colors.danger }}>*</span></label>
-                        <input
-                            type="number" min={1} max={30}
-                            value={form.restDays}
-                            onChange={e => setForm(f => ({ ...f, restDays: e.target.value }))}
-                            placeholder="mis. 3"
-                            style={{ width: '100%', padding: '8px 11px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
-                        />
-                        <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
-                            Mulai hari ini: {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} s/d {form.restDays && Number(form.restDays) >= 1 ? new Date(Date.now() + (Number(form.restDays)-1)*86400000).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+                        <div style={{ background: '#f8fafc', borderRadius: 11, padding: 14, marginBottom: 16 }}>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: colors.text, marginBottom: 4 }}>{detail.userId?.name || 'Pasien'}</div>
+                            {detail.sickLetter?.letterNumber && (
+                                <div style={{ fontSize: 12, color: colors.muted }}>No. Surat: <strong>{detail.sickLetter.letterNumber}</strong></div>
+                            )}
+                            <div style={{ fontSize: 12, color: colors.muted }}>Status: <strong>{detail.sickLetter?.status === 'issued' ? '✓ Terbit' : '📝 Draft'}</strong></div>
+                        </div>
+
+                        {/* Info Pasien */}
+                        <div style={{ background: '#f8fafc', borderRadius: 9, padding: '12px 14px', marginBottom: 16 }}>
+                            <div style={{ fontSize: 12, color: colors.text, lineHeight: 1.6 }}>
+                                {[
+                                    ['Diagnosis', detail.sickLetter?.diagnosis],
+                                    ['Usia', detail.sickLetter?.patientAge],
+                                    ['Jenis Kelamin', detail.sickLetter?.patientGender],
+                                    ['Berat Badan', detail.sickLetter?.patientWeight],
+                                ].map(([label, value]) => value && (
+                                    <div key={label} style={{ display: 'flex', gap: 12, marginBottom: 6 }}>
+                                        <span style={{ color: colors.muted, fontWeight: 600, minWidth: 100 }}>{label}</span>
+                                        <span style={{ color: colors.text }}>{value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Periode Istirahat */}
+                        {detail.sickLetter?.startDate && detail.sickLetter?.endDate && (
+                            <div style={{ background: '#f0fdf4', borderRadius: 9, padding: '12px 14px', marginBottom: 16, borderLeft: `3px solid #22c55e` }}>
+                                <div style={{ fontWeight: 700, fontSize: 13, color: '#166534', marginBottom: 6 }}>📅 Periode Istirahat</div>
+                                <div style={{ fontSize: 12, color: colors.text, lineHeight: 1.6 }}>
+                                    <div>Mulai: <strong>{fmtDate(detail.sickLetter.startDate)}</strong></div>
+                                    <div style={{ marginTop: 4 }}>Sampai: <strong>{fmtDate(detail.sickLetter.endDate)}</strong></div>
+                                    <div style={{ marginTop: 4, color: '#166534', fontWeight: 600 }}>
+                                        Total: {calcRestDays(detail.sickLetter.startDate, detail.sickLetter.endDate)} hari
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Catatan */}
+                        {detail.sickLetter?.notes && (
+                            <div style={{ background: '#eff6ff', borderRadius: 9, padding: '12px 14px', marginBottom: 16, borderLeft: `3px solid #3b82f6` }}>
+                                <div style={{ fontWeight: 700, fontSize: 13, color: '#1e40af', marginBottom: 6 }}>📝 Catatan Tambahan</div>
+                                <div style={{ fontSize: 12, color: colors.text, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{detail.sickLetter.notes}</div>
+                            </div>
+                        )}
+
+                        {/* Issued info */}
+                        {detail.sickLetter?.status === 'issued' && detail.sickLetter?.issuedAt && (
+                            <div style={{ background: '#f0f9ff', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: colors.muted }}>
+                                Diterbitkan: {fmtDT(detail.sickLetter.issuedAt)}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
+                            <Btn variant="ghost" onClick={() => setDetail(null)}>Tutup</Btn>
+                            {detail.sickLetter?.status === 'issued' && (
+                                <Btn variant="outline" onClick={() => downloadPDF(detail._id, detail.sickLetter?.letterNumber)}>
+                                    ⬇ Download PDF
+                                </Btn>
+                            )}
                         </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                        <ProfileField label="Usia Pasien" value={form.patientAge} onChange={v => setForm(f => ({ ...f, patientAge: v }))} placeholder="mis. 28 tahun" />
-                        <div>
-                            <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.muted }}>Jenis Kelamin</label>
-                            <select value={form.patientGender} onChange={e => setForm(f => ({ ...f, patientGender: e.target.value }))}
-                                style={{ width: '100%', padding: '8px 11px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff' }}>
-                                <option value="">—</option>
-                                <option>Laki-laki</option>
-                                <option>Perempuan</option>
-                            </select>
-                        </div>
-                        <ProfileField label="Berat Badan" value={form.patientWeight} onChange={v => setForm(f => ({ ...f, patientWeight: v }))} placeholder="mis. 60 kg" />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.muted }}>Catatan Tambahan</label>
-                        <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-                            placeholder="Catatan khusus, anjuran, dll."
-                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
-                    </div>
-                </div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-                    <Btn variant="ghost" onClick={() => setModalOpen(false)}>Batal</Btn>
-                    <Btn variant="primary" onClick={handleCreate} disabled={saving}>{saving ? '…' : '📄 Buat Draft'}</Btn>
-                </div>
+                )}
             </Modal>
         </div>
     );

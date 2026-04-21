@@ -344,6 +344,8 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
         const [
             apptToday, apptUpcoming, apptCompleted, apptCancelled,
             consToday, consOngoing, consCompleted, consUpcoming, consCancelled,
+            apptTodayPatients, apptCompletedCount,
+            consUniqueCancelled, apptUniqueCancelled, totalConsCompleted,
         ] = await Promise.all([
             Appointment.countDocuments({
                 doctorId:        doctor.id,
@@ -379,6 +381,29 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
                 doctorId: doctor.id,
                 status:   { $in: ['cancelled_by_doctor', 'cancelled_by_user', 'expired'] },
             }),
+            // Pasien Hari Ini (unique patients dari appointments hari ini)
+            Appointment.distinct('userId', {
+                doctorId:        doctor.id,
+                appointmentDate: { $gte: todayStart, $lte: todayEnd },
+                status:          { $in: ['scheduled', 'checked_in', 'completed'] },
+            }),
+            // Janji Temu Selesai
+            Appointment.countDocuments({
+                doctorId: doctor.id,
+                status:   'completed',
+            }),
+            // Konsultasi Dibatalkan (unique untuk stats)
+            Consultation.countDocuments({
+                doctorId: doctor.id,
+                status:   { $in: ['cancelled_by_doctor', 'cancelled_by_user', 'expired'] },
+            }),
+            // Janji Temu Dibatalkan (unique untuk stats)
+            Appointment.countDocuments({
+                doctorId: doctor.id,
+                status:   { $in: ['cancelled_by_user', 'cancelled_by_doctor', 'cancelled_by_admin'] },
+            }),
+            // Total Konsultasi Selesai (alias)
+            Consultation.countDocuments({ doctorId: doctor.id, status: 'completed' }),
         ]);
 
         const uniquePatients = await Consultation.distinct('userId', {
@@ -386,37 +411,51 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
             userId:   { $exists: true, $ne: null },
         });
 
+        // Hitung unique patients hari ini dari consultations juga
+        const patientsConTodayIds = await Consultation.distinct('userId', {
+            doctorId:    doctor.id,
+            scheduledAt: { $gte: todayStart, $lte: todayEnd },
+            status:      { $in: ['confirmed', 'in_progress', 'ongoing', 'completed'] },
+            userId:      { $exists: true, $ne: null },
+        });
+        
+        // Gabung pasien hari ini dari appointments dan consultations
+        const allPatientsToday = [...new Set([...apptTodayPatients, ...patientsConTodayIds])];
+
         res.json({
             success: true,
             stats: {
                 // ── Format nested ─────────────────────────────────────
                 appointments: {
-                    today:     apptToday,
-                    upcoming:  apptUpcoming,
-                    completed: apptCompleted,
-                    cancelled: apptCancelled,
+                    today:      apptToday,
+                    upcoming:   apptUpcoming,
+                    completed:  apptCompletedCount,
+                    cancelled:  apptUniqueCancelled,
                 },
                 consultations: {
-                    today:     consToday,
-                    ongoing:   consOngoing,
-                    completed: consCompleted,
-                    upcoming:  consUpcoming,
-                    cancelled: consCancelled,
+                    today:      consToday,
+                    ongoing:    consOngoing,
+                    completed:  totalConsCompleted,
+                    upcoming:   consUpcoming,
+                    cancelled:  consUniqueCancelled,
                 },
                 patients: {
-                    unique: uniquePatients.length,
+                    unique:     uniquePatients.length,
+                    todayCount: allPatientsToday.length,
                 },
 
-                // ── Format flat — dipakai DoctorDashboard.jsx ─────────
-                apptToday,
-                apptUpcoming,
-                apptCancelled,
-                consToday,
-                consCompleted,
-                consUpcoming,
-                consCancelled,
-                rating:       doctor.rating       || 0,
-                totalReviews: doctor.totalReviews  || 0,
+                // ── Format flat — untuk Beranda.js ─────────
+                patientsTodayCount:    allPatientsToday.length,
+                apptToday:             apptToday,
+                apptUpcoming:          apptUpcoming,
+                apptCompleted:         apptCompletedCount,
+                apptCancelled:         apptUniqueCancelled,
+                consToday:             consToday,
+                consCompleted:         totalConsCompleted,
+                consUpcoming:          consUpcoming,
+                consCancelled:         consUniqueCancelled,
+                rating:                doctor.rating       || 0,
+                totalReviews:          doctor.totalReviews  || 0,
             },
         });
     } catch (error) {
@@ -918,18 +957,33 @@ router.get('/my/chat', auth, doctorAuth, async (req, res) => {
 router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (req, res) => {
     try {
         const { text } = req.body;
-        if (!text?.trim() && !req.file) return res.status(400).json({ message: 'Pesan atau file wajib ada' });
-
+        
+        // Validation
+        if (!text?.trim() && !req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'Pesan atau file wajib ada'
+            });
+        }
+ 
+        // Get dokter info
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
-        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
-
+        if (!doctor) {
+            return res.status(404).json({
+                success: false,
+                message: 'Dokter tidak ditemukan'
+            });
+        }
+ 
+        // Process file jika ada
         let fileUrl = null, fileName = null, fileType = null;
         if (req.file) {
             fileUrl  = `/uploads/admin-chat/${req.file.filename}`;
             fileName = req.file.originalname;
             fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
         }
-
+ 
+        // Create message object
         const msg = {
             senderId  : req.userId,
             senderRole: 'doctor',
@@ -938,36 +992,122 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             isRead    : false,
             createdAt : new Date(),
         };
-
+ 
+        // Save ke database
         const thread = await AdminChat.findOneAndUpdate(
             { doctorId: doctor.id },
             {
                 $push: { messages: msg },
-                $set : { lastMessage: text?.trim() || `📎 ${fileName}`, lastAt: new Date(), doctorUserId: req.userId },
+                $set : {
+                    lastMessage: text?.trim() || `📎 ${fileName}`,
+                    lastAt: new Date(),
+                    doctorUserId: req.userId
+                },
                 $inc : { unreadAdmin: 1 },
-                $setOnInsert: { doctorUserId: req.userId },
             },
             { upsert: true, new: true }
         );
-
-        // Notif ke semua admin
+ 
+        // Format message dengan struktur lengkap untuk response
+        const messageData = {
+            _id: msg._id || new Date().getTime(),
+            senderId: req.userId,
+            senderRole: 'doctor',
+            text: msg.text || '',
+            fileUrl: msg.fileUrl || null,
+            fileName: msg.fileName || null,
+            fileType: msg.fileType || null,
+            isRead: msg.isRead || false,
+            createdAt: msg.createdAt,
+        };
+ 
+        // Notif & emit ke semua admin
         const admins = await User.findAll({ where: { role: 'admin' } });
         const io = req.app.get('io');
+ 
+        const doctorName = fmtDoctorName(doctor);
+        const doctorId = doctor.id.toString();
+ 
         for (const admin of admins) {
-            await createNotification({
-                userId : admin.id,
-                type   : 'new_message',
-                title  : `💬 Pesan dari ${fmtDoctorName(doctor)}`,
-                message: text?.trim() || 'Dokter mengirimkan file',
-                data   : { doctorId: doctor.id },
-                io,
-            });
-            if (io) io.to(`user-${admin.id}`).emit('admin-chat-message', { doctorId: doctor.id.toString(), message: msg });
+            try {
+                // Kirim notifikasi
+                await createNotification({
+                    userId : admin.id,
+                    type   : 'new_message',
+                    title  : `💬 Pesan dari ${doctorName}`,
+                    message: text?.trim() || '📎 Dokter mengirimkan file',
+                    data   : { doctorId: doctor.id },
+                    io,
+                });
+ 
+                // Emit socket ke admin dengan struktur lengkap
+                if (io) {
+                    io.to(`user-${admin.id}`).emit('admin-chat-message', {
+                        doctorId: doctorId,
+                        doctorName: doctorName,
+                        message: messageData
+                    });
+                }
+            } catch (adminErr) {
+                console.warn(`[POST /doctors/my/chat] Error emit to admin ${admin.id}:`, adminErr.message);
+                // Continue ke admin berikutnya, jangan stop
+            }
         }
-
-        res.json({ success: true, message: msg });
+ 
+        // Response dengan format yang proper
+        res.json({
+            success: true,
+            message: messageData
+        });
+ 
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        console.error('[POST /doctors/my/chat] Error:', {
+            message: err.message,
+            userId: req.userId,
+            code: err.code,
+            stack: err.stack
+        });
+ 
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mengirim pesan ke admin'
+        });
+    }
+});
+ 
+// PUT /api/doctors/my/chat/read — tandai sudah dibaca oleh dokter
+router.put('/my/chat/read', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        if (!doctor) {
+            return res.status(404).json({
+                success: false,
+                message: 'Dokter tidak ditemukan'
+            });
+        }
+ 
+        const result = await AdminChat.findOneAndUpdate(
+            { doctorId: doctor.id },
+            { $set: { unreadDoctor: 0 } },
+            { new: true }
+        );
+ 
+        res.json({
+            success: true,
+            data: result
+        });
+ 
+    } catch (err) {
+        console.error('[PUT /doctors/my/chat/read] Error:', {
+            message: err.message,
+            userId: req.userId,
+            stack: err.stack
+        });
+ 
+        res.status(500).json({
+            success: false,
+            message: 'Gagal update status baca pesan'
+        });
     }
 });
 
