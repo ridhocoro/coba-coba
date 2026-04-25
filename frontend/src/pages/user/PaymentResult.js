@@ -11,7 +11,7 @@ import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../../utils/api';
 
 const S = {
-    page : { minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', sans-serif", padding: 16 },
+    page : { minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Poppins', sans-serif", padding: 16 },
     card : { background: '#fff', borderRadius: 20, border: '1px solid #e5e7eb', padding: '40px 32px', maxWidth: 480, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,.08)' },
     btn  : (primary) => ({
         padding: '11px 24px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14,
@@ -75,6 +75,10 @@ const PaymentResult = () => {
     // ── Checking ──────────────────────────────────────────────────────────────
     if (status === 'checking') return (
         <div style={S.page}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+            `}</style>
             <div style={S.card}>
                 <Spinner />
                 <div style={{ fontWeight: 700, fontSize: 18, color: '#111827', marginBottom: 8 }}>Memverifikasi Pembayaran</div>

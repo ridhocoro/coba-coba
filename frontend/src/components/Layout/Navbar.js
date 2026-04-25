@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import NotificationDropdown from '../Notifications/NotificationDropdown';
 import api from '../../utils/api';
+import ipbLogo from './ipb-logo.png';
 import {
     FaUserMd, FaPills, FaCalendarAlt,
     FaHeartbeat, FaSignInAlt, FaUserPlus, FaSignOutAlt,
@@ -15,7 +16,7 @@ import {
 
 const Navigation = () => {
     const { user, logout } = useAuth();
-    const { unreadCount } = useNotifications(); // Jika ada error eslint terkait unreadCount tidak dipakai, biarkan saja atau gunakan
+    const { unreadCount } = useNotifications();
     const navigate = useNavigate();
     const location = useLocation();
     const [pendingPayments, setPendingPayments] = useState(0);
@@ -41,18 +42,45 @@ const Navigation = () => {
     return (
         <>
             <style>{`
-                .minimalist-navbar {
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+                                .minimalist-navbar {
                     background: rgba(255, 255, 255, 0.95) !important;
                     backdrop-filter: blur(10px);
                     border-bottom: 1px solid #f3f4f6 !important;
                 }
+                
+                /* === STYLE UNTUK BRAND/LOGO === */
+                .brand-container {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    text-decoration: none;
+                    transition: transform 0.2s ease;
+                }
+                .brand-container:hover {
+                    transform: scale(1.02);
+                }
+                .brand-logo {
+                    width: 40px;
+                    height: 40px;
+                    object-fit: contain;
+                    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+                    transition: filter 0.2s ease;
+                }
+                .brand-container:hover .brand-logo {
+                    filter: drop-shadow(0 4px 8px rgba(37, 99, 235, 0.2));
+                }
+                
                 .brand-text {
                     font-weight: 800;
                     color: #111827 !important;
                     letter-spacing: -0.5px;
                     transition: color 0.2s ease;
+                    font-size: 1.25rem;
+                    margin: 0;
                 }
-                .brand-text:hover {
+                .brand-container:hover .brand-text {
                     color: #2563eb !important;
                 }
                 
@@ -164,12 +192,28 @@ const Navigation = () => {
                     from { opacity: 0; transform: translateY(-8px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
+                
+                /* === RESPONSIVE LOGO === */
+                @media (max-width: 991px) {
+                    .brand-logo {
+                        width: 36px;
+                        height: 36px;
+                    }
+                    .brand-text {
+                        font-size: 1.1rem;
+                    }
+                }
             `}</style>
 
             <Navbar expand="lg" sticky="top" className="minimalist-navbar py-2 py-lg-3">
                 <Container>
-                    <Navbar.Brand as={Link} to="/" className="brand-text fs-4">
-                        Klinik IPB
+                    <Navbar.Brand as={Link} to="/" className="brand-container">
+                        <img 
+                            src={ipbLogo} 
+                            alt="IPB Logo" 
+                            className="brand-logo"
+                        />
+                        <span className="brand-text">Klinik IPB</span>
                     </Navbar.Brand>
                     
                     <Navbar.Toggle aria-controls="basic-navbar-nav" className="border-0 shadow-none" />
@@ -270,7 +314,6 @@ const Navigation = () => {
                                 </>
                             ) : (
                                 <div className="d-flex gap-2">
-                                    {/* Class nav-link-custom sudah DIHAPUS dari sini agar tidak ikut jadi biru */}
                                     <Nav.Link as={Link} to="/register" className="register-btn">
                                         <FaUserPlus className="me-1 d-lg-none" /> Daftar
                                     </Nav.Link>

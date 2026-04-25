@@ -87,7 +87,7 @@ const BMICalculator = () => {
     ];
 
     const S = {
-        page  : { background:'#fafafa', minHeight:'100vh', padding:'40px 0 80px', fontFamily:"'DM Sans',sans-serif" },
+        page  : { background:'#fafafa', minHeight:'100vh', padding:'40px 0 80px', fontFamily:"'Poppins', sans-serif" },
         wrap  : { maxWidth:880, margin:'0 auto', padding:'0 24px' },
         label : { fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:6 },
         input : { width:'100%', padding:'10px 14px', border:'1px solid #e5e7eb', borderRadius:10, fontSize:14, outline:'none', fontFamily:'inherit', transition:'border-color .15s', boxSizing:'border-box' },
@@ -106,7 +106,7 @@ const BMICalculator = () => {
     return (
         <div style={S.page}>
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
                 .bmi-input:focus{border-color:#2563eb!important;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
                 .bmi-btn-primary:hover:not(:disabled){background:#1e293b!important}
                 .bmi-btn-primary:disabled{opacity:.5;cursor:not-allowed}
@@ -126,7 +126,7 @@ const BMICalculator = () => {
                             <FaWeight size={18}/>
                         </div>
                         <div>
-                            <h1 style={{ fontFamily:"'DM Serif Display',serif", fontSize:28, fontWeight:400, color:'#0f172a', margin:0 }}>Kalkulator BMI</h1>
+                            <h1 style={{ fontFamily:"'Poppins',sans-serif", fontSize:28, fontWeight:400, color:'#0f172a', margin:0 }}>Kalkulator BMI</h1>
                             <p style={{ fontSize:13, color:'#6b7280', margin:0 }}>Indeks Massa Tubuh · Standar WHO</p>
                         </div>
                     </div>

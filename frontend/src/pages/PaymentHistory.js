@@ -368,7 +368,9 @@ const PaymentHistory = () => {
     return (
         <div style={S.page}>
             <style>{`
-                /* Animasi Fade In dan Slide Up untuk kotak di halaman */
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+                                /* Animasi Fade In dan Slide Up untuk kotak di halaman */
                 @keyframes fadeSlideUp {
                     from { opacity: 0; transform: translateY(15px); }
                     to { opacity: 1; transform: translateY(0); }

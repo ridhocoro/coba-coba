@@ -427,16 +427,37 @@ const Pharmacy = () => {
     const [refundVideo, setRefundVideo]   = useState(null);
     const [refundReason, setRefundReason] = useState('');
     const [submittingRefund, setSubmittingRefund] = useState(false);
-    const [needsBankInfo, setNeedsBankInfo]       = useState(false);
-    const [bankCode, setBankCode]                 = useState('');
-    const [accountNumber, setAccountNumber]       = useState('');
-    const [accountName, setAccountName]           = useState('');
-    const [bankList, setBankList]                 = useState([]);
+    const [bankCode, setBankCode]         = useState('');
+    const [accountNumber, setAccountNumber] = useState('');
+    const [accountName, setAccountName]   = useState('');
+    const [bankList, setBankList]         = useState([]);
     const refundVideoRef = useRef(null);
 
     useEffect(() => {
-        api.get('/api/xendit/banks').then(r => setBankList(r.data.banks || [])).catch(() => {});
+        // Gunakan bank list sama seperti konsultasi — ambil dari Xendit
+        api.get('/api/pharmacy/refund-banks')
+            .then(r => setBankList(r.data.banks || []))
+            .catch(() => setBankList([
+                { code: 'BCA', name: 'Bank Central Asia' },
+                { code: 'BNI', name: 'Bank Negara Indonesia' },
+                { code: 'BRI', name: 'Bank Rakyat Indonesia' },
+                { code: 'MANDIRI', name: 'Bank Mandiri' },
+                { code: 'BSI', name: 'Bank Syariah Indonesia' },
+                { code: 'CIMB', name: 'CIMB Niaga' },
+                { code: 'PERMATA', name: 'Bank Permata' },
+                { code: 'DANAMON', name: 'Bank Danamon' },
+                { code: 'BTN', name: 'Bank Tabungan Negara' },
+            ]));
     }, []);
+
+    const openRefundModal = (order, type) => {
+        setRefundModal({ order, type });
+        setRefundVideo(null);
+        setRefundReason('');
+        setBankCode('');
+        setAccountNumber('');
+        setAccountName('');
+    };
 
     const handleRefundSubmit = async () => {
         if (!refundModal) return;
@@ -444,26 +465,29 @@ const Pharmacy = () => {
 
         if (!isInstant && !refundVideo) { toast.error('Video bukti wajib diunggah'); return; }
         if (!refundReason.trim()) { toast.error('Alasan refund wajib diisi'); return; }
+        if (!bankCode) { toast.error('Pilih bank tujuan refund'); return; }
+        if (!accountNumber.trim()) { toast.error('Nomor rekening wajib diisi'); return; }
+        if (!accountName.trim()) { toast.error('Nama pemilik rekening wajib diisi'); return; }
         if (!isInstant && refundVideo?.size > 50 * 1024 * 1024) { toast.error('Ukuran video maksimal 50MB'); return; }
 
         setSubmittingRefund(true);
         try {
             const fd = new FormData();
             fd.append('reason', refundReason);
+            fd.append('bankCode', bankCode);
+            fd.append('accountNumber', accountNumber.trim());
+            fd.append('accountName', accountName.trim());
             if (!isInstant && refundVideo) fd.append('video', refundVideo);
-            if (needsBankInfo) {
-                if (!bankCode || !accountNumber || !accountName) {
-                    toast.error('Data rekening wajib diisi'); setSubmittingRefund(false); return;
-                }
-                fd.append('bankCode', bankCode);
-                fd.append('accountNumber', accountNumber);
-                fd.append('accountName', accountName);
-            }
-            const r = await api.post(`/api/pharmacy/orders/${refundModal.order._id}/refund-request`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-            if (r.data.needsBankInfo) { setNeedsBankInfo(true); setSubmittingRefund(false); return; }
-            toast.success(isInstant ? 'Refund berhasil diproses!' : 'Pengajuan refund dikirim.');
-            setRefundModal(null); setRefundVideo(null); setRefundReason('');
-            setNeedsBankInfo(false); setBankCode(''); setAccountNumber(''); setAccountName('');
+
+            await api.post(
+                `/api/pharmacy/orders/${refundModal.order._id || refundModal.order.id}/refund-request`,
+                fd,
+                { headers: { 'Content-Type': 'multipart/form-data' } }
+            );
+            toast.success(isInstant
+                ? 'Refund berhasil diproses!'
+                : 'Pengajuan refund dikirim. Admin akan meninjau dalam 1×24 jam.');
+            setRefundModal(null);
             fetchOrders();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Gagal mengajukan refund');
@@ -525,11 +549,13 @@ const Pharmacy = () => {
     );
 
     return (
-        <div className="fade-in" style={{minHeight:'100vh',background:'#f8fafc',fontFamily:"'Inter',sans-serif",paddingBottom:60}}>
+        <div className="fade-in" style={{minHeight:'100vh',background:'#f8fafc',fontFamily:"'Poppins',sans-serif",paddingBottom:60}}>
             {guestModal && <GuestModal />}
             
             {/* CSS ANIMATIONS & MODERN STYLES */}
             <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
                 .fade-in { animation: fadeIn 0.4s ease-out forwards; }
@@ -955,22 +981,35 @@ const Pharmacy = () => {
                                                 )}
 
                                                 {canRefundInstant(order)&&(
-                                                    <button className="btn-o" style={{color:'#dc2626',borderColor:'#fecaca',justifyContent:'center',display:'flex',alignItems:'center',gap:8}} onClick={()=>{setRefundModal({order,type:'instant'});setRefundVideo(null);setRefundReason('');setNeedsBankInfo(false);setBankCode('');setAccountNumber('');setAccountName('');}}>
+                                                    <button className="btn-o" style={{color:'#dc2626',borderColor:'#fecaca',justifyContent:'center',display:'flex',alignItems:'center',gap:8}} onClick={()=>openRefundModal(order,'instant')}>
                                                         ↩️ Ajukan Refund
                                                     </button>
                                                 )}
 
                                                 {canRefundWithVideo(order)&&(
-                                                    <button className="btn-o" style={{color:'#dc2626',borderColor:'#fecaca',justifyContent:'center',display:'flex',alignItems:'center',gap:8}} onClick={()=>{setRefundModal({order,type:'video'});setRefundVideo(null);setRefundReason('');setNeedsBankInfo(false);setBankCode('');setAccountNumber('');setAccountName('');}}>
+                                                    <button className="btn-o" style={{color:'#dc2626',borderColor:'#fecaca',justifyContent:'center',display:'flex',alignItems:'center',gap:8}} onClick={()=>openRefundModal(order,'video')}>
                                                         🎥 Komplain & Refund
                                                     </button>
                                                 )}
 
                                                 {['refund_requested','refund_rejected','refunded'].includes(order.status)&&(
-                                                    <div style={{background:'#f8fafc',borderRadius:12,padding:'12px',fontSize:12,border:'1px solid #e2e8f0',textAlign:'center',color:'#475569',fontWeight:700}}>
-                                                        {order.status==='refund_requested'&&'⏳ Refund sedang diproses admin'}
-                                                        {order.status==='refund_rejected'&&<span style={{color:'#dc2626'}}>❌ Refund Ditolak</span>}
-                                                        {order.status==='refunded'&&<span style={{color:'#16a34a'}}>✅ Dana dikembalikan</span>}
+                                                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                                                        {order.status==='refund_requested'&&(
+                                                            <div style={{background:'#fffbeb',borderRadius:12,padding:'12px',fontSize:12,border:'1px solid #fcd34d',textAlign:'center',color:'#92400e',fontWeight:600}}>
+                                                                ⏳ Refund sedang ditinjau admin. Mohon tunggu 1×24 jam.
+                                                            </div>
+                                                        )}
+                                                        {order.status==='refund_rejected'&&(
+                                                            <div style={{background:'#fef2f2',borderRadius:12,padding:'12px',fontSize:12,border:'1px solid #fecaca',textAlign:'center',color:'#b91c1c',fontWeight:600}}>
+                                                                ❌ Refund Ditolak
+                                                                {order.refundRejectReason&&<div style={{fontWeight:400,marginTop:4,fontStyle:'italic'}}>Alasan: {order.refundRejectReason}</div>}
+                                                            </div>
+                                                        )}
+                                                        {order.status==='refunded'&&(
+                                                            <div style={{background:'#f0fdf4',borderRadius:12,padding:'12px',fontSize:12,border:'1px solid #bbf7d0',textAlign:'center',color:'#166534',fontWeight:600}}>
+                                                                ✅ Dana telah dikembalikan ke rekening Anda
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -985,7 +1024,7 @@ const Pharmacy = () => {
                 {/* ─── REFUND MODAL ─────────────────────────────────────── */}
                 {refundModal&&(
                     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',backdropFilter:'blur(4px)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={() => setRefundModal(null)}>
-                        <div className="slide-up" onClick={e => e.stopPropagation()} style={{background:'#fff',borderRadius:24,width:'100%',maxWidth:520,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 25px 50px -12px rgba(0,0,0,.25)'}}>
+                        <div className="slide-up" onClick={e => e.stopPropagation()} style={{background:'#fff',borderRadius:24,width:'100%',maxWidth:520,maxHeight:'75vh',overflowY:'auto',boxShadow:'0 25px 50px -12px rgba(0,0,0,.25)'}}>
                             <div style={{padding:'24px 32px',borderBottom:'1px solid #f1f5f9',position:'sticky',top:0,background:'#fff',zIndex:10,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                                 <h5 style={{fontWeight:800,fontSize:18,color:'#0f172a',margin:0}}>
                                     {refundModal.type==='instant' ? '↩️ Ajukan Refund' : '🎥 Komplain Barang'}
@@ -1020,25 +1059,20 @@ const Pharmacy = () => {
                                     </div>
                                 )}
 
-                                {needsBankInfo&&(
-                                    <div style={{marginBottom:24}}>
-                                        <label style={{fontSize:13,fontWeight:800,color:'#000',display:'block',marginBottom:16}}>Data Rekening Bank Pengembalian Dana</label>
-                                        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-                                            <div>
-                                                <select className="ph-input" value={bankCode} onChange={e=>setBankCode(e.target.value)} style={{borderRadius:12}}>
-                                                    <option value="">— Pilih Bank —</option>
-                                                    {bankList.map(b=><option key={b.code} value={b.code}>{b.name}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <input className="ph-input" value={accountNumber} onChange={e=>setAccountNumber(e.target.value)} placeholder="Nomor Rekening" style={{borderRadius:12}} />
-                                            </div>
-                                            <div>
-                                                <input className="ph-input" value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Nama Pemilik Rekening" style={{borderRadius:12}} />
-                                            </div>
-                                        </div>
+                                {/* Data rekening selalu tampil — sama seperti refund konsultasi */}
+                                <div style={{marginBottom:24}}>
+                                    <label style={{fontSize:13,fontWeight:800,color:'#000',display:'block',marginBottom:16}}>
+                                        Rekening Tujuan Refund <span style={{color:'#ef4444'}}>*</span>
+                                    </label>
+                                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                                        <select className="ph-input" value={bankCode} onChange={e=>setBankCode(e.target.value)} style={{borderRadius:12}}>
+                                            <option value="">— Pilih Bank —</option>
+                                            {bankList.map(b=><option key={b.code} value={b.code}>{b.name} ({b.code})</option>)}
+                                        </select>
+                                        <input className="ph-input" value={accountNumber} onChange={e=>setAccountNumber(e.target.value.replace(/\D/g,''))} placeholder="Nomor Rekening" style={{borderRadius:12}} />
+                                        <input className="ph-input" value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Nama Pemilik Rekening (sesuai buku tabungan)" style={{borderRadius:12}} />
                                     </div>
-                                )}
+                                </div>
 
                                 <div>
                                     <label style={{fontSize:13,fontWeight:800,color:'#000',display:'block',marginBottom:8}}>
@@ -1050,7 +1084,7 @@ const Pharmacy = () => {
 
                             <div style={{padding:'20px 32px',borderTop:'1px solid #f1f5f9',display:'flex',gap:12,background:'#f8fafc',borderBottomLeftRadius:24,borderBottomRightRadius:24}}>
                                 <button onClick={()=>setRefundModal(null)} className="btn-o" style={{flex:1}}>Batal</button>
-                                <button onClick={handleRefundSubmit} disabled={submittingRefund||(refundModal.type==='video'&&!refundVideo)||!refundReason.trim()} className="btn-p" style={{flex:2,justifyContent:'center',background:(refundModal.type==='video'&&!refundVideo)||!refundReason.trim()?'#94a3b8':'#dc2626'}}>
+                                <button onClick={handleRefundSubmit} disabled={submittingRefund||(refundModal.type==='video'&&!refundVideo)||!refundReason.trim()||!bankCode||!accountNumber.trim()||!accountName.trim()} className="btn-p" style={{flex:2,justifyContent:'center',background:((refundModal.type==='video'&&!refundVideo)||!refundReason.trim()||!bankCode||!accountNumber.trim()||!accountName.trim())?'#94a3b8':'#dc2626'}}>
                                     {submittingRefund ? <><Spinner size="sm" animation="border"/> Memproses...</> : 'Kirim Pengajuan'}
                                 </button>
                             </div>
@@ -1142,7 +1176,7 @@ const Pharmacy = () => {
                 {/* ─── CHECKOUT MODAL ───────────────────────────────────── */}
                 {showCheckout&&(
                     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',backdropFilter:'blur(4px)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={() => setShowCheckout(false)}>
-                        <div className="slide-up" onClick={e => e.stopPropagation()} style={{background:'#fff',borderRadius:24,width:'100%',maxWidth:680,maxHeight:'90vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 25px 50px -12px rgba(0,0,0,.25)'}}>
+                        <div className="slide-up" onClick={e => e.stopPropagation()} style={{background:'#fff',borderRadius:24,width:'100%',maxWidth:680,maxHeight:'70vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 25px 50px -12px rgba(0,0,0,.25)'}}>
                             <div style={{padding:'24px 32px',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center',background:'#fff',zIndex:10}}>
                                 <h5 style={{fontWeight:800,marginBottom:0,fontSize:20,display:'flex',alignItems:'center',gap:10}}><FaTruck style={{color:'#000'}}/> Selesaikan Pesanan</h5>
                                 <button onClick={()=>setShowCheckout(false)} style={{background:'#f1f5f9',border:'none',fontSize:20,width:36,height:36,borderRadius:'50%',cursor:'pointer',color:'#64748b',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>

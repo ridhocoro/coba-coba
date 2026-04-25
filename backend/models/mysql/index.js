@@ -154,22 +154,28 @@ const Order = sequelize.define('Order', {
         type: DataTypes.ENUM(
             'waiting_prescription','prescription_rejected','pending','paid',
             'diproses','dikirim','terkirim','siap_diambil','selesai',
-            'expired','cancelled','refund_requested','refund_rejected','refunded'
+            'expired','cancelled',
+            'refund_requested',  // User submit video + bank info, tunggu admin
+            'refund_rejected',   // Admin tolak
+            'refunded'           // Selesai — admin approve & Xendit langsung jalan
         ),
         defaultValue: 'pending',
     },
 
     // Refund fields
-    refundVideoUrl      : { type: DataTypes.STRING(500), field: 'refund_video_url'     },
-    refundReason        : { type: DataTypes.TEXT,        field: 'refund_reason'        },
-    refundRequestedAt   : { type: DataTypes.DATE,        field: 'refund_requested_at'  },
-    refundReviewedAt    : { type: DataTypes.DATE,        field: 'refund_reviewed_at'   },
-    refundRejectReason  : { type: DataTypes.TEXT,        field: 'refund_reject_reason' },
-    refundBankCode      : { type: DataTypes.STRING(20),  field: 'refund_bank_code'     },
-    refundAccountNumber : { type: DataTypes.STRING(30),  field: 'refund_account_number'},
-    refundAccountName   : { type: DataTypes.STRING(120), field: 'refund_account_name'  },
-    refundMethod        : { type: DataTypes.ENUM('xendit_refund','xendit_disbursement','manual'), field: 'refund_method' },
-    refundProcessedAt   : { type: DataTypes.DATE, field: 'refund_processed_at' },
+    refundVideoUrl        : { type: DataTypes.STRING(500), field: 'refund_video_url'         },
+    refundVideoPublicId   : { type: DataTypes.STRING(255), field: 'refund_video_public_id'   }, // Cloudinary public_id untuk delete
+    refundReason          : { type: DataTypes.TEXT,        field: 'refund_reason'            },
+    refundRequestedAt     : { type: DataTypes.DATE,        field: 'refund_requested_at'      },
+    refundReviewedAt      : { type: DataTypes.DATE,        field: 'refund_reviewed_at'       },
+    refundApprovedAt      : { type: DataTypes.DATE,        field: 'refund_approved_at'       },
+    refundApprovedBy      : { type: DataTypes.CHAR(36),    field: 'refund_approved_by'       }, // userId admin
+    refundRejectReason    : { type: DataTypes.TEXT,        field: 'refund_reject_reason'     },
+    refundBankCode        : { type: DataTypes.STRING(20),  field: 'refund_bank_code'         },
+    refundAccountNumber   : { type: DataTypes.STRING(30),  field: 'refund_account_number'    },
+    refundAccountName     : { type: DataTypes.STRING(120), field: 'refund_account_name'      },
+    refundMethod          : { type: DataTypes.ENUM('xendit_refund','xendit_disbursement','manual'), field: 'refund_method' },
+    refundProcessedAt     : { type: DataTypes.DATE,        field: 'refund_processed_at'      },
 
     terkirimAt      : { type: DataTypes.DATE, field: 'terkirim_at'      },
     diprosesPaidAt  : { type: DataTypes.DATE, field: 'diproses_paid_at' },

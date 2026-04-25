@@ -26,7 +26,12 @@ const notificationSchema = new mongoose.Schema({
             
             // Refund related
             'refund_requested',
+            'refund_approved',
+            'refund_rejected',
             'refund_processed',
+            'refund_processing',
+            'refund_bank_submitted',
+            'refund_waiting_disbursement',
             
             // Doctor related
             'doctor_no_show',

@@ -154,6 +154,7 @@ const getApptNextAvailable = (doctorEntry) => {
 
 // ── Animasi popup ─────────────────────────────────────────────────────────────
 const POPUP_STYLE = `
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 @keyframes appt-backdrop-in {
     from { opacity: 0; }
     to   { opacity: 1; }
@@ -735,7 +736,12 @@ const Appointments = () => {
 
     // ── RENDER ────────────────────────────────────────────────────────────────
     return (
-        <div className="container py-4" style={{ maxWidth: 1000, fontFamily: "'Inter', sans-serif" }}>
+        <div className="container py-4" style={{ maxWidth: 1000, fontFamily: "'Poppins', sans-serif" }}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+                .monospace-override { font-family: monospace !important; }
+            `}</style>
 
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>

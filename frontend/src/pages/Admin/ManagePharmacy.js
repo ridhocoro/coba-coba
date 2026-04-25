@@ -82,7 +82,23 @@ const ManagePharmacy = () => {
 
     useEffect(() => {
         fetchData();
-        api.get('/api/xendit/banks').then(r => setBankList(r.data.banks || [])).catch(() => { });
+        // Ambil daftar bank dari endpoint baru
+        api.get('/api/pharmacy/refund-banks')
+            .then(r => setBankList(r.data.banks || []))
+            .catch(() => {
+                // Fallback bank list
+                setBankList([
+                    { code: 'BCA', name: 'Bank Central Asia' },
+                    { code: 'BNI', name: 'Bank Negara Indonesia' },
+                    { code: 'BRI', name: 'Bank Rakyat Indonesia' },
+                    { code: 'MANDIRI', name: 'Bank Mandiri' },
+                    { code: 'BSI', name: 'Bank Syariah Indonesia' },
+                    { code: 'CIMB', name: 'CIMB Niaga' },
+                    { code: 'PERMATA', name: 'Bank Permata' },
+                    { code: 'DANAMON', name: 'Bank Danamon' },
+                    { code: 'BTN', name: 'Bank Tabungan Negara' },
+                ]);
+            });
     }, []);
 
     const fetchData = async () => {
@@ -91,11 +107,11 @@ const ManagePharmacy = () => {
             const [medsRes, ordersRes, refundRes] = await Promise.all([
                 api.get('/api/pharmacy/admin/medicines?limit=200'),
                 api.get('/api/pharmacy/admin/orders?limit=100'),
-                api.get('/api/pharmacy/admin/orders/refund-requests').catch(() => ({ data: { orders: [] } })),
+                api.get('/api/pharmacy/admin/orders/refund-requests?status=refund_requested').catch(() => ({ data: { orders: [] } })),
             ]);
-            setRefundOrders(refundRes.data.orders || []);
             setMedicines(medsRes.data.medicines || []);
             setOrders(ordersRes.data.orders || []);
+            setRefundOrders(refundRes.data.orders || []);
         } catch {
             toast.error('Gagal memuat data');
         } finally { setLoading(false); }
@@ -504,19 +520,50 @@ const ManagePharmacy = () => {
                 {activeTab === 'refunds' && (
                     <div>
                         {refundOrders.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: 48, color: '#64748b' }}><div style={{ fontSize: 40 }}>🎥</div><div>Tidak ada pengajuan refund</div></div>
+                            <div style={{ textAlign: 'center', padding: 48, color: '#64748b' }}>
+                                <div style={{ fontSize: 40, marginBottom: 12 }}>🎥</div>
+                                <div style={{ fontWeight: 600 }}>Tidak ada pengajuan refund</div>
+                            </div>
                         ) : refundOrders.map(order => (
-                            <div key={order._id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, marginBottom: 14 }}>
+                            <div key={order._id || order.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, marginBottom: 14 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
-                                    <div>
-                                        <div style={{ fontWeight: 700 }}>{order.orderNumber}</div>
-                                        <div style={{ fontSize: 13, color: '#64748b' }}>{order.userId?.name} · {order.userId?.phone || order.userId?.email}</div>
-                                        <div style={{ fontSize: 13 }}>💰 {fmt(order.totalAmount)} · Diajukan: {new Date(order.refund?.requestedAt).toLocaleString('id-ID')}</div>
-                                        <div style={{ fontSize: 13 }}><strong>Alasan:</strong> {order.refund?.reason}</div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 700, fontSize: 15 }}>{order.orderNumber}</div>
+                                        <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
+                                            {order.userId?.name || order.user?.name} · {order.userId?.phone || order.user?.phone || order.userId?.email || order.user?.email}
+                                        </div>
+                                        <div style={{ fontSize: 13, marginTop: 4 }}>
+                                            💰 <strong>{fmt(order.totalAmount)}</strong> · Diajukan: {order.refundRequestedAt ? new Date(order.refundRequestedAt).toLocaleString('id-ID') : '-'}
+                                        </div>
+                                        {/* ALASAN REFUND USER */}
+                                        <div style={{ marginTop: 8, background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>
+                                            <span style={{ fontWeight: 600, color: '#92400e' }}>📝 Alasan Refund: </span>
+                                            <span style={{ color: '#78350f' }}>{order.refundReason || '-'}</span>
+                                        </div>
+                                        {/* RINGKASAN ITEM */}
+                                        {order.items && order.items.length > 0 && (
+                                            <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
+                                                💊 {order.items.map(i => `${i.medicineName || i.name} ×${i.quantity}`).join(', ')}
+                                            </div>
+                                        )}
                                     </div>
-                                    <div style={{ display: 'flex', gap: 8 }}>
-                                        {order.refund?.videoUrl && <a href={order.refund.videoUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '7px 14px', background: '#1e40af', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>🎥 Tonton Video</a>}
-                                        <button onClick={() => { setRefundModal(order); setRefundAction(''); setRefundRejectReason(''); setRefundBankCode(''); setRefundAccount(''); setRefundAccountName(''); setNeedsBankInfo(false); }} style={{ padding: '7px 14px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}>⚖️ Tindak Lanjut</button>
+                                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    const r = await api.get(`/api/pharmacy/admin/orders/${order._id || order.id}/refund-detail`);
+                                                    setRefundModal(r.data.order);
+                                                } catch {
+                                                    setRefundModal(order);
+                                                }
+                                                setRefundAction('');
+                                                setRefundRejectReason('');
+                                                setNeedsBankInfo(false);
+                                            }}
+                                            style={{ padding: '7px 14px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+                                        >
+                                            ▶ Tinjau
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -685,21 +732,194 @@ const ManagePharmacy = () => {
                 </div>
             </Modal>
 
-            {/* Modal Refund Review */}
+            {/* Modal Refund Review — Video + Alasan + Items */}
             {refundModal && (
                 <div style={styles.overlay}>
-                    <div style={{ ...styles.modal, maxWidth: 500, maxHeight: '90vh', overflowY: 'auto' }}>
-                        <div style={styles.modalHeader}><span style={{ fontWeight: 700, fontSize: 16 }}>⚖️ Review Refund — {refundModal.orderNumber}</span><button onClick={() => setRefundModal(null)} style={styles.modalClose}>×</button></div>
-                        <div style={{ background: '#f8fafc', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: 13 }}>
-                            <div><strong>Pasien:</strong> {refundModal.userId?.name}</div>
-                            <div><strong>Total:</strong> {fmt(refundModal.totalAmount)}</div>
-                            <div><strong>Alasan:</strong> {refundModal.refund?.reason}</div>
-                            {refundModal.refund?.videoUrl && <a href={refundModal.refund.videoUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', fontWeight: 600, display: 'inline-block', marginTop: 6 }}>🎥 Tonton Video Bukti</a>}
+                    <div style={{
+                        background: '#fff', borderRadius: 16, width: '100%', maxWidth: 700,
+                        maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.25)'
+                    }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
+                            <span style={{ fontWeight: 700, fontSize: 16 }}>🎥 Review Refund — {refundModal.orderNumber}</span>
+                            <button onClick={() => { setRefundModal(null); setRefundAction(''); }} style={styles.modalClose}>×</button>
                         </div>
-                        {!refundAction && (<div style={{ display: 'flex', gap: 10, marginBottom: 16 }}><button onClick={() => setRefundAction('approve')} style={{ flex: 1, padding: '10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>✅ Approve Refund</button><button onClick={() => setRefundAction('reject')} style={{ flex: 1, padding: '10px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>❌ Tolak Refund</button></div>)}
-                        {refundAction === 'reject' && (<div style={{ marginBottom: 16 }}><label style={styles.formLabel}>Alasan Penolakan <span style={{ color: '#ef4444' }}>*</span></label><textarea rows={3} style={styles.formInput} value={refundRejectReason} onChange={e => setRefundRejectReason(e.target.value)} placeholder="Jelaskan alasan penolakan..." /></div>)}
-                        {refundAction === 'approve' && needsBankInfo && (<div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}><div style={{ fontWeight: 600, fontSize: 13, color: '#92400e', marginBottom: 10 }}>💳 Masukkan rekening tujuan</div><div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}><select value={refundBankCode} onChange={e => setRefundBankCode(e.target.value)} style={styles.formSelect}><option value="">— Pilih Bank —</option>{bankList.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}</select><input style={styles.formInput} placeholder="Nomor Rekening" value={refundAccount} onChange={e => setRefundAccount(e.target.value)} /><input style={styles.formInput} placeholder="Nama Pemilik" value={refundAccountName} onChange={e => setRefundAccountName(e.target.value)} /></div></div>)}
-                        {refundAction && (<div style={{ display: 'flex', gap: 10 }}><button onClick={() => { setRefundAction(''); setNeedsBankInfo(false); }} style={{ flex: 1, padding: '10px', border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, cursor: 'pointer' }}>Kembali</button><button disabled={processingRefund} onClick={async () => { setProcessingRefund(true); try { const payload = { action: refundAction }; if (refundAction === 'reject') payload.rejectReason = refundRejectReason; if (needsBankInfo) { payload.bankCode = refundBankCode; payload.accountNumber = refundAccount; payload.accountName = refundAccountName; } const r = await api.put(`/api/pharmacy/admin/orders/${refundModal._id}/refund-review`, payload); if (r.data.needsBankInfo) { setNeedsBankInfo(true); setProcessingRefund(false); return; } toast.success(refundAction === 'approve' ? 'Refund berhasil diproses ✅' : 'Refund ditolak'); setRefundModal(null); fetchData(); } catch (err) { toast.error(err.response?.data?.message || 'Gagal memproses refund'); } finally { setProcessingRefund(false); } }} style={{ flex: 2, padding: '10px', background: refundAction === 'approve' ? '#16a34a' : '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: processingRefund ? 0.6 : 1 }}>{processingRefund ? 'Memproses...' : (refundAction === 'approve' ? '✅ Konfirmasi Approve' : '❌ Konfirmasi Tolak')}</button></div>)}
+
+                        <div style={{ padding: '20px 24px' }}>
+                            {/* VIDEO PLAYER */}
+                            <div style={{ marginBottom: 20 }}>
+                                <p style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Video Bukti Refund</p>
+                                {refundModal.refundVideoUrl ? (
+                                    <div style={{ background: '#000', borderRadius: 10, overflow: 'hidden' }}>
+                                        <video
+                                            controls
+                                            style={{ width: '100%', maxHeight: 360, display: 'block' }}
+                                            onError={() => {}}
+                                        >
+                                            <source src={refundModal.refundVideoUrl} type="video/mp4" />
+                                            <source src={refundModal.refundVideoUrl} type="video/webm" />
+                                            <source src={refundModal.refundVideoUrl} type="video/quicktime" />
+                                        </video>
+                                        <div style={{ background: '#1e293b', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ color: '#94a3b8', fontSize: 12 }}>Video tersimpan di Cloudinary</span>
+                                            <a href={refundModal.refundVideoUrl} target="_blank" rel="noopener noreferrer"
+                                                style={{ color: '#60a5fa', fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>
+                                                ↗ Buka di tab baru
+                                            </a>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ background: '#f1f5f9', borderRadius: 10, padding: 32, textAlign: 'center', color: '#94a3b8' }}>
+                                        ⚠️ Video tidak tersedia
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* INFO PENGGUNA */}
+                            <div style={{ background: '#f8fafc', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                                <div><div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, marginBottom: 3 }}>NAMA</div><div style={{ fontSize: 13, fontWeight: 600 }}>{refundModal.user?.name || '-'}</div></div>
+                                <div><div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, marginBottom: 3 }}>EMAIL</div><div style={{ fontSize: 13 }}>{refundModal.user?.email || '-'}</div></div>
+                                <div><div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, marginBottom: 3 }}>TELEPON</div><div style={{ fontSize: 13 }}>{refundModal.user?.phone || '-'}</div></div>
+                            </div>
+
+                            {/* ITEM PESANAN */}
+                            <div style={{ marginBottom: 16 }}>
+                                <p style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Item Pesanan</p>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                                    <thead>
+                                        <tr style={{ background: '#f8fafc' }}>
+                                            <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#64748b' }}>Nama Obat</th>
+                                            <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#64748b' }}>Qty</th>
+                                            <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#64748b' }}>Harga</th>
+                                            <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#64748b' }}>Subtotal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(refundModal.items || []).map((item, i) => (
+                                            <tr key={i} style={{ borderTop: '1px solid #f1f5f9' }}>
+                                                <td style={{ padding: '10px 12px', fontSize: 13 }}>
+                                                    <div style={{ fontWeight: 500 }}>{item.medicineName}</div>
+                                                    {item.manufacturer && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.manufacturer}</div>}
+                                                </td>
+                                                <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 13 }}>{item.quantity}</td>
+                                                <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 13 }}>{fmt(item.price)}</td>
+                                                <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 13, fontWeight: 600 }}>{fmt(item.subtotal)}</td>
+                                            </tr>
+                                        ))}
+                                        <tr style={{ borderTop: '2px solid #e2e8f0', background: '#f8fafc' }}>
+                                            <td colSpan={3} style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: 13 }}>Total Refund</td>
+                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: 15, color: '#2563eb' }}>{fmt(refundModal.totalAmount)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* ALASAN REFUND USER */}
+                            <div style={{ marginBottom: 20 }}>
+                                <p style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Alasan Refund User</p>
+                                <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderLeft: '4px solid #f59e0b', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: '#78350f', fontStyle: 'italic' }}>
+                                    "{refundModal.refundReason || 'Tidak ada alasan yang diberikan'}"
+                                </div>
+                            </div>
+
+                            {/* TOMBOL PILIH AKSI */}
+                            {!refundAction && (
+                                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                                    <button
+                                        onClick={() => setRefundAction('approve')}
+                                        style={{ flex: 1, padding: '12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}
+                                    >
+                                        ✅ Setujui Refund
+                                    </button>
+                                    <button
+                                        onClick={() => setRefundAction('reject')}
+                                        style={{ flex: 1, padding: '12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}
+                                    >
+                                        ❌ Tolak Refund
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* FORM TOLAK */}
+                            {refundAction === 'reject' && (
+                                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                                    <div style={{ fontWeight: 700, color: '#b91c1c', marginBottom: 12 }}>❌ Konfirmasi Penolakan</div>
+                                    <label style={styles.formLabel}>Alasan Penolakan <span style={{ color: '#ef4444' }}>*</span></label>
+                                    <textarea
+                                        rows={3}
+                                        style={{ ...styles.formInput, marginBottom: 0 }}
+                                        value={refundRejectReason}
+                                        onChange={e => setRefundRejectReason(e.target.value)}
+                                        placeholder="Jelaskan mengapa refund ini ditolak..."
+                                    />
+                                    <div style={{ marginTop: 12, padding: '10px 14px', background: '#fff', borderRadius: 8, fontSize: 12, color: '#64748b' }}>
+                                        ℹ️ Video akan otomatis dihapus dari Cloudinary setelah konfirmasi.
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* FORM SETUJUI */}
+                            {refundAction === 'approve' && (
+                                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                                    <div style={{ fontWeight: 700, color: '#15803d', marginBottom: 8 }}>✅ Konfirmasi Persetujuan</div>
+                                    <p style={{ fontSize: 13, color: '#166534', margin: '0 0 10px 0' }}>
+                                        Setelah disetujui, Xendit <strong>langsung memproses transfer</strong> ke rekening yang sudah user isi saat submit. Video akan dihapus otomatis dari Cloudinary.
+                                    </p>
+                                    <div style={{ padding: '10px 14px', background: '#fff', borderRadius: 8, fontSize: 13, color: '#374151' }}>
+                                        <div>💰 Jumlah refund: <strong style={{ color: '#2563eb' }}>{fmt(refundModal.totalAmount)}</strong></div>
+                                        {refundModal.refundBankCode && (
+                                            <div style={{ marginTop: 6, padding: '6px 10px', background: '#f0fdf4', borderRadius: 6, fontSize: 12, color: '#166534' }}>
+                                                🏦 <strong>{refundModal.refundBankCode}</strong> · {refundModal.refundAccountNumber} · a.n. {refundModal.refundAccountName}
+                                            </div>
+                                        )}
+                                        <div style={{ marginTop: 4, fontSize: 11, color: '#64748b' }}>* Xendit akan langsung transfer saat Anda konfirmasi approve</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TOMBOL SUBMIT */}
+                            {refundAction && (
+                                <div style={{ display: 'flex', gap: 10 }}>
+                                    <button
+                                        onClick={() => { setRefundAction(''); setNeedsBankInfo(false); }}
+                                        style={{ flex: 1, padding: '11px', border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}
+                                        disabled={processingRefund}
+                                    >
+                                        ← Kembali
+                                    </button>
+                                    <button
+                                        disabled={processingRefund || (refundAction === 'reject' && !refundRejectReason.trim())}
+                                        onClick={async () => {
+                                            setProcessingRefund(true);
+                                            try {
+                                                const payload = { action: refundAction };
+                                                if (refundAction === 'reject') payload.rejectReason = refundRejectReason;
+                                                await api.put(`/api/pharmacy/admin/orders/${refundModal.id || refundModal._id}/refund-review`, payload);
+                                                toast.success(refundAction === 'approve'
+                                                    ? '✅ Refund disetujui! Transfer Xendit langsung diproses ke rekening user.'
+                                                    : '❌ Refund ditolak. Video dihapus dari Cloudinary.');
+                                                setRefundModal(null);
+                                                setRefundAction('');
+                                                fetchData();
+                                            } catch (err) {
+                                                toast.error(err.response?.data?.message || 'Gagal memproses refund');
+                                            } finally {
+                                                setProcessingRefund(false);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 2, padding: '11px',
+                                            background: refundAction === 'approve' ? '#16a34a' : '#dc2626',
+                                            color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700,
+                                            cursor: processingRefund ? 'not-allowed' : 'pointer',
+                                            opacity: processingRefund ? 0.6 : 1, fontSize: 14
+                                        }}
+                                    >
+                                        {processingRefund ? '⏳ Memproses...' : (refundAction === 'approve' ? '✅ Konfirmasi Setujui' : '❌ Konfirmasi Tolak')}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

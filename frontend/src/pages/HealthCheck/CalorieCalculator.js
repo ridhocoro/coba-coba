@@ -53,7 +53,7 @@ const CalorieCalculator = () => {
     ];
 
     const S = {
-        page : { background:'#fafafa', minHeight:'100vh', padding:'40px 0 80px', fontFamily:"'DM Sans',sans-serif" },
+        page : { background:'#fafafa', minHeight:'100vh', padding:'40px 0 80px', fontFamily:"'Poppins', sans-serif" },
         wrap : { maxWidth:880, margin:'0 auto', padding:'0 24px' },
         card : { background:'#fff', border:'1px solid #e5e7eb', borderRadius:16, overflow:'hidden' },
         cHead: { padding:'16px 24px', borderBottom:'1px solid #f1f5f9', fontSize:14, fontWeight:700, color:'#0f172a' },
@@ -70,7 +70,7 @@ const CalorieCalculator = () => {
     return (
         <div style={S.page}>
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
                 .cal-input:focus{border-color:#dc2626!important;box-shadow:0 0 0 3px rgba(220,38,38,.1)}
                 .cal-btnP:hover:not(:disabled){background:#1e293b!important}
                 .cal-btnP:disabled{opacity:.5;cursor:not-allowed}
@@ -92,7 +92,7 @@ const CalorieCalculator = () => {
                             <FaFire size={18}/>
                         </div>
                         <div>
-                            <h1 style={{ fontFamily:"'DM Serif Display',serif", fontSize:28, fontWeight:400, color:'#0f172a', margin:0 }}>Kalkulator Kalori</h1>
+                            <h1 style={{ fontFamily:"'Poppins',sans-serif", fontSize:28, fontWeight:400, color:'#0f172a', margin:0 }}>Kalkulator Kalori</h1>
                             <p style={{ fontSize:13, color:'#6b7280', margin:0 }}>Kebutuhan kalori harian berdasarkan BMR</p>
                         </div>
                     </div>

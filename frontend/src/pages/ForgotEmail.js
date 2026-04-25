@@ -113,6 +113,10 @@ export default function ForgotEmail() {
 
     return (
         <div style={{ minHeight: '100vh', background: '#f8f9fa', display: 'flex', alignItems: 'center', padding: '24px 0' }}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+            `}</style>
             <div style={{ maxWidth: 440, margin: '0 auto', width: '100%', padding: '0 16px' }}>
                 {/* Header */}
                 <div className="text-center mb-4">

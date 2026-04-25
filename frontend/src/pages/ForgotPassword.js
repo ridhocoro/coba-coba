@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, InputGroup } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
-import { FaEnvelope, FaArrowLeft, FaCheckCircle, FaHeartbeat } from 'react-icons/fa';
+import { 
+    FaEnvelope, 
+    FaArrowLeft, 
+    FaCheckCircle, 
+    FaKey,           // Ganti dengan icon kunci (lebih sesuai untuk lupa password)
+    FaEnvelopeOpenText,  // Alternatif: amplop terbuka dengan teks
+    FaQuestionCircle,    // Alternatif: tanda tanya
+    FaLock              // Alternatif: gembok
+} from 'react-icons/fa';
 import api from '../utils/api';
 
 const ForgotPassword = () => {
@@ -34,6 +42,10 @@ const ForgotPassword = () => {
             alignItems: 'center',
             padding: '0'
         }}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+            `}</style>
             <Container fluid style={{ maxWidth: '500px' }}>
                 <Row className="justify-content-center">
                     <Col xs={12}>
@@ -47,7 +59,8 @@ const ForgotPassword = () => {
                                 justifyContent: 'center',
                                 marginBottom: 12
                             }}>
-                                <FaHeartbeat color="#fff" size={24} />
+                                {/* GANTI ICON HEART DENGAN ICON KUNCI */}
+                                <FaKey color="#fff" size={24} />
                             </div>
                             <h4 className="fw-bold mb-1" style={{ color: '#212529' }}>Lupa Password</h4>
                             <p className="text-secondary mb-0">

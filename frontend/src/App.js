@@ -42,6 +42,9 @@ import { CartProvider } from './context/CartContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { useLocation } from 'react-router-dom';
 
+// AI Chatbot
+import AIChatbot from './components/AIChatbot/AIChatbot';
+
 // ─── Route guard ───────────────────────────────────────────────────────────────
 const ProtectedRoute = ({ children, allowedRoles }) => {
     const { user, loading } = useAuth();
@@ -139,6 +142,9 @@ function AppContent() {
                 position="top-right"
                 toastOptions={{ duration: 4000, style: { background: '#363636', color: '#fff' } }}
             />
+
+            {/* AI Chatbot — tampil untuk guest & user biasa, sembunyikan untuk admin/dokter/halaman chat */}
+            {!isAdmin && !isDoctor && !isChatPage && <AIChatbot />}
         </div>
     );
 }

@@ -46,7 +46,7 @@ const fmtDateLabel = (dateStr) => {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const S = {
-    page     : { minHeight: '100vh', background: '#f8fafc', padding: '24px 16px', fontFamily: "'Inter', sans-serif" },
+    page     : { minHeight: '100vh', background: '#f8fafc', padding: '24px 16px', fontFamily: "'Poppins', sans-serif" },
     card     : { background: '#fff', borderRadius: 16, border: '1px solid #e5e7eb', padding: '24px', marginBottom: 20 },
     title    : { fontSize: 20, fontWeight: 700, color: '#111827', marginBottom: 4 },
     subtitle : { fontSize: 13, color: '#6b7280', marginBottom: 20 },
@@ -225,6 +225,10 @@ const BookingSlot = () => {
 
     return (
         <div style={S.page}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+            `}</style>
             <div style={{ maxWidth: 680, margin: '0 auto' }}>
 
                 {/* Back button */}

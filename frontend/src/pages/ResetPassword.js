@@ -150,6 +150,10 @@ const ResetPassword = () => {
             alignItems: 'center',
             padding: '0'
         }}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+            `}</style>
             <Container fluid style={{ maxWidth: '500px' }}>
                 <Row className="justify-content-center">
                     <Col xs={12}>

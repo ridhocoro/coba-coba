@@ -221,7 +221,9 @@ const Footer = () => {
             </Container>
 
             <style jsx="true">{`
-                .hover-link {
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+                                .hover-link {
                     transition: color 0.3s ease;
                 }
                 .hover-link:hover {

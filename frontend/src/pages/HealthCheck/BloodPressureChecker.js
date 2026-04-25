@@ -79,7 +79,7 @@ const BloodPressureChecker = () => {
     const RISKS = ['👨‍🦳 Usia > 65 tahun','🧂 Konsumsi garam berlebih','⚖️ Obesitas/kelebihan berat badan','🧬 Riwayat keluarga','🏥 Penyakit kronis (diabetes, ginjal)'];
 
     const S = {
-        page : { background:'#fafafa', minHeight:'100vh', padding:'40px 0 80px', fontFamily:"'DM Sans',sans-serif" },
+        page : { background:'#fafafa', minHeight:'100vh', padding:'40px 0 80px', fontFamily:"'Poppins', sans-serif" },
         wrap : { maxWidth:880, margin:'0 auto', padding:'0 24px' },
         card : { background:'#fff', border:'1px solid #e5e7eb', borderRadius:16, overflow:'hidden' },
         cHead: { padding:'16px 24px', borderBottom:'1px solid #f1f5f9', fontSize:14, fontWeight:700, color:'#0f172a' },
@@ -93,7 +93,7 @@ const BloodPressureChecker = () => {
     return (
         <div style={S.page}>
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
                 .bp-input:focus{border-color:#16a34a!important;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
                 .bp-btnP:hover:not(:disabled){background:#1e293b!important}
                 .bp-btnP:disabled{opacity:.5;cursor:not-allowed}
@@ -116,7 +116,7 @@ const BloodPressureChecker = () => {
                             <FaHeartbeat size={18}/>
                         </div>
                         <div>
-                            <h1 style={{ fontFamily:"'DM Serif Display',serif", fontSize:28, fontWeight:400, color:'#0f172a', margin:0 }}>Cek Tekanan Darah</h1>
+                            <h1 style={{ fontFamily:"'Poppins',sans-serif", fontSize:28, fontWeight:400, color:'#0f172a', margin:0 }}>Cek Tekanan Darah</h1>
                             <p style={{ fontSize:13, color:'#6b7280', margin:0 }}>Sistolik & Diastolik · Standar AHA</p>
                         </div>
                     </div>

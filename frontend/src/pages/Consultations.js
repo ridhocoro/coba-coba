@@ -680,25 +680,40 @@ const ConsultationCard = ({
 
 // ── RefundModal ───────────────────────────────────────────────────────────────
 const RefundModal = ({ consultation, onClose, onSuccess }) => {
-    const [form, setForm] = useState({ bankName: '', accountNumber: '', accountHolder: '', notes: '' });
-    const [proofFile, setProofFile] = useState(null);
-    const [submitting, setSubmitting] = useState(false);
-    const fileRef = React.useRef();
+    const [bankCode, setBankCode]           = useState('');
+    const [accountNumber, setAccountNumber] = useState('');
+    const [accountHolder, setAccountHolder] = useState('');
+    const [bankList, setBankList]           = useState([]);
+    const [submitting, setSubmitting]       = useState(false);
+
+    React.useEffect(() => {
+        api.get('/api/pharmacy/refund-banks')
+            .then(r => setBankList(r.data.banks || []))
+            .catch(() => setBankList([
+                { code: 'BCA',     name: 'Bank Central Asia' },
+                { code: 'BNI',     name: 'Bank Negara Indonesia' },
+                { code: 'BRI',     name: 'Bank Rakyat Indonesia' },
+                { code: 'MANDIRI', name: 'Bank Mandiri' },
+                { code: 'BSI',     name: 'Bank Syariah Indonesia' },
+                { code: 'CIMB',    name: 'CIMB Niaga' },
+                { code: 'PERMATA', name: 'Bank Permata' },
+                { code: 'DANAMON', name: 'Bank Danamon' },
+                { code: 'BTN',     name: 'Bank Tabungan Negara' },
+            ]));
+    }, []);
 
     const handleSubmit = async () => {
-        if (!form.bankName || !form.accountNumber || !form.accountHolder) {
+        if (!bankCode || !accountNumber || !accountHolder) {
             toast.error('Lengkapi semua field yang wajib diisi'); return;
         }
         setSubmitting(true);
         try {
             const fd = new FormData();
-            fd.append('bankName', form.bankName);
-            fd.append('accountNumber', form.accountNumber);
-            fd.append('accountName', form.accountHolder);
-            fd.append('notes', form.notes);
-            if (proofFile) fd.append('proof', proofFile);
+            fd.append('bankCode', bankCode);
+            fd.append('accountNumber', accountNumber);
+            fd.append('accountName', accountHolder);
             await api.post(`/api/consultations/${consultation._id}/refund-request`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-            toast.success('Pengajuan refund berhasil dikirim');
+            toast.success('Refund berhasil diproses!');
             onSuccess(); onClose();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Gagal mengajukan refund');
@@ -710,40 +725,40 @@ const RefundModal = ({ consultation, onClose, onSuccess }) => {
         doctor_no_show: 'Dokter tidak hadir dalam 15 menit setelah jadwal',
     }[consultation.status] || 'Konsultasi dibatalkan';
 
+    const inputStyle = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', boxSizing: 'border-box' };
+
     return (
         <Modal title="💸 Ajukan Refund" onClose={onClose}>
             <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#92400e' }}>
                 <strong>Alasan refund:</strong> {cancelReason}
             </div>
-            {[
-                { key: 'bankName', label: 'Nama Bank *', placeholder: 'Contoh: BCA, BRI, Mandiri, BNI' },
-                { key: 'accountNumber', label: 'Nomor Rekening *', placeholder: 'Contoh: 1234567890' },
-                { key: 'accountHolder', label: 'Atas Nama *', placeholder: 'Sesuai buku tabungan' },
-            ].map(f => (
-                <div key={f.key} style={{ marginBottom: 14 }}>
-                    <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>{f.label}</label>
-                    <input value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder}
-                        style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-            ))}
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#166534' }}>
+                ✅ Refund akan langsung diproses ke rekening Anda setelah submit.
+            </div>
+
             <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>Catatan Tambahan</label>
-                <textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Informasi tambahan (opsional)..." rows={2}
-                    style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '9px 12px', fontSize: 14, resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>Bank *</label>
+                <select value={bankCode} onChange={e => setBankCode(e.target.value)} style={inputStyle}>
+                    <option value="">— Pilih Bank —</option>
+                    {bankList.map(b => <option key={b.code} value={b.code}>{b.name} ({b.code})</option>)}
+                </select>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>Nomor Rekening *</label>
+                <input value={accountNumber} onChange={e => setAccountNumber(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Contoh: 1234567890" style={inputStyle} />
             </div>
             <div style={{ marginBottom: 18 }}>
-                <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>Bukti Pembayaran (opsional)</label>
-                <input ref={fileRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={e => setProofFile(e.target.files[0])} />
-                <button type="button" onClick={() => fileRef.current.click()}
-                    style={{ padding: '8px 16px', border: '1px dashed #d1d5db', borderRadius: 8, background: '#f9fafb', cursor: 'pointer', fontSize: 13, color: '#6b7280' }}>
-                    📎 {proofFile ? proofFile.name : 'Pilih File'}
-                </button>
+                <label style={{ fontSize: 12, color: '#374151', fontWeight: 600, display: 'block', marginBottom: 5 }}>Atas Nama *</label>
+                <input value={accountHolder} onChange={e => setAccountHolder(e.target.value)}
+                    placeholder="Sesuai buku tabungan" style={inputStyle} />
             </div>
+
             <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>Batal</button>
-                <button onClick={handleSubmit} disabled={submitting || !form.bankName || !form.accountNumber || !form.accountHolder}
-                    style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
-                    {submitting ? 'Mengirim...' : '✓ Kirim Pengajuan Refund'}
+                <button onClick={handleSubmit} disabled={submitting || !bankCode || !accountNumber || !accountHolder}
+                    style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: (!bankCode || !accountNumber || !accountHolder) ? '#c4b5fd' : '#7c3aed', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}>
+                    {submitting ? '⏳ Memproses...' : '✓ Proses Refund Sekarang'}
                 </button>
             </div>
         </Modal>

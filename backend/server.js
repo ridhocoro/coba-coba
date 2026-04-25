@@ -8,6 +8,7 @@ const path = require('path');
 
 dotenv.config();
 
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
@@ -60,6 +61,7 @@ app.use('/api/admin',           require('./routes/admin'));
 app.use('/api/xendit',          require('./routes/xendit'));        // ← semua payment lewat sini
 app.use('/api/clinic-settings', require('./routes/clinicSettings'));
 app.use('/api/notifications',   require('./routes/notifications'));
+app.use('/api/ollama', require('./routes/ollama'));
 
 // routes/payments.js dan routes/manualpayment.js DIHAPUS —
 // semua payment sekarang berpusat ke /api/xendit

@@ -157,6 +157,10 @@ const Profile = () => {
 
     return (
         <Container className="py-4" style={{ maxWidth: 800 }}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                * { font-family: 'Poppins', sans-serif !important; }
+            `}</style>
             {/* Header */}
             <Row className="mb-4">
                 <Col>

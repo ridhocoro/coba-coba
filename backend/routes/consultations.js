@@ -611,36 +611,66 @@ router.post('/:id/refund-request', auth, uploadRefundProof.single('proof'), asyn
             return res.status(400).json({ message: 'Refund hanya bisa diajukan untuk konsultasi yang dibatalkan dokter' });
         }
 
-        const { bankName, accountNumber, accountName } = req.body;
-        if (!bankName || !accountNumber || !accountName) {
-            return res.status(400).json({ message: 'Data bank (nama bank, nomor rekening, atas nama) wajib diisi' });
+        const { bankCode, accountNumber, accountName } = req.body;
+        if (!bankCode || !accountNumber || !accountName) {
+            return res.status(400).json({ message: 'Data bank (kode bank, nomor rekening, atas nama) wajib diisi' });
         }
 
-        const proofUrl = req.file ? `/uploads/refund-proofs/${req.file.filename}` : null;
+        const io = req.app.get('io');
 
-        consultation.status = 'refund_requested';
+        // Simpan bank info dulu
         consultation.refund = {
-            bankName,
+            bankCode,
             accountNumber,
             accountName,
-            proofUrl,
-            requestedAt: new Date()
+            requestedAt: new Date(),
         };
+        consultation.status = 'refund_requested';
         await consultation.save();
 
-        const admins = await User.findAll({ where: { role: 'admin' } });
-        for (const admin of admins) {
+        // Langsung jalankan Xendit — tidak perlu tunggu admin
+        try {
+            await processRefundInternal(consultation.id.toString(), { bankCode, accountNumber, accountName }, io);
+
+            const updated    = await Consultation.findById(consultation.id);
+            const method     = updated?.refund?.method;
+            const eta        = method === 'xendit_refund' ? 'beberapa menit' : '1×24 jam';
+
             await createNotification({
-                userId: admin.id,
-                type: 'refund_requested',
-                title: 'Permintaan Refund Baru',
-                message: `Ada permintaan refund konsultasi yang perlu diproses`,
-                data: { consultationId: consultation.id },
-                io: req.app.get('io')
+                userId : consultation.userId,
+                type   : 'refund_processed',
+                title  : '💰 Refund Sedang Diproses',
+                message: `Refund konsultasi Anda telah diproses via Xendit. Dana akan masuk dalam ${eta}.`,
+                data   : { consultationId: consultation.id },
+                io,
+            });
+
+            return res.json({
+                success    : true,
+                message    : `Refund berhasil diproses. Dana akan masuk dalam ${eta}.`,
+                method,
+                consultation: updated,
+            });
+
+        } catch (refundErr) {
+            // Jika Xendit gagal, status tetap refund_requested — admin bisa retry via process-refund
+            console.error('[refund-request] Xendit gagal:', refundErr.message);
+            await createNotification({
+                userId : consultation.userId,
+                type   : 'refund_processed',
+                title  : '⏳ Refund Sedang Ditinjau',
+                message: 'Permintaan refund Anda diterima. Ada kendala saat memproses otomatis, tim kami akan memproses dalam 1×24 jam.',
+                data   : { consultationId: consultation.id },
+                io,
+            });
+
+            return res.json({
+                success: true,
+                message: 'Pengajuan refund diterima. Akan diproses dalam 1×24 jam.',
+                consultation,
             });
         }
 
-        res.json({ success: true, message: 'Permintaan refund berhasil dikirim', consultation });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
@@ -661,26 +691,60 @@ router.put('/:id/process-refund', auth, async (req, res) => {
             return res.status(400).json({ message: 'action harus approve atau reject' });
         }
 
-        consultation.status = action === 'approve' ? 'refunded' : 'refund_failed';
-        consultation.refund.processedAt = new Date();
-        consultation.refund.adminId = req.userId;
+        const io = req.app.get('io');
+
+        // ── REJECT ──────────────────────────────────────────────────────────
         if (action === 'reject') {
-            consultation.refund.failReason = failReason || 'Refund ditolak oleh admin';
+            consultation.status = 'refund_failed';
+            consultation.refund.processedAt = new Date();
+            consultation.refund.adminId     = req.userId;
+            consultation.refund.failReason  = failReason || 'Refund ditolak oleh admin';
+            await consultation.save();
+
+            await createNotification({
+                userId: consultation.userId,
+                type  : 'refund_processed',
+                title : '❌ Refund Ditolak',
+                message: `Refund konsultasi ditolak: ${consultation.refund.failReason}`,
+                data  : { consultationId: consultation.id },
+                io,
+            });
+            return res.json({ success: true, message: 'Refund ditolak', consultation });
         }
-        await consultation.save();
+
+        // ── APPROVE: langsung jalankan Xendit (processRefundInternal) ───────
+        const bankInfo = {
+            bankCode      : consultation.refund?.bankCode,
+            accountNumber : consultation.refund?.accountNumber,
+            accountName   : consultation.refund?.accountName,
+        };
+
+        try {
+            await processRefundInternal(consultation.id.toString(), bankInfo, io);
+        } catch (refundErr) {
+            console.error('[process-refund] Xendit error:', refundErr.message);
+            // Rollback status agar admin bisa coba lagi
+            await Consultation.findByIdAndUpdate(consultation.id, { status: 'refund_requested' });
+            return res.status(500).json({
+                message: 'Gagal memproses refund via Xendit. Coba lagi atau hubungi tim teknis.',
+                error  : refundErr.message,
+            });
+        }
+
+        const updated = await Consultation.findById(consultation.id);
+        const method  = updated?.refund?.method;
+        const eta     = method === 'xendit_refund' ? 'beberapa menit' : '1×24 jam';
 
         await createNotification({
-            userId: consultation.userId,
-            type: 'refund_processed',
-            title: action === 'approve' ? 'Refund Disetujui' : 'Refund Ditolak',
-            message: action === 'approve'
-                ? 'Dana Anda akan ditransfer dalam 1-3 hari kerja'
-                : `Refund ditolak: ${failReason || 'Silakan hubungi admin'}`,
-            data: { consultationId: consultation.id },
-            io: req.app.get('io')
+            userId : consultation.userId,
+            type   : 'refund_processed',
+            title  : '💰 Refund Disetujui & Diproses',
+            message: `Refund konsultasi Anda telah disetujui dan langsung diproses via Xendit. Dana akan masuk dalam ${eta}.`,
+            data   : { consultationId: consultation.id },
+            io,
         });
 
-        res.json({ success: true, message: `Refund ${action === 'approve' ? 'disetujui' : 'ditolak'}`, consultation });
+        res.json({ success: true, message: `Refund diproses via Xendit (${method}). Dana masuk dalam ${eta}.`, consultation: updated });
     } catch (err) {
         res.status(500).json({ message: 'Server error', error: err.message });
     }

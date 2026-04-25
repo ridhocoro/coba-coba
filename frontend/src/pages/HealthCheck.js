@@ -60,9 +60,9 @@ const WHY_ITEMS = [
 const HealthCheck = () => (
     <div style={{ background: '#fafafa', minHeight: '100vh', padding: '48px 0 80px' }}>
         <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap');
+           @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 
-            .hci-wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; font-family: 'DM Sans', sans-serif; }
+            .hci-wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; font-family: 'Poppins', sans-serif; }
 
             .hci-card {
                 background: #fff;
@@ -98,7 +98,7 @@ const HealthCheck = () => (
                 padding: 10px 20px; font-size: 13px; font-weight: 600;
                 text-decoration: none; cursor: pointer;
                 transition: background 0.15s;
-                font-family: 'DM Sans', sans-serif;
+                font-family: 'Poppins', sans-serif;
                 white-space: nowrap;
             }
             .hci-btn-solid:hover { background: #1e293b; color: #fff; }
@@ -110,7 +110,7 @@ const HealthCheck = () => (
                 padding: 10px 20px; font-size: 13px; font-weight: 600;
                 text-decoration: none; cursor: pointer;
                 transition: border-color 0.15s, background 0.15s;
-                font-family: 'DM Sans', sans-serif;
+                font-family: 'Poppins', sans-serif;
                 white-space: nowrap;
             }
             .hci-btn-outline:hover { border-color: #9ca3af; background: #f9fafb; color: #374151; }
@@ -150,7 +150,7 @@ const HealthCheck = () => (
                 </div>
 
                 <h1 style={{
-                    fontFamily: "'DM Serif Display', serif",
+                    fontFamily: "'Poppins', sans-serif",
                     fontSize: 'clamp(26px, 5vw, 38px)',
                     fontWeight: 400,
                     color: '#0f172a',
