@@ -1,7 +1,7 @@
 // Admin/ManagePharmacy.js - Elegant & Minimalis seperti Inventaris Obat
 import React, { useState, useEffect, useRef } from 'react';
 import api, { API_URL } from '../../utils/api';
-import { Container, Row, Col, Spinner, Modal, Form } from 'react-bootstrap';
+import { Row, Col, Spinner, Modal, Form } from 'react-bootstrap';
 import { toast } from 'react-hot-toast';
 import {
     FaPills, FaSearch, FaPlus, FaEdit, FaBoxOpen, FaShoppingCart,
@@ -63,19 +63,19 @@ const ManagePharmacy = () => {
     const [rejectReason, setRejectReason] = useState('');
     const [adjustedItems, setAdjustedItems] = useState([]);
     const [updatingOrder, setUpdatingOrder] = useState(false);
-    const [rxPreview, setRxPreview] = useState(false);
+    const [, setRxPreview] = useState(false);
 
     // Refund requests
     const [refundOrders, setRefundOrders] = useState([]);
     const [refundModal, setRefundModal] = useState(null);
     const [refundAction, setRefundAction] = useState('');
     const [refundRejectReason, setRefundRejectReason] = useState('');
-    const [refundBankCode, setRefundBankCode] = useState('');
-    const [refundAccount, setRefundAccount] = useState('');
-    const [refundAccountName, setRefundAccountName] = useState('');
+    const [, setRefundBankCode] = useState('');
+    const [, setRefundAccount] = useState('');
+    const [, setRefundAccountName] = useState('');
     const [processingRefund, setProcessingRefund] = useState(false);
-    const [needsBankInfo, setNeedsBankInfo] = useState(false);
-    const [bankList, setBankList] = useState([]);
+    const [, setNeedsBankInfo] = useState(false);
+    const [, setBankList] = useState([]);
 
     // Expand/collapse order rows
     const [expandedOrders, setExpandedOrders] = useState(new Set());
@@ -469,7 +469,15 @@ const ManagePharmacy = () => {
                                     <div style={{ ...styles.orderRow, display: 'grid', gridTemplateColumns: '28px 1fr 1fr 100px 110px 100px auto', alignItems: 'center', padding: '12px 16px', gap: 12 }} onClick={() => toggleExpand(o._id)}>
                                         <div>{expandedOrders.has(o._id) ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}</div>
                                         <div><div style={{ fontWeight: 600 }}>{o.orderNumber}</div><div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(o.createdAt)}</div></div>
-                                        <div><div>{o.userId?.name || '-'}</div><div style={{ fontSize: 11, color: '#64748b' }}>{o.userId?.email}</div></div>
+                                        <div>
+                                        <div style={{ fontWeight: 500 }}>{o.userId?.name || '-'}</div>
+                                        <div style={{ fontSize: 11, color: '#64748b' }}>{o.userId?.email}</div>
+                                        {(o.shippingPhone || o.userId?.phone) && (
+                                            <div style={{ fontSize: 11, color: '#0ea5e9', fontWeight: 600 }}>
+                                                📞 {o.shippingPhone || o.userId?.phone}
+                                            </div>
+                                             )}
+                                        </div>
                                         <div>{o.deliveryMethod === 'pickup' ? 'Pickup' : 'Diantar'}</div>
                                         <div>{getStatusBadge(o.status)}</div>
                                         <div style={{ textAlign: 'right', fontWeight: 700, color: '#2563eb' }}>{fmt(o.totalAmount)}</div>
@@ -530,7 +538,13 @@ const ManagePharmacy = () => {
                                     <div style={{ flex: 1 }}>
                                         <div style={{ fontWeight: 700, fontSize: 15 }}>{order.orderNumber}</div>
                                         <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
-                                            {order.userId?.name || order.user?.name} · {order.userId?.phone || order.user?.phone || order.userId?.email || order.user?.email}
+                                            {order.userId?.name || order.user?.name}
+                                            {(order.shippingPhone || order.userId?.phone || order.user?.phone) && (
+                                                <> · <span style={{ color: '#0ea5e9', fontWeight: 600 }}>
+                                                    📞 {order.shippingPhone || order.userId?.phone || order.user?.phone}
+                                                </span></>
+                                            )}
+                                            {' · '}{order.userId?.email || order.user?.email}
                                         </div>
                                         <div style={{ fontSize: 13, marginTop: 4 }}>
                                             💰 <strong>{fmt(order.totalAmount)}</strong> · Diajukan: {order.refundRequestedAt ? new Date(order.refundRequestedAt).toLocaleString('id-ID') : '-'}
@@ -626,7 +640,19 @@ const ManagePharmacy = () => {
                         <div>
                             <div style={{ background: '#f8fafc', borderRadius: 10, padding: 14, marginBottom: 16 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}><span style={{ fontWeight: 600 }}>{selectedOrder.orderNumber}</span>{getStatusBadge(selectedOrder.status)}</div>
-                                <div style={{ color: '#64748b' }}>{selectedOrder.userId?.name} · {selectedOrder.userId?.email}</div>
+                                <div style={{ color: '#64748b', display: 'flex', flexWrap: 'wrap', gap: '0 10px', alignItems: 'center' }}>
+                                <span>{selectedOrder.userId?.name}</span>
+                                <span>·</span>
+                                <span>{selectedOrder.userId?.email}</span>
+                                {(selectedOrder.shippingPhone || selectedOrder.userId?.phone) && (
+                                    <>
+                                        <span>·</span>
+                                        <span style={{ color: '#0ea5e9', fontWeight: 600 }}>
+                                            📞 {selectedOrder.shippingPhone || selectedOrder.userId?.phone}
+                                        </span>
+                                    </>
+                                    )}
+                                </div>
                                 <div style={{ display: 'flex', gap: 16, marginTop: 4, fontSize: 12 }}><span>Total: <strong style={{ color: '#2563eb' }}>{fmt(selectedOrder.totalAmount)}</strong></span><span>{selectedOrder.deliveryMethod === 'pickup' ? 'Pickup' : 'Diantar'}</span></div>
                             </div>
 

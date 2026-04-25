@@ -553,7 +553,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
       socket.off('vc-end',           onEnd);
       socket.off('vc-ice-restart');
     };
-  }, [socket, isDoctor, answerCall, cleanup, onClose]);
+  }, [socket, isDoctor, answerCall, cleanup, onClose, consultationId]);
 
   // Dokter langsung start call saat komponen mount — useRef agar hanya sekali
   const hasCalledRef = useRef(false);

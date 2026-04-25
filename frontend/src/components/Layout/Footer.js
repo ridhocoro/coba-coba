@@ -5,7 +5,6 @@ import {
     FaPhone,
     FaEnvelope,
     FaWhatsapp,
-    FaClock,
     FaInstagram,
     FaYoutube
 } from 'react-icons/fa';

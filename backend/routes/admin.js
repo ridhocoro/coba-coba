@@ -1041,7 +1041,7 @@ router.get('/sick-letters', guard, async (req, res) => {
 
         const total = await SickLetter.countDocuments(filter);
         let letters = await SickLetter.find(filter)
-            .select('letterNumber status diagnosis startDate endDate issuedAt createdAt userId doctorId pdfUrl')
+            .select('letterNumber status diagnosis startDate endDate issuedAt createdAt userId doctorId pdfUrl notes patientAge patientGender patientWeight consultationId')
             .sort('-createdAt')
             .skip((Number(page) - 1) * Number(limit))
             .limit(Number(limit))
@@ -1495,6 +1495,103 @@ router.put('/chat/:doctorId/read', guard, async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('[admin] PUT /chat/:doctorId/read error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// SURAT SAKIT & RESEP — DOWNLOAD PDF (ADMIN)
+// ════════════════════════════════════════════════════════════════════════════
+
+// GET /admin/sick-letters/:id/pdf — proxy download PDF surat sakit untuk admin
+router.get('/sick-letters/:id/pdf', guard, async (req, res) => {
+    try {
+        const sickLetter = await SickLetter.findById(req.params.id).lean();
+        if (!sickLetter) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
+
+        // Delegate ke route konsultasi yang sudah ada (reuse logic PDF)
+        const consultation = await Consultation.findById(sickLetter.consultationId);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        // Forward request ke handler /:id/sick-letter/pdf di routes/consultations.js
+        // dengan cara memanggil langsung via internal redirect params
+        req.params.id = sickLetter.consultationId.toString();
+        return require('./consultations').handle(req, res, () => {});
+    } catch (err) {
+        console.error('[admin] GET /sick-letters/:id/pdf error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+// GET /admin/prescriptions — daftar resep dari semua konsultasi completed
+router.get('/prescriptions', guard, async (req, res) => {
+    try {
+        const { doctorId, userId, from, to, page = 1, limit = 30 } = req.query;
+
+        const filter = {
+            $or: [
+                { 'prescriptionData.prescriptionNumber': { $exists: true } },
+                { prescription: { $exists: true, $ne: null, $ne: '' } },
+            ],
+            status: { $in: ['completed', 'in_progress', 'no_show', 'ongoing'] },
+        };
+        if (doctorId) filter.doctorId = doctorId;
+        if (userId) filter.userId = userId;
+        if (from || to) {
+            filter['prescriptionData.issuedAt'] = {};
+            if (from) filter['prescriptionData.issuedAt'].$gte = new Date(from + 'T00:00:00');
+            if (to)   filter['prescriptionData.issuedAt'].$lte = new Date(to + 'T23:59:59');
+        }
+
+        const total = await Consultation.countDocuments(filter);
+        let consultations = await Consultation.find(filter)
+            .select('userId doctorId prescriptionData prescription status createdAt')
+            .sort('-prescriptionData.issuedAt')
+            .skip((Number(page) - 1) * Number(limit))
+            .limit(Number(limit))
+            .lean();
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        if (consultations.length > 0) {
+            const validUserIds = [...new Set(consultations.map(c => c.userId).filter(id => id && uuidRegex.test(id)))];
+            if (validUserIds.length > 0) {
+                const users = await User.findAll({ where: { id: validUserIds }, attributes: ['id', 'name', 'email'], raw: true });
+                const userMap = {};
+                users.forEach(u => { userMap[u.id] = u; });
+                consultations = consultations.map(c => ({ ...c, userId: userMap[c.userId] || null }));
+            } else {
+                consultations = consultations.map(c => ({ ...c, userId: null }));
+            }
+
+            const validDoctorIds = [...new Set(consultations.map(c => c.doctorId).filter(id => id && uuidRegex.test(id)))];
+            if (validDoctorIds.length > 0) {
+                const doctors = await Doctor.findAll({ where: { id: validDoctorIds }, attributes: ['id', 'name', 'specialization', 'title_prefix', 'title_suffix'], raw: true });
+                const doctorMap = {};
+                doctors.forEach(d => { doctorMap[d.id] = d; });
+                consultations = consultations.map(c => ({ ...c, doctorId: doctorMap[c.doctorId] || null }));
+            } else {
+                consultations = consultations.map(c => ({ ...c, doctorId: null }));
+            }
+        }
+
+        const prescriptions = consultations.map(c => ({
+            consultationId: c._id,
+            userId: c.userId,
+            doctorId: c.doctorId,
+            prescriptionNumber: c.prescriptionData?.prescriptionNumber || null,
+            issuedAt: c.prescriptionData?.issuedAt || c.createdAt,
+            validUntil: c.prescriptionData?.validUntil || null,
+            medicines: c.prescriptionData?.medicines || [],
+            isUsed: c.prescriptionData?.isUsed || false,
+            doctorNotes: c.prescriptionData?.doctorNotes || null,
+            // legacy: resep dalam format string biasa
+            prescriptionText: (!c.prescriptionData?.medicines?.length && c.prescription) ? c.prescription : null,
+        }));
+
+        res.json({ success: true, prescriptions, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+    } catch (err) {
+        console.error('[admin] GET /prescriptions error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
     }
 });

@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 
 module.exports = function(req, res, next) {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    // Support token via query param untuk download PDF via window.open
+    const token = req.header('Authorization')?.replace('Bearer ', '') || req.query.token;
     
     if (!token) {
         return res.status(401).json({ message: 'No token, authorization denied' });

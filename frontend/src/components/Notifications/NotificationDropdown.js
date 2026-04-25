@@ -3,9 +3,9 @@ import { Badge, ListGroup, Button } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useNotifications } from '../../context/NotificationContext';
 import { 
-    FaUserMd, FaCreditCard, FaTruck, FaClock, 
+    FaUserMd, FaTruck, 
     FaFileMedical, FaBell, FaCheckCircle, FaComment,
-    FaCalendarAlt, FaBox, FaMoneyBillWave
+    FaCalendarAlt, FaMoneyBillWave
 } from 'react-icons/fa';
 import { formatDistanceToNow } from 'date-fns';
 import { id } from 'date-fns/locale';
@@ -157,15 +157,7 @@ const NotificationDropdown = () => {
                         </ListGroup>
                     )}
 
-                    <div className="p-2 border-top text-center">
-                        <Link 
-                            to="/notifications" 
-                            className="text-decoration-none small"
-                            onClick={() => setShowDropdown(false)}
-                        >
-                            Lihat semua notifikasi
-                        </Link>
-                    </div>
+                    
                 </div>
             )}
         </div>

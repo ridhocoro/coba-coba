@@ -21,7 +21,7 @@ const WIB_OFFSET = 7 * 60 * 60 * 1000;
 const fmtRupiah = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 
 
-const toWIBDate = (utcStr) => new Date(new Date(utcStr).getTime() + WIB_OFFSET);
+
 
 const DAY_NAMES = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
 
@@ -83,7 +83,7 @@ const BookingSlot = () => {
     const rescheduleId  = new URLSearchParams(location.search).get('rescheduleId') || null;
 
     const [doctor, setDoctor]         = useState(null);
-    const [slots, setSlots]           = useState([]);
+    const [, setSlots]           = useState([]);
     const [grouped, setGrouped]       = useState({});
     const [activeDateIdx, setActiveDateIdx] = useState(0);
     const [selectedSlot, setSelectedSlot]   = useState(null);

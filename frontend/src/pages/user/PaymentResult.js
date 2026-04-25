@@ -33,7 +33,7 @@ const PaymentResult = () => {
 
     const [status, setStatus] = useState('checking'); // checking | paid | failed | pending
     const [type, setType]     = useState(null);       // consultation | medicine | appointment
-    const [refId, setRefId]   = useState(null);
+    const [, setRefId]   = useState(null);
 
     const externalId    = params.get('external_id');
     const typeParam     = params.get('type'); // diteruskan dari invoice URL

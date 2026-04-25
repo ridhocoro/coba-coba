@@ -153,6 +153,12 @@ const Home = () => {
         }
     }, [currentSlide, isTransitioning, handleInfiniteTransition]);
 
+    const nextSlide = useCallback(() => {
+        if (isTransitioning || isInfiniteAnimating) return;
+        setIsTransitioning(true);
+        setCurrentSlide((prev) => prev + 1);
+    }, [isTransitioning, isInfiniteAnimating]);
+
     // Auto slide every 5 seconds
     useEffect(() => {
         autoPlayInterval.current = setInterval(() => {
@@ -163,13 +169,7 @@ const Home = () => {
         return () => {
             if (autoPlayInterval.current) clearInterval(autoPlayInterval.current);
         };
-    }, [isTransitioning, isInfiniteAnimating]);
-
-    const nextSlide = () => {
-        if (isTransitioning || isInfiniteAnimating) return;
-        setIsTransitioning(true);
-        setCurrentSlide((prev) => prev + 1);
-    };
+    }, [isTransitioning, isInfiniteAnimating, nextSlide]);
 
     const goToSlide = (index) => {
         if (isTransitioning || isInfiniteAnimating) return;

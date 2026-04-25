@@ -29,18 +29,22 @@ const NotifBell = ({ socketRef }) => {
 
     // Realtime via socket
     useEffect(() => {
-        if (!socketRef?.current) return;
-        const handler = (n) => {
-            setNotifs(prev => [n, ...prev].slice(0, 50));
-            setUnread(u => u + 1);
-        };
-        const unreadHandler = (c) => setUnread(c);
-        socketRef.current.on('new-notification', handler);
-        socketRef.current.on('unread-count', unreadHandler);
-        return () => {
-            socketRef.current?.off('new-notification', handler);
-            socketRef.current?.off('unread-count', unreadHandler);
-        };
+    const socket = socketRef?.current;
+    if (!socket) return;
+    
+    const handler = (n) => {
+        setNotifs(prev => [n, ...prev].slice(0, 50));
+        setUnread(u => u + 1);
+    };
+    const unreadHandler = (c) => setUnread(c);
+    
+    socket.on('new-notification', handler);
+    socket.on('unread-count', unreadHandler);
+    
+    return () => {
+        socket.off('new-notification', handler);
+        socket.off('unread-count', unreadHandler);
+    };
     }, [socketRef]);
 
     // Close on outside click

@@ -499,10 +499,19 @@ const Pharmacy = () => {
         const paidAt = order.updatedAt || order.createdAt;
         return Date.now() - new Date(paidAt).getTime() < 60 * 60 * 1000;
     };
+    const REFUND_DEADLINE_MS = 24 * 60 * 60 * 1000;
     const canRefundWithVideo = (order) => {
         if (!['terkirim', 'selesai'].includes(order.status)) return false;
         const arrivedAt = order.terkirimAt || order.completedAt || order.updatedAt;
-        return Date.now() - new Date(arrivedAt).getTime() < 24 * 60 * 60 * 1000;
+        return Date.now() - new Date(arrivedAt).getTime() < REFUND_DEADLINE_MS;
+    };
+
+    const refundHoursLeft = (order) => {
+    const arrivedAt = order.terkirimAt || order.completedAt || order.updatedAt;
+    const elapsed = Date.now() - new Date(arrivedAt).getTime();
+    const remaining = REFUND_DEADLINE_MS - elapsed;
+    if (remaining <= 0) return 0;
+    return Math.ceil(remaining / (60 * 60 * 1000));
     };
 
     const selesaikanOrder = async (id) => {
@@ -534,7 +543,7 @@ const Pharmacy = () => {
     };
 
     const GuestModal = () => (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', backdropFilter:'blur(4px)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={() => setGuestModal(false)}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', backdropFilter:'blur(4px)', zIndex:10001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={() => setGuestModal(false)}>
             <div className="slide-up" onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:24, padding:'40px 32px', maxWidth:420, width:'100%', textAlign:'center', boxShadow:'0 25px 50px -12px rgba(0,0,0,.25)' }}>
                 <div style={{ width:72, height:72, borderRadius:'50%', background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px', fontSize:32 }}>🔐</div>
                 <h5 style={{ fontWeight:800, fontSize:22, color:'#0f172a', marginBottom:10 }}>Login Diperlukan</h5>
@@ -986,10 +995,23 @@ const Pharmacy = () => {
                                                     </button>
                                                 )}
 
-                                                {canRefundWithVideo(order)&&(
-                                                    <button className="btn-o" style={{color:'#dc2626',borderColor:'#fecaca',justifyContent:'center',display:'flex',alignItems:'center',gap:8}} onClick={()=>openRefundModal(order,'video')}>
-                                                        🎥 Komplain & Refund
-                                                    </button>
+                                                {['terkirim', 'selesai'].includes(order.status) && (
+                                                    canRefundWithVideo(order) ? (
+                                                        <button
+                                                            className="btn-o"
+                                                            style={{color:'#dc2626',borderColor:'#fecaca',justifyContent:'center',display:'flex',alignItems:'center',gap:8}}
+                                                            onClick={()=>openRefundModal(order,'video')}
+                                                        >
+                                                            🎥 Komplain & Refund
+                                                            <span style={{fontSize:10,background:'#fee2e2',color:'#b91c1c',borderRadius:6,padding:'2px 6px',fontWeight:700}}>
+                                                                {refundHoursLeft(order)}j lagi
+                                                            </span>
+                                                        </button>
+                                                    ) : (
+                                                        <div style={{background:'#f1f5f9',borderRadius:12,padding:'10px 14px',fontSize:12,color:'#94a3b8',textAlign:'center',fontWeight:600}}>
+                                                            ⏰ Batas komplain telah berakhir
+                                                        </div>
+                                                    )
                                                 )}
 
                                                 {['refund_requested','refund_rejected','refunded'].includes(order.status)&&(

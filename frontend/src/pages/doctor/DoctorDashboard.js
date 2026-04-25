@@ -40,7 +40,7 @@ const formatFullDoctorName = (doctor) => {
     const titlePrefix = doctor.titlePrefix || '';
     const name = doctor.name || '';
     const titleSuffix = doctor.titleSuffix || '';
-    const specialization = doctor.specialization || '';
+    
     
     // Format: dr. Reza Arap Sp.PD
     let fullName = '';
@@ -158,7 +158,7 @@ const DoctorDashboard = () => {
 
     // Nama dokter dengan gelar lengkap untuk ditampilkan
     const fullDoctorName = formatFullDoctorName(doctorInfo);
-    const shortDoctorName = formatShortDoctorName(doctorInfo);
+    
     const doctorSpecialization = doctorInfo?.specialization || 'Dokter';
 
     return (

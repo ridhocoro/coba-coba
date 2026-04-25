@@ -88,7 +88,7 @@ const Profile = () => {
         }
         setSavingProfile(true);
         try {
-            const res = await api.put(`/api/users/profile`,
+            await api.put(`/api/users/profile`,
                 profileData
             );
             toast.success('Profil berhasil diperbarui');

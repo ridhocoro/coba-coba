@@ -43,15 +43,18 @@ const SectionJanjiTemu = ({ socketRef }) => {
 
     // Socket: realtime new appointment
     useEffect(() => {
-        if (!socketRef?.current) return;
-        const handler = (n) => {
-            if (n.type === 'appointment_reminder' || n.type === 'appointment_request') {
-                fetchData();
-                toast('📅 Janji temu baru masuk!', { icon: '📅' });
-            }
-        };
-        socketRef.current.on('new-notification', handler);
-        return () => socketRef.current?.off('new-notification', handler);
+    const socket = socketRef?.current;
+    if (!socket) return;
+    
+    const handler = (n) => {
+        if (n.type === 'appointment_reminder' || n.type === 'appointment_request') {
+            fetchData();
+            toast('📅 Janji temu baru masuk!', { icon: '📅' });
+        }
+    };
+    
+    socket.on('new-notification', handler);
+    return () => socket.off('new-notification', handler);
     }, [socketRef, fetchData]);
 
     // Polling fallback every 30s

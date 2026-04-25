@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Navbar, Nav, Container, NavDropdown, Badge } from 'react-bootstrap';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { useNotifications } from '../../context/NotificationContext';
 import NotificationDropdown from '../Notifications/NotificationDropdown';
 import api from '../../utils/api';
 import ipbLogo from './ipb-logo.png';
@@ -16,7 +15,6 @@ import {
 
 const Navigation = () => {
     const { user, logout } = useAuth();
-    const { unreadCount } = useNotifications();
     const navigate = useNavigate();
     const location = useLocation();
     const [pendingPayments, setPendingPayments] = useState(0);

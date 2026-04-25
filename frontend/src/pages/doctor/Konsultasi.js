@@ -23,22 +23,6 @@ const SectionKonsultasi = ({ socketRef }) => {
     const [consDetail, setConsDetail]   = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
 
-    // Socket realtime
-    useEffect(() => {
-        if (!socketRef?.current) return;
-        const handler = ({ consultationId, status }) => {
-            setConsultations(prev => prev.map(c => c._id === consultationId ? { ...c, status } : c));
-        };
-        const notifHandler = (n) => {
-            if (n.type?.includes('consultation')) { fetchAll(); }
-        };
-        socketRef.current.on('consultation-status-update', handler);
-        socketRef.current.on('new-notification', notifHandler);
-        return () => {
-            socketRef.current?.off('consultation-status-update', handler);
-            socketRef.current?.off('new-notification', notifHandler);
-        };
-    }, [socketRef]);
 
     const fetchAll = useCallback(async () => {
         setLoading(true);
@@ -55,6 +39,28 @@ const SectionKonsultasi = ({ socketRef }) => {
         } catch { toast.error('Gagal memuat konsultasi'); }
         finally { setLoading(false); }
     }, []);
+    // Socket realtime
+    useEffect(() => {
+    const socket = socketRef?.current;
+    if (!socket) return;
+    
+    const handler = ({ consultationId, status }) => {
+        setConsultations(prev => prev.map(c => c._id === consultationId ? { ...c, status } : c));
+    };
+    const notifHandler = (n) => {
+        if (n.type?.includes('consultation')) { fetchAll(); }
+    };
+    
+    socket.on('consultation-status-update', handler);
+    socket.on('new-notification', notifHandler);
+    
+    return () => {
+        socket.off('consultation-status-update', handler);
+        socket.off('new-notification', notifHandler);
+    };
+    }, [socketRef, fetchAll]);
+
+
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
 
