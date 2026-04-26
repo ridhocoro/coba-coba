@@ -67,6 +67,11 @@ router.post('/create-invoice', auth, async (req, res) => {
             return res.status(400).json({ error: 'amount, paymentType, dan referenceId wajib diisi' });
         }
 
+        // Blokir invoice Xendit untuk pesanan gratis — tidak ada yang perlu dibayar
+        if (Number(amount) <= 0) {
+            return res.status(400).json({ error: 'Pesanan ini gratis, tidak perlu pembayaran.' });
+        }
+
         const externalId = `INV-${paymentType.toUpperCase()}-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
         let payment = null;
@@ -99,7 +104,7 @@ router.post('/create-invoice', auth, async (req, res) => {
             external_id: externalId,
             amount,
             description: description || `Pembayaran ${paymentType} – Klinik Pratama IPB`,
-            invoice_duration: 900,
+            invoice_duration: 86400, // 1 hari (24 jam) — sesuai PAYMENT_LOCK_MIN
             success_redirect_url: `${FRONTEND_URL}/payment/success?external_id=${externalId}`,
             failure_redirect_url: `${FRONTEND_URL}/payment/failed?external_id=${externalId}`,
             currency: 'IDR',
@@ -133,7 +138,7 @@ router.post('/create-invoice', auth, async (req, res) => {
         if (paymentType !== 'consultation' && referenceId) {
             // Simpan xenditExternalId ke order + lock stok + set paymentExpiry 15 menit
             try {
-                const PAYMENT_LOCK_MIN = 15;
+                const PAYMENT_LOCK_MIN = 1440; // 1 hari (24 jam)
                 const paymentExpiry    = new Date(Date.now() + PAYMENT_LOCK_MIN * 60 * 1000);
                 const { OrderItem }    = require('../models/mysql');
 
@@ -194,7 +199,7 @@ router.post('/initiate-payment/:consultationId', auth, async (req, res) => {
             external_id: externalId,
             amount,
             description: `Konsultasi dengan ${fmtDoctorName(doctor)} – Klinik Pratama IPB`,
-            invoice_duration: 900,
+            invoice_duration: 86400, // 1 hari (24 jam) — sesuai PAYMENT_LOCK_MIN
             success_redirect_url: `${FRONTEND_URL}/payment/success?external_id=${externalId}`,
             failure_redirect_url: `${FRONTEND_URL}/payment/failed?external_id=${externalId}`,
             currency: 'IDR',

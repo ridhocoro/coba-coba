@@ -107,16 +107,29 @@ const Reports = () => {
     if (!preview?.rows) return [];
     let rows = preview.rows;
     
+    // Filter status yang dikecualikan
+    rows = rows.filter(row => !EXCLUDED_STATUSES.includes(row.status?.toLowerCase()));
+
+    // Untuk tab revenue: kecualikan baris farmasi gratis mahasiswa (nominal = 0)
+    // Baris tersebut masuk ke tab Subsidi Mahasiswa
+    if (tab === 'revenue') {
+      rows = rows.filter(row => !(row.jenis === 'Farmasi' && Number(row.nominal) === 0));
+    }
+
     // Filter berdasarkan subTab
     if (subTab === 'consultation') {
       rows = rows.filter(r => r.jenis === 'Konsultasi');
     } else if (subTab === 'pharmacy') {
       rows = rows.filter(r => r.jenis === 'Farmasi');
     }
-    
-    // Filter status yang dikecualikan
-    rows = rows.filter(row => !EXCLUDED_STATUSES.includes(row.status?.toLowerCase()));
-    
+
+    // Sort berdasarkan tanggal (terbaru ke terlama)
+    rows = [...rows].sort((a, b) => {
+      const da = a.tanggal ? new Date(a.tanggal.split('/').reverse().join('-')) : 0;
+      const db = b.tanggal ? new Date(b.tanggal.split('/').reverse().join('-')) : 0;
+      return db - da;
+    });
+
     return rows;
   };
 
@@ -247,7 +260,9 @@ const Reports = () => {
   const rpK = tab === 'revenue' ? rpKeys : rpKeysSubsidi;
 
   const rows = filteredRows();
-  const rowsAll = preview?.rows?.filter(r => !EXCLUDED_STATUSES.includes(r.status?.toLowerCase())) || [];
+  const rowsAll = (preview?.rows || [])
+    .filter(r => !EXCLUDED_STATUSES.includes(r.status?.toLowerCase()))
+    .filter(r => !(r.jenis === 'Farmasi' && Number(r.nominal) === 0)); // kecualikan gratis mahasiswa
   const rowsConsult = rowsAll.filter(r => r.jenis === 'Konsultasi');
   const rowsPharm = rowsAll.filter(r => r.jenis === 'Farmasi');
 

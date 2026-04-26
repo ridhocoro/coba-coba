@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { Op } = require('sequelize');
-const { User, Doctor, Order, Medicine, Payment } = require('../models/mysql');
+const { sequelize, User, Doctor, Order, Medicine, Payment } = require('../models/mysql');
 const { populateFromMySQL } = require('../utils/hybridJoin');
 const router = express.Router();
 const multer = require('multer');
@@ -97,9 +97,11 @@ router.get('/analytics/operational', guard, async (req, res) => {
         const todayEnd = new Date();
         todayEnd.setHours(23, 59, 59, 999);
 
-        const [pendingRx, paidOrders, pickupReady, todayAppt, todayConsult] = await Promise.all([
+        const [pendingRx, needsPreparation, pickupReady, todayAppt, todayConsult] = await Promise.all([
             Order.count({ where: { status: 'waiting_prescription' } }),
-            Order.count({ where: { status: 'paid' } }),
+            // "Perlu Disiapkan" = pesanan berbayar (paid) + pesanan gratis mahasiswa (diproses)
+            // yang belum selesai disiapkan
+            Order.count({ where: { status: { [Op.in]: ['paid', 'diproses'] } } }),
             Order.count({ where: { status: 'siap_diambil' } }),
             Appointment.countDocuments({
                 scheduledAt: { $gte: todayStart, $lte: todayEnd },
@@ -111,7 +113,7 @@ router.get('/analytics/operational', guard, async (req, res) => {
             }),
         ]);
 
-        res.json({ success: true, pendingRx, paidOrders, pickupReady, todayAppt, todayConsult });
+        res.json({ success: true, pendingRx, needsPreparation, pickupReady, todayAppt, todayConsult });
     } catch (err) {
         console.error('[admin] GET /analytics/operational error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
@@ -585,7 +587,15 @@ router.get('/users/:id', guard, async (req, res) => {
                         raw: true
                     });
                     const doctorMap = {};
-                    doctors.forEach(d => { doctorMap[d.id] = d; });
+                    doctors.forEach(d => {
+                    doctorMap[d.id] = {
+                        id: d.id,
+                        name: d.name,
+                        specialization: d.specialization,
+                        titlePrefix: d.title_prefix || '',
+                        titleSuffix: d.title_suffix || '',
+                    };
+                });
                     consultations = consultations.map(c => ({
                         ...c,
                         doctorId: doctorMap[c.doctorId] || null
@@ -614,7 +624,15 @@ router.get('/users/:id', guard, async (req, res) => {
                         raw: true
                     });
                     const doctorMap = {};
-                    doctors.forEach(d => { doctorMap[d.id] = d; });
+                    doctors.forEach(d => {
+                    doctorMap[d.id] = {
+                        id: d.id,
+                        name: d.name,
+                        specialization: d.specialization,
+                        titlePrefix: d.title_prefix || '',
+                        titleSuffix: d.title_suffix || '',
+                    };
+                });
                     appointments = appointments.map(a => ({
                         ...a,
                         doctorId: doctorMap[a.doctorId] || null
@@ -792,7 +810,16 @@ router.get('/consultations', guard, async (req, res) => {
                     raw: true
                 });
                 const doctorMap = {};
-                doctors.forEach(d => { doctorMap[d.id] = d; });
+                doctors.forEach(d => {
+                    doctorMap[d.id] = {
+                        id: d.id,
+                        name: d.name,
+                        specialization: d.specialization,
+                        // Konversi snake_case → camelCase agar fmtDoctorName di frontend bekerja
+                        titlePrefix: d.title_prefix || d.titlePrefix || '',
+                        titleSuffix: d.title_suffix || d.titleSuffix || '',
+                    };
+                });
                 consultations = consultations.map(c => ({
                     ...c,
                     doctorId: doctorMap[c.doctorId] || null
@@ -864,7 +891,16 @@ router.get('/appointments', guard, async (req, res) => {
                     raw: true
                 });
                 const doctorMap = {};
-                doctors.forEach(d => { doctorMap[d.id] = d; });
+                doctors.forEach(d => {
+                    doctorMap[d.id] = {
+                        id: d.id,
+                        name: d.name,
+                        specialization: d.specialization,
+                        // Konversi snake_case → camelCase agar fmtDoctorName di frontend bekerja
+                        titlePrefix: d.title_prefix || d.titlePrefix || '',
+                        titleSuffix: d.title_suffix || d.titleSuffix || '',
+                    };
+                });
                 appointments = appointments.map(a => ({
                     ...a,
                     doctorId: doctorMap[a.doctorId] || null
@@ -1078,7 +1114,15 @@ router.get('/sick-letters', guard, async (req, res) => {
                     raw: true
                 });
                 const doctorMap = {};
-                doctors.forEach(d => { doctorMap[d.id] = d; });
+                doctors.forEach(d => {
+                    doctorMap[d.id] = {
+                        id: d.id,
+                        name: d.name,
+                        specialization: d.specialization,
+                        titlePrefix: d.title_prefix || '',
+                        titleSuffix: d.title_suffix || '',
+                    };
+                });
                 letters = letters.map(l => ({
                     ...l,
                     doctorId: doctorMap[l.doctorId] || null
@@ -1121,7 +1165,7 @@ router.get('/reports/revenue', guard, async (req, res) => {
             
             const [users, doctors] = await Promise.all([
                 userIds.length ? User.findAll({ where: { id: userIds }, attributes: ['id', 'name', 'email'], raw: true }) : [],
-                doctorIds.length ? Doctor.findAll({ where: { id: doctorIds }, attributes: ['id', 'name'], raw: true }) : [],
+                doctorIds.length ? Doctor.findAll({ where: { id: doctorIds }, attributes: ['id', 'name', 'titlePrefix', 'titleSuffix'], raw: true }) : [],
             ]);
             
             const userMap = Object.fromEntries(users.map(u => [u.id, u]));
@@ -1146,13 +1190,19 @@ router.get('/reports/revenue', guard, async (req, res) => {
                         'refund_requested', 'refund_rejected'
                     ] 
                 },
+                // Kecualikan pesanan gratis mahasiswa — masuk ke laporan Subsidi Mahasiswa
+                [Op.not]: {
+                    is_student_discount: true,
+                    total_amount: 0,
+                },
             },
             limit: REPORT_LIMIT,
+            order: [['created_at', 'ASC']],
             include: [
                 { model: User, as: 'user', attributes: ['name', 'email'] },
                 { association: 'items', attributes: ['quantity', 'medicine_name'] },
             ],
-            attributes: ['order_number', 'created_at', 'total_amount', 'shipping_cost', 'xendit_external_id', 'status', 'user_id', 'delivery_method'],
+            attributes: ['order_number', 'created_at', 'total_amount', 'shipping_cost', 'xendit_external_id', 'status', 'user_id', 'delivery_method', 'is_student_discount'],
         });
 
         const orders = dbOrders.map(o => {
@@ -1181,12 +1231,13 @@ router.get('/reports/revenue', guard, async (req, res) => {
 
         let rows = [
             ...consultations.map(c => ({
+                _sortDate: new Date(c.paidAt),
                 tanggal: new Date(c.paidAt).toLocaleDateString('id-ID'),
                 jenis: 'Konsultasi',
                 id_transaksi: c.xenditExternalId || '-',
                 nama_pasien: c.userId?.name || '-',
                 email_pasien: c.userId?.email || '-',
-                nama_dokter: c.doctorId?.name || '-',
+                nama_dokter: fmtDoctorName(c.doctorId) || '-',
                 nominal: c.amount || 0,
                 metode_bayar: 'Xendit',
                 ongkir: 0,
@@ -1194,6 +1245,7 @@ router.get('/reports/revenue', guard, async (req, res) => {
                 status: c.status,
             })),
             ...orders.map(o => ({
+                _sortDate: new Date(o.createdAt),
                 tanggal: new Date(o.createdAt).toLocaleDateString('id-ID'),
                 jenis: 'Farmasi',
                 id_transaksi: o.xenditExternalId || o.orderNumber || '-',
@@ -1206,7 +1258,10 @@ router.get('/reports/revenue', guard, async (req, res) => {
                 total_qty: (o.items || []).reduce((s, i) => s + (i.quantity || 0), 0),
                 status: o.status,
             })),
-        ].sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
+        ]
+        // Sort berdasarkan tanggal terbaru ke terlama (DESC)
+        .sort((a, b) => b._sortDate - a._sortDate)
+        .map(({ _sortDate, ...rest }) => rest); // hapus _sortDate dari output
 
         // Filter by jenis if specified
         if (jenis === 'Konsultasi') {
@@ -1234,47 +1289,59 @@ router.get('/reports/revenue', guard, async (req, res) => {
 
 router.get('/reports/subsidi-mahasiswa', guard, async (req, res) => {
     try {
-        const { from, to, format = 'json' } = req.query;
-        const start = from ? new Date(from + 'T00:00:00') : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-        const end = to ? new Date(to + 'T23:59:59') : new Date();
+        const { period, from, to, format = 'json' } = req.query;
+        // Gunakan dateRange() agar mendukung period=today/7d/30d/custom sama seperti revenue
+        const { start, end } = dateRange(period, from, to);
 
-        // PERBAIKAN: Filter order yang statusnya TIDAK termasuk yang dikecualikan
-        // Dikecualikan: waiting_prescription, prescription_rejected, refunded, cancelled, expired
+        // Format tanggal untuk literal SQL (hindari timezone issue)
+        const fmt = d => d.toISOString().slice(0, 19).replace('T', ' ');
+
         const dbOrders = await Order.findAll({
             where: {
-                is_student_discount: true,
-                status: { 
+                isStudentDiscount: true,
+                studentFreeQty: { [Op.gt]: 0 },
+                status: {
                     [Op.notIn]: [
-                        'cancelled', 'expired', 'prescription_rejected', 
+                        'cancelled', 'expired', 'prescription_rejected',
                         'waiting_prescription', 'refunded', 'refund_requested', 'refund_rejected'
-                    ] 
+                    ]
                 },
-                created_at: { [Op.between]: [start, end] },
+                // Model Order pakai underscored:true → kolom DB = created_at, bukan createdAt
+                // Wajib pakai sequelize.literal agar tidak error "Unknown column 'Order.createdAt'"
+                [Op.and]: sequelize.literal(
+                    `\`Order\`.\`created_at\` BETWEEN '${fmt(start)}' AND '${fmt(end)}'`
+                ),
             },
             include: [
                 { model: User, as: 'user', attributes: ['name', 'email'] },
-                { association: 'items' }
+                { association: 'items', as: 'items' },
             ],
-            attributes: ['created_at', 'user_id', 'student_free_qty'],
+            order: sequelize.literal('`Order`.`created_at` DESC'),
         });
 
         const rows = [];
         for (const order of dbOrders) {
             const json = order.toJSON();
-            const items = order.items || [];
-            const freeItems = items.filter(i => i.is_free_for_student);
+            const items = json.items || [];
+            // OrderItem tidak pakai underscored:true → toJSON() returns camelCase
+            const freeItems = items.filter(i => i.isFreeForStudent === true || i.isFreeForStudent === 1);
             for (const item of freeItems) {
                 rows.push({
-                    tanggal: new Date(json.created_at).toLocaleDateString('id-ID'),
+                    _sortDate: new Date(json.createdAt || json.created_at),
+                    tanggal: new Date(json.createdAt || json.created_at).toLocaleDateString('id-ID'),
                     email_mahasiswa: json.user?.email || '-',
                     nama_mahasiswa: json.user?.name || '-',
-                    nama_obat: item.medicine_name || '-',
+                    nama_obat: item.medicineName || item.medicine_name || '-',
                     qty: item.quantity || 0,
-                    harga_satuan: item.price || 0,
-                    total_subsidi: (item.price || 0) * (item.quantity || 0),
+                    harga_satuan: Number(item.price) || 0,
+                    total_subsidi: (Number(item.price) || 0) * (item.quantity || 0),
                 });
             }
         }
+
+        // Sort berdasarkan tanggal terbaru ke terlama (DESC)
+        rows.sort((a, b) => b._sortDate - a._sortDate);
+        rows.forEach(r => delete r._sortDate);
 
         const grandTotal = rows.reduce((s, r) => s + r.total_subsidi, 0);
 
@@ -1568,7 +1635,15 @@ router.get('/prescriptions', guard, async (req, res) => {
             if (validDoctorIds.length > 0) {
                 const doctors = await Doctor.findAll({ where: { id: validDoctorIds }, attributes: ['id', 'name', 'specialization', 'title_prefix', 'title_suffix'], raw: true });
                 const doctorMap = {};
-                doctors.forEach(d => { doctorMap[d.id] = d; });
+                doctors.forEach(d => {
+                    doctorMap[d.id] = {
+                        id: d.id,
+                        name: d.name,
+                        specialization: d.specialization,
+                        titlePrefix: d.title_prefix || '',
+                        titleSuffix: d.title_suffix || '',
+                    };
+                });
                 consultations = consultations.map(c => ({ ...c, doctorId: doctorMap[c.doctorId] || null }));
             } else {
                 consultations = consultations.map(c => ({ ...c, doctorId: null }));
@@ -1592,6 +1667,77 @@ router.get('/prescriptions', guard, async (req, res) => {
         res.json({ success: true, prescriptions, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
     } catch (err) {
         console.error('[admin] GET /prescriptions error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+function analyticsDateRange(query) {
+    const { period, year, month } = query;
+    const now = new Date();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    
+    if (period === 'month' && year && month) {
+        const y = parseInt(year, 10);
+        const m = parseInt(month, 10) - 1;
+        const start = new Date(y, m, 1, 0, 0, 0, 0);
+        const end = new Date(y, m + 1, 0, 23, 59, 59, 999);
+        return { start, end };
+    }
+    
+    if (period === '7d') {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+        return { start, end: todayEnd };
+    }
+    
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0);
+    return { start, end: todayEnd };
+}
+
+async function aggregateFrequency(Model, matchQuery) {
+    const pipeline = [
+        { $match: matchQuery },
+        {
+            $group: {
+                _id: {
+                    $dateToString: {
+                        format: '%Y-%m-%d',
+                        date: '$scheduledAt',
+                        timezone: '+07:00',
+                    },
+                },
+                count: { $sum: 1 },
+            },
+        },
+        { $sort: { _id: 1 } },
+        { $project: { _id: 0, date: '$_id', count: 1 } },
+    ];
+    return Model.aggregate(pipeline);
+}
+
+router.get('/analytics/appointments/frequency', guard, async (req, res) => {
+    try {
+        const { start, end } = analyticsDateRange(req.query);
+        const data = await aggregateFrequency(Appointment, {
+            scheduledAt: { $gte: start, $lte: end },
+            status: { $nin: ['cancelled_by_user', 'cancelled_by_admin', 'cancelled_by_doctor'] },
+        });
+        res.json({ success: true, data, period: { start, end } });
+    } catch (err) {
+        console.error('[admin] GET /analytics/appointments/frequency error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+router.get('/analytics/consultations/frequency', guard, async (req, res) => {
+    try {
+        const { start, end } = analyticsDateRange(req.query);
+        const data = await aggregateFrequency(Consultation, {
+            scheduledAt: { $gte: start, $lte: end },
+            status: { $nin: ['pending_payment', 'expired', 'cancelled', 'cancelled_by_user'] },
+        });
+        res.json({ success: true, data, period: { start, end } });
+    } catch (err) {
+        console.error('[admin] GET /analytics/consultations/frequency error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
     }
 });

@@ -31,7 +31,7 @@ const KLINIK_LAT = -6.5530;
 const KLINIK_LNG = 106.7237;
 const STUDENT_MAX_PCS = 8;
 const PICKUP_READY_MIN = 30;
-const PAYMENT_LOCK_MIN = 15;
+const PAYMENT_LOCK_MIN = 1440; // 1 hari (24 jam)
 const FREE_DELIVERY_KM = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -109,13 +109,18 @@ async function getStudentFreeUsage(userId) {
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
+    // Model Order memakai underscored:true → kolom DB = created_at
+    // Gunakan sequelize.literal agar tidak error "Unknown column 'Order.createdAt'"
+    const { sequelize } = require('../models/mysql');
     const orders = await Order.findAll({
         where: {
             userId,
             isStudentDiscount: true,
             studentFreeQty: { [Op.gt]: 0 },
             status: { [Op.notIn]: ['cancelled', 'expired', 'prescription_rejected'] },
-            createdAt: { [Op.between]: [startMonth, endMonth] },
+            [Op.and]: sequelize.literal(
+                `\`Order\`.\`created_at\` BETWEEN '${startMonth.toISOString().slice(0,19).replace('T',' ')}' AND '${endMonth.toISOString().slice(0,19).replace('T',' ')}'`
+            ),
         }
     });
     return orders.reduce((s, o) => s + (o.studentFreeQty || 0), 0);
@@ -376,15 +381,19 @@ router.post('/orders', auth, async (req, res) => {
             let isFreeForStudent = false;
             let finalPrice = Number(med.price);
 
+            let freeQtyForItem = 0;
             if (isStudent && med.availableForStudentQuota && !med.requiresPrescription && remainingQuota > 0) {
-                const freeQty = Math.min(item.quantity, remainingQuota);
-                remainingQuota -= freeQty;
-                quotaUsed += freeQty;
-                finalPrice = freeQty >= item.quantity ? 0 : Number(med.price);
-                isFreeForStudent = freeQty > 0;
+                freeQtyForItem = Math.min(item.quantity, remainingQuota);
+                remainingQuota -= freeQtyForItem;
+                quotaUsed += freeQtyForItem;
+                isFreeForStudent = freeQtyForItem > 0;
+                // Jika semua qty gratis, finalPrice = 0; jika parsial, tetap catat harga asli per unit
+                finalPrice = freeQtyForItem >= item.quantity ? 0 : Number(med.price);
             }
 
-            const subtotal = finalPrice * item.quantity;
+            // Hitung subtotal dengan benar: bagian gratis = 0, sisanya bayar penuh
+            const paidQty = item.quantity - freeQtyForItem;
+            const subtotal = paidQty * Number(med.price); // bagian gratis tidak dikenakan biaya
             subtotalObat += subtotal;
 
             orderItemsData.push({
@@ -392,6 +401,7 @@ router.post('/orders', auth, async (req, res) => {
                 medicineName: med.name,
                 price: Number(med.price),
                 finalPrice,
+                // freeQty tidak ada di model OrderItem — dihapus agar tidak error
                 quantity: item.quantity,
                 subtotal,
                 requiresPrescription: med.requiresPrescription || false,
@@ -400,6 +410,12 @@ router.post('/orders', auth, async (req, res) => {
         }
 
         const totalAmount = subtotalObat;
+        const isFreeOrder = totalAmount === 0 && !requiresPrescription;
+
+        // Pesanan gratis langsung diproses — tidak perlu tunggu pembayaran
+        const initialStatus = requiresPrescription
+            ? 'waiting_prescription'
+            : isFreeOrder ? 'diproses' : 'pending';
 
         const order = await Order.create({
             userId: req.userId,
@@ -416,20 +432,28 @@ router.post('/orders', auth, async (req, res) => {
             requiresPrescription,
             isStudentDiscount: isStudent && quotaUsed > 0,
             studentFreeQty: quotaUsed,
-            status: requiresPrescription ? 'waiting_prescription' : 'pending',
+            status: initialStatus,
+            diprosesPaidAt: isFreeOrder ? new Date() : null,
             estimatedDelivery: deliveryMethod === 'diantar'
-                ? 'Estimasi 1–2 jam setelah pembayaran dikonfirmasi' : null,
+                ? 'Estimasi 1–2 jam setelah pesanan dikonfirmasi' : null,
         });
 
         for (const itemData of orderItemsData) {
             await OrderItem.create({ orderId: order.id, ...itemData });
         }
 
+        // Pesanan gratis: langsung kurangi stok tanpa menunggu konfirmasi frontend
+        if (isFreeOrder) {
+            for (const itemData of orderItemsData) {
+                await Medicine.increment({ stock: -itemData.quantity }, { where: { id: itemData.medicineId } });
+            }
+        }
+
         const fullOrder = await Order.findByPk(order.id, {
             include: [{ association: 'items', include: ['medicine'] }],
         });
 
-        res.status(201).json({ success: true, order: formatOrder(fullOrder), requiresPrescription, quotaUsed });
+        res.status(201).json({ success: true, order: formatOrder(fullOrder), requiresPrescription, quotaUsed, isFreeOrder });
     } catch (err) {
         console.error('[pharmacy] POST /orders:', err.message, err.stack);
         res.status(500).json({ message: err.message || 'Server error' });
@@ -564,6 +588,25 @@ router.put('/orders/:id/selesai', auth, async (req, res) => {
         res.json({ success: true, message: 'Pesanan diselesaikan!', order });
     } catch (err) {
         res.status(500).json({ message: err.message || 'Server error' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER — Daftar bank untuk refund
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/refund-banks', auth, async (req, res) => {
+    try {
+        const banks = await getAvailableBanks();
+        // Normalise: Xendit mengembalikan { bank_code, name }, frontend butuh { code, name }
+        const normalized = banks.map(b => ({
+            code: b.bank_code || b.code,
+            name: b.name,
+        }));
+        res.json({ success: true, banks: normalized });
+    } catch (err) {
+        console.error('[pharmacy] GET /refund-banks:', err.message);
+        res.status(500).json({ message: 'Gagal mengambil daftar bank' });
     }
 });
 
@@ -726,7 +769,7 @@ router.put('/admin/orders/:id/verify-prescription', auth, adminAuth, async (req,
                 await createNotification({
                     userId: order.userId, type: 'payment_verified',
                     title: 'Resep Disetujui ✅',
-                    message: `Resep pesanan ${order.orderNumber} disetujui. Silakan lanjutkan pembayaran dalam 15 menit.`,
+                    message: `Resep pesanan ${order.orderNumber} disetujui. Silakan lanjutkan pembayaran dalam 1 hari (24 jam).`,
                     data: { orderId: order.id }, io
                 });
             }
@@ -851,6 +894,17 @@ router.post('/orders/:id/refund-request',
 
             const { reason, bankCode, accountNumber, accountName } = req.body;
 
+            // ─── BLOKIR refund untuk pesanan gratis mahasiswa ────────────────
+            // Pesanan yang dibayar dengan kuota gratis tidak bisa direfund
+            // karena tidak ada uang yang masuk
+            if (order.isStudentDiscount && order.totalAmount === 0) {
+                return res.status(400).json({
+                    message: 'Pesanan gratis mahasiswa tidak dapat direfund karena tidak ada pembayaran yang dilakukan.'
+                });
+            }
+            // Pesanan parsial: jika ada bagian gratis, refund hanya untuk bagian berbayar
+            // totalAmount sudah benar (hanya bagian berbayar), jadi Xendit akan refund jumlah yang tepat
+
             // Validasi bank info — wajib diisi di awal (sama seperti konsultasi)
             if (!bankCode?.trim())       return res.status(400).json({ message: 'Kode bank wajib diisi' });
             if (!accountNumber?.trim())  return res.status(400).json({ message: 'Nomor rekening wajib diisi' });
@@ -871,6 +925,11 @@ router.post('/orders/:id/refund-request',
                     'Content-Type': 'application/json',
                 };
                 const amount = order.totalAmount;
+
+                // Guard: jika totalAmount = 0, tidak ada yang perlu direfund ke Xendit
+                if (!amount || amount <= 0) {
+                    return res.status(400).json({ message: 'Tidak ada pembayaran yang bisa direfund untuk pesanan ini.' });
+                }
 
                 // Coba Xendit Refund dulu (jika invoice masih ada & dalam 7 hari)
                 let refunded     = false;

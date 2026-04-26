@@ -382,15 +382,16 @@ const Pharmacy = () => {
                 return;
             }
 
-            if (order.totalAmount === 0) {
-                await api.put(`/api/pharmacy/orders/${order._id}/confirm-free`);
-                toast.success('Pesanan gratis dikonfirmasi! Siap diambil dalam ±30 menit.');
+            // Gunakan Number() karena DECIMAL dari MySQL bisa kembali sebagai string "0.00"
+            if (Number(order.totalAmount) === 0) {
+                // Backend sudah otomatis set status 'diproses' untuk pesanan gratis
+                toast.success('Pesanan gratis berhasil dibuat! Sedang disiapkan.');
                 setActiveTab('orders'); fetchOrders(); fetchQuota();
                 return;
             }
 
             const invRes = await api.post('/api/xendit/create-invoice', {
-                amount     : order.totalAmount,
+                amount     : Number(order.totalAmount),
                 paymentType: 'medicine',
                 referenceId: order._id,
                 description: `Obat ${order.orderNumber} – Klinik Pratama IPB`,
@@ -496,12 +497,16 @@ const Pharmacy = () => {
 
     const canRefundInstant = (order) => {
         if (order.status !== 'paid') return false;
+        // Pesanan gratis mahasiswa tidak bisa direfund
+        if (order.isStudentDiscount && Number(order.totalAmount) === 0) return false;
         const paidAt = order.updatedAt || order.createdAt;
         return Date.now() - new Date(paidAt).getTime() < 60 * 60 * 1000;
     };
     const REFUND_DEADLINE_MS = 24 * 60 * 60 * 1000;
     const canRefundWithVideo = (order) => {
         if (!['terkirim', 'selesai'].includes(order.status)) return false;
+        // Pesanan gratis mahasiswa tidak bisa dikomplain/refund
+        if (order.isStudentDiscount && Number(order.totalAmount) === 0) return false;
         const arrivedAt = order.terkirimAt || order.completedAt || order.updatedAt;
         return Date.now() - new Date(arrivedAt).getTime() < REFUND_DEADLINE_MS;
     };
@@ -523,8 +528,14 @@ const Pharmacy = () => {
     };
 
     const bayarLagi = async (order) => {
+        // Guard: pesanan gratis tidak perlu invoice Xendit
+        // Gunakan Number() karena DECIMAL MySQL bisa kembali sebagai string "0.00"
+        if (!order.totalAmount || Number(order.totalAmount) <= 0) {
+            toast.info('Pesanan ini gratis, tidak perlu pembayaran.');
+            return;
+        }
         try {
-            const res = await api.post('/api/xendit/create-invoice', { amount:order.totalAmount, paymentType:'medicine', referenceId:order._id, description:`Obat ${order.orderNumber}` });
+            const res = await api.post('/api/xendit/create-invoice', { amount:Number(order.totalAmount), paymentType:'medicine', referenceId:order._id, description:`Obat ${order.orderNumber}` });
             window.location.href = res.data.invoiceUrl;
         } catch { toast.error('Gagal membuat link pembayaran'); }
     };
@@ -995,7 +1006,7 @@ const Pharmacy = () => {
                                                     </button>
                                                 )}
 
-                                                {['terkirim', 'selesai'].includes(order.status) && (
+                                                {['terkirim', 'selesai'].includes(order.status) && !(order.isStudentDiscount && Number(order.totalAmount) === 0) && (
                                                     canRefundWithVideo(order) ? (
                                                         <button
                                                             className="btn-o"
@@ -1146,8 +1157,15 @@ const Pharmacy = () => {
                                     </div>
                                 ) : (
                                     <div style={{display:'flex',flexDirection:'column',gap:16}}>
-                                        {cart.map(item=>{
-                                            const isFree = isStudent && item.availableForStudentQuota && !item.requiresPrescription && quota.remaining>0;
+                                        {(()=>{
+                                            // Hitung isFree per item dengan melacak kuota yang terpakai secara berurutan
+                                            let usedInCart = 0;
+                                            return cart.map(item=>{
+                                            const freeQty = (isStudent && item.availableForStudentQuota && !item.requiresPrescription)
+                                                ? Math.min(item.quantity, Math.max(0, quota.remaining - usedInCart))
+                                                : 0;
+                                            if (freeQty > 0) usedInCart += freeQty;
+                                            const isFree = freeQty >= item.quantity;
                                             return (
                                                 <div key={item._id} style={{display:'flex',alignItems:'center',padding:'16px',background:'#f8fafc',borderRadius:16,border:'1px solid #f1f5f9'}}>
                                                     <div style={{width:64,height:64,background:'#fff',borderRadius:12,padding:8,border:'1px solid #e2e8f0',marginRight:16}}>
@@ -1168,7 +1186,8 @@ const Pharmacy = () => {
                                                     </div>
                                                 </div>
                                             );
-                                        })}
+                                        });
+                                        })()}
                                         <div style={{marginTop:8,padding:'20px 24px',background:'#eff6ff',borderRadius:16,display:'flex',justifyContent:'space-between',alignItems:'center',border:'1px solid #bfdbfe'}}>
                                             <span style={{fontWeight:700,color:'#1e40af',fontSize:15}}>Subtotal Obat</span>
                                             <span style={{color:'#000',fontWeight:900,fontSize:20,letterSpacing:'-0.5px'}}>{fmt(cartSubtotal())}</span>
