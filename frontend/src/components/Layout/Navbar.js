@@ -10,7 +10,7 @@ import {
     FaHeartbeat, FaSignInAlt, FaUserPlus, FaSignOutAlt,
     FaUser, FaShieldAlt, FaStethoscope,
     FaBox, FaUsers, FaMoneyBillWave, FaHistory,
-    FaWeight, FaFire
+    FaWeight, FaFire,FaVideo
 } from 'react-icons/fa';
 
 const Navigation = () => {
@@ -245,6 +245,9 @@ const Navigation = () => {
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/health-check/calories" className={location.pathname === '/health-check/calories' ? 'active' : ''}>
                                             <FaFire className="me-2 text-muted" /> Calorie Calculator
+                                        </NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/health-check/vital-scan" className={location.pathname === '/health-check/vital-sign' ? 'active' : ''}>
+                                            <FaVideo className="me-2 text-muted" /> Vital Sign Scanner
                                         </NavDropdown.Item>
                                     </NavDropdown>
                                 </>

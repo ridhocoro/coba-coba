@@ -1,0 +1,286 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Container, Row, Col, Card, Badge } from 'react-bootstrap';
+import { FaPills, FaArrowLeft, FaClock, FaPhone } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
+
+const PelayananKefarmasian = () => {
+    const [isHeroVisible, setIsHeroVisible] = useState(false);
+    const [isContentVisible, setIsContentVisible] = useState(false);
+    
+    const heroRef = useRef(null);
+    const contentRef = useRef(null);
+
+    const kegiatan = [
+        {
+            title: 'Pengkajian dan Pelayanan Resep',
+            desc: 'Resep pasien diperiksa dengan cermat untuk memastikan keakuratan dosis dan kesesuaian penggunaannya. Dengan demikian, pemberian obat dapat dilakukan secara tepat sesuai prosedur.',
+        },
+        {
+            title: 'Pelayanan Informasi Obat',
+            desc: 'Petugas memberikan informasi lengkap dan jelas terkait penggunaan obat kepada pasien untuk memastikan pasien memahami tata cara penggunaan obat secara benar dan optimal.',
+        },
+        {
+            title: 'Konseling Obat',
+            desc: 'Layanan ini berfokus memberikan panduan kepada pasien mengenai aturan penggunaan obat sehingga pasien dapat mengikuti instruksi dengan lebih baik dan mencapai hasil terapi yang optimal.',
+        },
+        {
+            title: 'Monitoring Efek Samping Obat (MESO)',
+            desc: 'Kegiatan ini dilakukan untuk memantau potensi efek samping obat yang mungkin terjadi, sehingga keamanan pasien dapat terus diprioritaskan selama menjalani pengobatan.',
+        },
+    ];
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        const targetId = entry.target.getAttribute('data-section');
+                        if (targetId === 'hero') {
+                            setIsHeroVisible(true);
+                        } else if (targetId === 'content') {
+                            setIsContentVisible(true);
+                        }
+                    }
+                });
+            },
+            { 
+                threshold: 0.15,
+                rootMargin: '0px'
+            }
+        );
+
+        if (heroRef.current) observer.observe(heroRef.current);
+        if (contentRef.current) observer.observe(contentRef.current);
+
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <div className="service-detail-page">
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+                
+                .service-detail-page, .service-detail-page * {
+                    font-family: 'Poppins', sans-serif;
+                }
+
+                /* State awal - tersembunyi */
+                .hero-content, .hero-icon, .hero-badge, .hero-title, .hero-text,
+                .about-card, .activities-card, .schedule-card, .contact-card {
+                    opacity: 0;
+                }
+
+                /* Animasi fade in dari kiri */
+                .animate-fade-in-left {
+                    animation: fadeInLeft 0.8s ease-out forwards;
+                }
+
+                /* Animasi fade in dari kanan */
+                .animate-fade-in-right {
+                    animation: fadeInRight 0.8s ease-out forwards;
+                }
+
+                /* Animasi fade in dari bawah */
+                .animate-fade-in-up {
+                    animation: fadeInUp 0.8s ease-out forwards;
+                }
+
+                @keyframes fadeInLeft {
+                    from {
+                        opacity: 0;
+                        transform: translateX(-30px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                }
+
+                @keyframes fadeInRight {
+                    from {
+                        opacity: 0;
+                        transform: translateX(30px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                }
+
+                @keyframes fadeInUp {
+                    from {
+                        opacity: 0;
+                        transform: translateY(30px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+
+                /* Hover effects */
+                .hover-card {
+                    transition: all 0.25s ease;
+                }
+
+                .hover-card:hover {
+                    transform: translateY(-4px);
+                    box-shadow: 0 12px 24px rgba(0,0,0,0.08) !important;
+                }
+
+                .activity-item {
+                    transition: all 0.25s ease;
+                }
+
+                .activity-item:hover {
+                    transform: translateX(5px);
+                    background: #fce8f2 !important;
+                }
+
+                .info-card {
+                    transition: all 0.25s ease;
+                }
+
+                .info-card:hover {
+                    transform: scale(1.02);
+                }
+            `}</style>
+
+            {/* Hero Section */}
+            <div 
+                ref={heroRef}
+                data-section="hero"
+                className="service-hero" 
+                style={{ background: 'linear-gradient(135deg, #e83e8c 0%, #c2185b 100%)', padding: '60px 0 40px' }}
+            >
+                <Container>
+                    <div className={`hero-content ${isHeroVisible ? 'animate-fade-in-left' : ''}`}>
+                        <Link to="/" className="btn btn-outline-light btn-sm mb-4">
+                            <FaArrowLeft className="me-2" /> Kembali ke Beranda
+                        </Link>
+                    </div>
+                    
+                    <div className="d-flex align-items-center gap-3 mb-3">
+                        <div className={`hero-icon ${isHeroVisible ? 'animate-fade-in-left' : ''}`} style={{ animationDelay: '0.1s' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: '16px', width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <FaPills size={28} color="white" />
+                            </div>
+                        </div>
+                        <div>
+                            <div className={`hero-badge ${isHeroVisible ? 'animate-fade-in-left' : ''}`} style={{ animationDelay: '0.2s' }}>
+                                <Badge bg="light" text="danger" className="mb-2">Layanan Kesehatan</Badge>
+                            </div>
+                            <h1 
+                                className={`hero-title ${isHeroVisible ? 'animate-fade-in-left' : ''}`} 
+                                style={{ animationDelay: '0.3s', fontSize: '2rem' }}
+                            >
+                                Pelayanan Kefarmasian
+                            </h1>
+                        </div>
+                    </div>
+                    
+                    <p 
+                        className={`hero-text ${isHeroVisible ? 'animate-fade-in-left' : ''}`}
+                        style={{ animationDelay: '0.4s', maxWidth: 600, color: 'rgba(255,255,255,0.8)' }}
+                    >
+                        Layanan farmasi modern dengan resep elektronik — obat lengkap, konseling, dan monitoring efek samping untuk keselamatan pasien.
+                    </p>
+                </Container>
+            </div>
+
+            {/* Content Section */}
+            <div 
+                ref={contentRef}
+                data-section="content"
+                style={{ background: '#f8f9fa', padding: '48px 0' }}
+            >
+                <Container>
+                    <Row className="g-4">
+                        <Col lg={8}>
+                            <div className={`about-card ${isContentVisible ? 'animate-fade-in-up' : ''}`} style={{ animationDelay: '0.1s' }}>
+                                <Card className="border-0 shadow-sm rounded-4 mb-4 hover-card">
+                                    <Card.Body className="p-4">
+                                        <h5 className="fw-bold mb-3" style={{ color: '#e83e8c' }}>Tentang Pelayanan Kefarmasian</h5>
+                                        <p style={{ color: '#4a5568', lineHeight: 1.8, marginBottom: 12 }}>
+                                            Pelayanan kefarmasian merupakan layanan langsung yang bertanggung jawab kepada pasien dalam hal penggunaan sediaan farmasi, dengan tujuan mencapai hasil yang optimal dalam meningkatkan mutu kehidupan pasien.
+                                        </p>
+                                        <div className={`info-card ${isContentVisible ? 'animate-fade-in-up' : ''}`} style={{ background: '#fdf0f7', borderRadius: 12, padding: '14px 16px', animationDelay: '0.15s' }}>
+                                            <p className="mb-0 fw-medium" style={{ fontSize: 14, color: '#e83e8c' }}>
+                                                💊 Unit Kesehatan IPB telah menggunakan <strong>resep elektronik</strong> — pasien tidak perlu membawa kertas resep saat mengambil obat.
+                                            </p>
+                                        </div>
+                                    </Card.Body>
+                                </Card>
+                            </div>
+
+                            <div className={`activities-card ${isContentVisible ? 'animate-fade-in-up' : ''}`} style={{ animationDelay: '0.2s' }}>
+                                <Card className="border-0 shadow-sm rounded-4 hover-card">
+                                    <Card.Body className="p-4">
+                                        <h5 className="fw-bold mb-4" style={{ color: '#e83e8c' }}>Kegiatan Pelayanan Farmasi</h5>
+                                        <div className="d-flex flex-column gap-3">
+                                            {kegiatan.map((item, i) => (
+                                                <div 
+                                                    key={i} 
+                                                    className={`activity-item p-3 ${isContentVisible ? 'animate-fade-in-up' : ''}`}
+                                                    style={{ 
+                                                        background: '#fdf0f7', 
+                                                        borderRadius: 12, 
+                                                        borderLeft: '3px solid #e83e8c',
+                                                        animationDelay: `${0.3 + i * 0.1}s`
+                                                    }}
+                                                >
+                                                    <p className="fw-bold mb-1" style={{ fontSize: 14, color: '#e83e8c' }}>
+                                                        {i + 1}. {item.title}
+                                                    </p>
+                                                    <p className="mb-0" style={{ fontSize: 13, color: '#4a5568', lineHeight: 1.6 }}>{item.desc}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </Card.Body>
+                                </Card>
+                            </div>
+                        </Col>
+
+                        <Col lg={4}>
+                            <div className={`schedule-card ${isContentVisible ? 'animate-fade-in-right' : ''}`} style={{ animationDelay: '0.1s' }}>
+                                <Card className="border-0 shadow-sm rounded-4 mb-4 hover-card">
+                                    <Card.Body className="p-4">
+                                        <h6 className="fw-bold mb-3">
+                                            <FaClock className="me-2" style={{ color: '#e83e8c' }} /> Jam Operasional
+                                        </h6>
+                                        <div style={{ fontSize: 14 }}>
+                                            <div className="d-flex justify-content-between py-2 border-bottom">
+                                                <span className="text-muted">Senin – Jumat</span>
+                                                <span className="fw-medium">08.00 – 20.00 WIB</span>
+                                            </div>
+                                            <div className="d-flex justify-content-between py-2">
+                                                <span className="text-muted">Sabtu</span>
+                                                <span className="fw-medium">08.00 – 18.00 WIB</span>
+                                            </div>
+                                        </div>
+                                    </Card.Body>
+                                </Card>
+                            </div>
+
+                            <div className={`contact-card ${isContentVisible ? 'animate-fade-in-right' : ''}`} style={{ animationDelay: '0.2s' }}>
+                                <Card className="border-0 shadow-sm rounded-4 hover-card" style={{ background: '#e83e8c' }}>
+                                    <Card.Body className="p-4">
+                                        <h6 className="fw-bold mb-3 text-white">
+                                            <FaPhone className="me-2" /> Hubungi Kami
+                                        </h6>
+                                        <p className="text-white-50 mb-1" style={{ fontSize: 13 }}>WhatsApp</p>
+                                        <p className="text-white fw-bold mb-3">087775692881</p>
+                                        <p className="text-white-50 mb-1" style={{ fontSize: 13 }}>Telepon</p>
+                                        <p className="text-white mb-0" style={{ fontSize: 13 }}>(+62251) 8422094</p>
+                                    </Card.Body>
+                                </Card>
+                            </div>
+                        </Col>
+                    </Row>
+                </Container>
+            </div>
+        </div>
+    );
+};
+
+export default PelayananKefarmasian;

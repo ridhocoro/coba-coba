@@ -19,6 +19,14 @@ import BMICalculator from './pages/HealthCheck/BMICalculator';
 import CalorieCalculator from './pages/HealthCheck/CalorieCalculator';
 import BloodPressureChecker from './pages/HealthCheck/BloodPressureChecker';
 import VitalScanPage from './pages/HealthCheck/VitalScanPage';
+import PoliUmum from './pages/services/PoliUmum';
+import PoliGigi from './pages/services/PoliGigi';
+import LayananKIA from './pages/services/LayananKIA';
+import PoliGizi from './pages/services/PoliGizi';
+import MedicalCheckUp from './pages/services/MedicalCheckUp';
+import Laboratorium from './pages/services/Laboratorium';
+import PelayananKefarmasian from './pages/services/PelayananKefarmasian';
+import Ambulance from './pages/services/Ambulance';
 
 // User Pages
 import Consultations from './pages/Consultations';
@@ -96,6 +104,14 @@ function AppContent() {
                     <Route path="/health-check/calories"    element={<CalorieCalculator />} />
                     <Route path="/health-check/blood-pressure" element={<BloodPressureChecker />} />
                     <Route path="/health-check/vital-scan"     element={<VitalScanPage />} />
+                    <Route path="/services/general"          element={<PoliUmum />} />
+                    <Route path="/services/dental"           element={<PoliGigi />} />
+                    <Route path="/services/mch"              element={<LayananKIA />} />
+                    <Route path="/services/nutrition"        element={<PoliGizi />} />
+                    <Route path="/services/medical-checkup"  element={<MedicalCheckUp />} />
+                    <Route path="/services/laboratory"       element={<Laboratorium />} />
+                    <Route path="/services/pharmacy"         element={<PelayananKefarmasian />} />
+                    <Route path="/services/ambulance"        element={<Ambulance />} />
 
                     {/* ===== USER PROFILE ===== */}
                     <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />

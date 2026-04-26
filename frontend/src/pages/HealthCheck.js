@@ -41,7 +41,7 @@ const features = [
     {
         icon       : <FaVideo size={22} />,
         title      : 'Vital Sign Scanner',
-        description: 'Ukur detak jantung, HRV, laju napas, hemoglobin & tekanan darah via kamera wajah (rPPG)',
+        description: 'Ukur detak jantung, HRV, & laju napas via kamera wajah (rPPG)',
         link       : '/health-check/vital-scan',
         accent     : '#7c3aed',
         lightBg    : '#f5f3ff',

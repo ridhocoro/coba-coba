@@ -202,7 +202,7 @@ const Footer = () => {
                         <div className="mt-3 text-center">
                             <small className="text-white-50">
                                 <FaPhone className="text-primary me-1" size={12} />
-                                Darurat: (0251) 842-2094
+                                Darurat: 087775692881
                             </small>
                         </div>
                     </Col>
