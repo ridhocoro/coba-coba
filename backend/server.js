@@ -53,24 +53,21 @@ require('./models/DoctorScheduleOverride');
 const { connectMySQL, sequelize } = require('./config/mysql');
 require('./models/mysql');
 
-async function initMySQL() {
+// PENTING: Init database dengan sync (harus async)
+(async () => {
   try {
     await connectMySQL();
     console.log('✅ MySQL Connected');
     
-    // PENTING: Sync database tables - create if not exist
-    // alter: false = jangan drop tabel, hanya create yang belum ada
     console.log('🔄 Syncing database tables...');
     await sequelize.sync({ alter: false });
     console.log('✅ Database tables synced');
   } catch (err) {
-    console.error('❌ MySQL/Sync Error:', err.message);
-    process.exit(1);
+    console.error('❌ MySQL/Database Sync Error:', err.message);
+    // Jangan exit — biarkan server jalan agar bisa di-debug
+    console.error('⚠️  Server tetap jalan tapi database tidak siap');
   }
-}
-
-// Panggil init sebelum routes
-initMySQL();
+})();
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth',            require('./routes/auth'));
@@ -90,10 +87,10 @@ app.use('/api/ollama', require('./routes/ollama'));
 // routes/payments.js dan routes/manualpayment.js DIHAPUS —
 // semua payment sekarang berpusat ke /api/xendit
 
-// ── Socket.io (real-time chat + WebRTC signaling) ────────────────────────
+// ── Socket.io (real-time chat + WebRTC signaling) ────────────────────────────
 require('./socket/chat')(io);
 
-// ── Cron Jobs ────────────────────────────────────────────────────────────
+// ── Cron Jobs ────────────────────────────────────────────────────────────────
 // Setiap cron menjalankan logika bisnis penting secara otomatis.
 
 // 1. Konsultasi kedaluwarsa, auto in_progress, doctor no-show, auto close
@@ -111,7 +108,7 @@ require('./utils/CleanupUnverifiedUsersCron').startCron();
 // 5. Reminder jadwal mingguan dokter
 require('./utils/WeeklyScheduleReminderCron').startCron(io);
 
-// ── Error handler global ─────────────────────────────────────────────────
+// ── Error handler global ─────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('[API Error]', err.message);
   res.status(err.status || 500).json({ message: err.message || 'Server error' });

@@ -15,10 +15,10 @@ const sequelize = new Sequelize(
         timezone: '+07:00',  // WIB
         logging : false,
         pool: {
-            max    : 5,           // Kurangi dari 10 agar lebih stabil
-            min    : 2,           // Minimal 2 koneksi
-            acquire: 60000,       // 60 detik timeout acquire (naik dari 30s)
-            idle   : 5000,        // 5 detik sebelum idle (turun dari 10s)
+            max    : 5,
+            min    : 2,
+            acquire: 60000,
+            idle   : 5000,
             validate: (conn) => {
                 return new Promise((resolve, reject) => {
                     conn.query('SELECT 1', (err) => {
@@ -43,8 +43,9 @@ const connectMySQL = async () => {
         await sequelize.authenticate();
         console.log('✅ MySQL Connected');
 
-        // CATATAN: sync({ alter: false }) dipindahkan ke server.js
-        // agar bisa dijalankan setelah models sudah di-require
+        // CATATAN: sync({ alter: true }) dihapus karena menyebabkan
+        // index menumpuk di MySQL setiap restart server hingga melewati
+        // batas 64 keys. Perubahan skema dilakukan manual via migration.
     } catch (err) {
         console.error('❌ MySQL Connection Error:', err.message);
         process.exit(1);
