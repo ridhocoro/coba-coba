@@ -193,6 +193,11 @@ const Home = () => {
 
     const videoId = getYouTubeVideoId('https://youtu.be/jSwm2vSnOEM?si=l7LfgNTj9SIrARPX');
 
+    // Fungsi untuk handle klik "Selengkapnya" agar terbuka di tab baru
+    const handleLearnMore = (link) => {
+        window.open(link, '_blank', 'noopener,noreferrer');
+    };
+
     const services = [
         {
             icon: <FaStethoscope size={28} />,
@@ -453,8 +458,7 @@ const Home = () => {
                                         </Card.Text>
 
                                         <Button 
-                                            as={Link} 
-                                            to={service.link} 
+                                            onClick={() => handleLearnMore(service.link)}
                                             variant="link"
                                             className="p-0 text-decoration-none fw-medium service-link"
                                             style={{ color: service.color }}
@@ -497,8 +501,7 @@ const Home = () => {
                                         </Card.Text>
 
                                         <Button 
-                                            as={Link} 
-                                            to={service.link} 
+                                            onClick={() => handleLearnMore(service.link)}
                                             variant="link"
                                             className="p-0 text-decoration-none fw-medium service-link"
                                             style={{ color: service.color }}
@@ -827,6 +830,7 @@ const Home = () => {
                     font-size: 13px;
                     font-weight: 500;
                     font-family: 'Poppins', sans-serif;
+                    cursor: pointer;
                 }
 
                 /* ==================== TESTIMONIALS SECTION ==================== */

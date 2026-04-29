@@ -32,13 +32,13 @@ const FACE_ROIS = {
         landmarks: [50, 101, 118, 117, 116, 123, 147, 213, 192, 214],
         weight: 0.25,
         color: '#10b981',
-        label: 'Pipi Kiri'
+        label: 'Pipi Kanan'
     },
     rightCheek: {
         landmarks: [280, 330, 347, 346, 345, 352, 376, 433, 416, 434],
         weight: 0.25,
         color: '#3b82f6',
-        label: 'Pipi Kanan'
+        label: 'Pipi Kiri'
     },
     nose: {
         landmarks: [1, 4, 5, 6, 168, 197, 195],
@@ -1373,8 +1373,8 @@ const VitalScanPage = () => {
                             <div style={{ padding: '12px 16px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
                                 <div className="roi-legend">
                                     <span className="roi-dot"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }}></span> Dahi {Math.round((roiQualities.forehead || 0) * 100)}%</span>
-                                    <span className="roi-dot"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#10b981', display: 'inline-block' }}></span> Pipi Kiri {Math.round((roiQualities.leftCheek || 0) * 100)}%</span>
-                                    <span className="roi-dot"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#3b82f6', display: 'inline-block' }}></span> Pipi Kanan {Math.round((roiQualities.rightCheek || 0) * 100)}%</span>
+                                    <span className="roi-dot"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#10b981', display: 'inline-block' }}></span> Pipi Kanan {Math.round((roiQualities.leftCheek || 0) * 100)}%</span>
+                                    <span className="roi-dot"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#3b82f6', display: 'inline-block' }}></span> Pipi Kiri {Math.round((roiQualities.rightCheek || 0) * 100)}%</span>
                                     <span className="roi-dot"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#ec4899', display: 'inline-block' }}></span> Hidung {Math.round((roiQualities.nose || 0) * 100)}%</span>
                                     {Object.keys(roiSkipped || {}).length > 0 && (
                                         <span className="roi-dot"><FaBan size={10} color="#dc2626" /> {Object.keys(roiSkipped).length} skipped</span>
