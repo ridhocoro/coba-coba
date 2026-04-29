@@ -13,7 +13,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: ["https://klinik-frontend-amber.vercel.app", "http://localhost:3000"],
     methods: ["GET", "POST"]
   }
 });
@@ -23,7 +23,10 @@ app.set('io', io);
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    "https://klinik-frontend-amber.vercel.app", 
+    "http://localhost:3000"
+  ],
   credentials: true
 }));
 app.use(express.json());
