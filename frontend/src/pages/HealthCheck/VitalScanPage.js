@@ -1,4 +1,4 @@
-// VitalScanPage.js — v15 (Fixed RMSSD - No More Fake 120)
+// VitalScanPage.js — v19 (Clean UI - No Progress Bar, Clean Video Overlay)
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
@@ -6,8 +6,9 @@ import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 import {
     FaHeartbeat, FaArrowLeft, FaCamera, FaRedo, FaInfoCircle,
     FaLungs, FaWaveSquare, FaLightbulb, FaUserCheck,
-    FaExclamationTriangle, FaCheckCircle, FaSpinner, FaChartLine,
-    FaGlasses, FaAngleDoubleUp, FaRegDotCircle, FaBan
+    FaExclamationTriangle, FaSpinner, FaChartLine,
+    FaAngleDoubleUp, FaBan, FaSun, FaTachometerAlt, FaVideo,
+    FaMagic, FaAdjust, FaEdge, FaChrome, FaFirefox
 } from 'react-icons/fa';
 
 /* ─── Constants ──────────────────────────────────────────────────────────────── */
@@ -20,41 +21,101 @@ const START_RECORDING_THRESHOLD = 0.40;
 const MIN_SAMPLES = 30;
 const ROI_MIN_QUALITY = 0.20;
 
-// ROI untuk ekstraksi data rPPG
-const FACE_ROIS = {
-    forehead: {
-        landmarks: [10, 67, 69, 104, 108, 151, 337, 299, 298, 333],
-        weight: 0.45,
-        color: '#f59e0b',
-        label: 'Dahi'
+// Konfigurasi kamera dengan multiple fallback
+const CAMERA_CONFIGS = [
+    {
+        video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: 'user'
+        }
     },
-    leftCheek: {
-        landmarks: [50, 101, 118, 117, 116, 123, 147, 213, 192, 214],
-        weight: 0.25,
-        color: '#10b981',
-        label: 'Pipi Kanan'
+    {
+        video: {
+            width: { min: 480, ideal: 1280, max: 1920 },
+            height: { min: 360, ideal: 720, max: 1080 },
+            facingMode: 'user'
+        }
     },
-    rightCheek: {
-        landmarks: [280, 330, 347, 346, 345, 352, 376, 433, 416, 434],
-        weight: 0.25,
-        color: '#3b82f6',
-        label: 'Pipi Kiri'
-    },
-    nose: {
-        landmarks: [1, 4, 5, 6, 168, 197, 195],
-        weight: 0.05,
-        color: '#ec4899',
-        label: 'Hidung'
+    {
+        video: {
+            width: { exact: 640 },
+            height: { exact: 480 },
+            facingMode: { exact: 'user' }
+        }
     }
+];
+
+// Level brightness
+const BRIGHTNESS_LEVELS = {
+    off: 1.0,
+    low: 1.3,
+    medium: 1.8,
+    high: 2.3,
+    extreme: 3.0
 };
 
-// Landmark untuk face tracking
-const FACE_WIDTH_INDICES = [234, 454];
-const NOSE_TIP = 1;
+/* ══════════════════════════════════════════════════════════════════════════════
+   BROWSER DETECTION
+══════════════════════════════════════════════════════════════════════════════ */
 
-// Riwayat untuk smoothing
-let hrHistory = [];
-let rrHistory = [];
+function getBrowserInfo() {
+    const userAgent = navigator.userAgent;
+    let browser = 'unknown';
+    let isEdge = false;
+    let isChrome = false;
+    let isFirefox = false;
+    
+    if (userAgent.indexOf('Edg') > -1) {
+        browser = 'Edge';
+        isEdge = true;
+    } else if (userAgent.indexOf('Chrome') > -1) {
+        browser = 'Chrome';
+        isChrome = true;
+    } else if (userAgent.indexOf('Firefox') > -1) {
+        browser = 'Firefox';
+        isFirefox = true;
+    } else if (userAgent.indexOf('Safari') > -1) {
+        browser = 'Safari';
+    }
+    
+    return { browser, isEdge, isChrome, isFirefox };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ADVANCED CAMERA CONTROL
+══════════════════════════════════════════════════════════════════════════════ */
+
+class AdvancedCameraController {
+    constructor(videoElement) {
+        this.video = videoElement;
+        this.brightnessLevel = 1.0;
+    }
+
+    applyBrightness(level) {
+        if (!this.video) return false;
+        
+        this.brightnessLevel = level;
+        
+        if (level === 1.0) {
+            this.video.style.filter = '';
+            return true;
+        }
+        
+        const brightnessValue = level;
+        const contrastValue = 0.9 + (level - 1) * 0.2;
+        
+        this.video.style.filter = `brightness(${brightnessValue}) contrast(${contrastValue})`;
+        return true;
+    }
+    
+    reset() {
+        if (this.video) {
+            this.video.style.filter = '';
+        }
+        this.brightnessLevel = 1.0;
+    }
+}
 
 /* ══════════════════════════════════════════════════════════════════════════════
    SKIN DETECTION (YCbCr Color Space)
@@ -73,7 +134,7 @@ function isSkinPixel(r, g, b) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   FACE TILT DETECTION - DENGAN AUTO CALIBRATION
+   FACE TILT DETECTION
 ══════════════════════════════════════════════════════════════════════════════ */
 
 let calibratedRoll = 0;
@@ -161,6 +222,40 @@ function detectFaceTilt(landmarks, useCalibration = true) {
     }
 }
 
+// ROI untuk ekstraksi data rPPG
+const FACE_ROIS = {
+    forehead: {
+        landmarks: [10, 67, 69, 104, 108, 151, 337, 299, 298, 333],
+        weight: 0.45,
+        color: '#f59e0b',
+        label: 'Dahi'
+    },
+    leftCheek: {
+        landmarks: [50, 101, 118, 117, 116, 123, 147, 213, 192, 214],
+        weight: 0.25,
+        color: '#10b981',
+        label: 'Pipi Kanan'
+    },
+    rightCheek: {
+        landmarks: [280, 330, 347, 346, 345, 352, 376, 433, 416, 434],
+        weight: 0.25,
+        color: '#3b82f6',
+        label: 'Pipi Kiri'
+    },
+    nose: {
+        landmarks: [1, 4, 5, 6, 168, 197, 195],
+        weight: 0.05,
+        color: '#ec4899',
+        label: 'Hidung'
+    }
+};
+
+const FACE_WIDTH_INDICES = [234, 454];
+const NOSE_TIP = 1;
+
+let hrHistory = [];
+let rrHistory = [];
+
 /* ══════════════════════════════════════════════════════════════════════════════
    DSP UTILITIES
 ══════════════════════════════════════════════════════════════════════════════ */
@@ -245,10 +340,6 @@ function peakFrequency(freqs, power, minHz, maxHz) {
     }
     return freqs[bestIdx];
 }
-
-/* ══════════════════════════════════════════════════════════════════════════════
-   SIGNAL QUALITY INDEX (SQI)
-══════════════════════════════════════════════════════════════════════════════ */
 
 function computeSNR(signal, fps) {
     if (signal.length < 30) return 10;
@@ -361,10 +452,6 @@ function computeSignalQualityIndex(signal, fps, hrWindow, hrFull) {
     return (snrScore * 0.35) + (sharpness * 0.25) + (consistency * 0.2) + (periodicity * 0.2);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   rPPG ALGORITHMS
-══════════════════════════════════════════════════════════════════════════════ */
-
 function chromRPPG(rA, gA, bA) {
     const N = rA.length;
     const Xs = [], Ys = [];
@@ -402,10 +489,6 @@ function ensembleRPPG(rA, gA, bA, fps) {
     const pBand = butterworthBandpass(pos, fps, 0.7, 3.0, 1);
     return cBand.map((c, i) => (c + pBand[i]) / 2);
 }
-
-/* ══════════════════════════════════════════════════════════════════════════════
-   ADAPTIVE PEAK DETECTION & HRV COMPUTATION (FIXED RMSSD)
-══════════════════════════════════════════════════════════════════════════════ */
 
 function cubicSplineInterp(xs, ys, queryXs) {
     const n = xs.length;
@@ -488,36 +571,33 @@ function filterRRIntervals(rrMs) {
 function computeHRandRMSSD(rppgSignal, fps) {
     const N = rppgSignal.length;
     
-    // Validasi awal - return null jika data tidak cukup
     if (N < 45) {
         return { heartRate: null, rmssd: null };
     }
     
     const ts = Array.from({ length: N }, (_, i) => i / fps);
-    const nInterp = Math.floor(ts[ts.length - 1] * INTERP_HZ);
+    const nInterp = Math.floor(ts[ts.length - 1] * 250);
     if (nInterp < 50) {
         return { heartRate: null, rmssd: null };
     }
     
-    const tsI = Array.from({ length: nInterp }, (_, i) => i / INTERP_HZ);
+    const tsI = Array.from({ length: nInterp }, (_, i) => i / 250);
     const sigI = cubicSplineInterp(ts, rppgSignal, tsI);
     
-    const minDist = Math.round(INTERP_HZ * 0.35);
+    const minDist = Math.round(250 * 0.35);
     const peaks = detectPeaksAdaptive(sigI, minDist);
     
-    // Perlu minimal 6 peaks untuk HRV yang valid
     if (peaks.length < 6) {
         return { heartRate: null, rmssd: null };
     }
     
     const rrRaw = [];
     for (let i = 1; i < peaks.length; i++) {
-        rrRaw.push(((peaks[i] - peaks[i - 1]) / INTERP_HZ) * 1000);
+        rrRaw.push(((peaks[i] - peaks[i - 1]) / 250) * 1000);
     }
     
     const validRR = filterRRIntervals(rrRaw);
     
-    // Perlu minimal 4 RR intervals untuk RMSSD yang valid
     if (validRR.length < 4) {
         return { heartRate: null, rmssd: null };
     }
@@ -526,7 +606,6 @@ function computeHRandRMSSD(rppgSignal, fps) {
     let heartRate = Math.round(60000 / meanRR);
     heartRate = Math.min(160, Math.max(45, heartRate));
     
-    // Smoothing HR
     hrHistory.push(heartRate);
     if (hrHistory.length > 5) hrHistory.shift();
     if (hrHistory.length >= 3) {
@@ -536,12 +615,10 @@ function computeHRandRMSSD(rppgSignal, fps) {
         }
     }
     
-    // Hitung RMSSD
     let sumSquaredDiff = 0;
     let validDiffCount = 0;
     for (let i = 1; i < validRR.length; i++) {
         const diff = validRR[i] - validRR[i - 1];
-        // Filter outlier diff yang terlalu besar
         if (Math.abs(diff) < 200) {
             sumSquaredDiff += diff * diff;
             validDiffCount++;
@@ -555,11 +632,9 @@ function computeHRandRMSSD(rppgSignal, fps) {
     let rmssd = Math.sqrt(sumSquaredDiff / validDiffCount);
     rmssd = Math.round(rmssd * 10) / 10;
     
-    // Batasi ke range fisiologis (5-150 ms) - TIDAK dipaksa ke 120!
     if (rmssd > 150) rmssd = 150;
     if (rmssd < 5) rmssd = null;
     
-    // Smoothing RMSSD
     if (rmssd !== null) {
         rrHistory.push(rmssd);
         if (rrHistory.length > 5) rrHistory.shift();
@@ -573,10 +648,6 @@ function computeHRandRMSSD(rppgSignal, fps) {
     
     return { heartRate, rmssd };
 }
-
-/* ══════════════════════════════════════════════════════════════════════════════
-   RESPIRATORY RATE
-══════════════════════════════════════════════════════════════════════════════ */
 
 function computeRespiratoryRate(rppgSignal, fps) {
     if (rppgSignal.length < 60) return null;
@@ -609,10 +680,6 @@ function computeRespiratoryRate(rppgSignal, fps) {
     return null;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   FACE DETECTION & TRACKING
-══════════════════════════════════════════════════════════════════════════════ */
-
 function getFaceWidth(landmarks, cW) {
     if (!landmarks) return 200;
     const left = landmarks[FACE_WIDTH_INDICES[0]];
@@ -633,7 +700,7 @@ function checkHeadMovement(landmarks, prevLandmarks, faceWidth) {
     const normalizedMovement = movement / faceWidth;
     
     return {
-        moving: normalizedMovement > MAX_NORMALIZED_MOVEMENT,
+        moving: normalizedMovement > 0.10,
         movement: Math.round(movement * 100) / 100,
         normalizedMovement: Math.round(normalizedMovement * 100) / 100
     };
@@ -713,10 +780,6 @@ function computeROIQualityWithSkin(imageData, rect, cW, cH) {
     return Math.max(0.2, Math.min(0.9, skinRatio));
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   ROI EXTRACTION
-══════════════════════════════════════════════════════════════════════════════ */
-
 function landmarksBoundingRect(lmList, indices, cW, cH) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const idx of indices) {
@@ -769,7 +832,7 @@ function drawAllFaceLandmarks(ctx, landmarks, cW, cH) {
     if (!landmarks) return;
     
     ctx.save();
-    ctx.globalAlpha = 0.2;
+    ctx.globalAlpha = 0.15;
     
     for (let i = 0; i < landmarks.length; i++) {
         const lm = landmarks[i];
@@ -778,7 +841,7 @@ function drawAllFaceLandmarks(ctx, landmarks, cW, cH) {
         const y = lm.y * cH;
         
         ctx.beginPath();
-        ctx.arc(x, y, 1.2, 0, 2 * Math.PI);
+        ctx.arc(x, y, 1, 0, 2 * Math.PI);
         ctx.fillStyle = '#a78bfa';
         ctx.fill();
     }
@@ -792,20 +855,20 @@ function drawROIBox(ctx, rect, color, label, quality = 1, isSkipped = false) {
     
     if (isSkipped) {
         ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
         ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 8px Poppins, sans-serif';
-        ctx.fillText(`❌ ${label}`, rect.x + 3, rect.y - 3);
+        ctx.font = 'bold 7px Poppins, sans-serif';
+        ctx.fillText(`❌`, rect.x + 3, rect.y - 2);
     } else {
         ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 3]);
         ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
         ctx.fillStyle = color;
-        ctx.font = 'bold 8px Poppins, sans-serif';
-        ctx.fillText(`${label} ${Math.round(quality * 100)}%`, rect.x + 3, rect.y - 3);
+        ctx.font = 'bold 7px Poppins, sans-serif';
+        ctx.fillText(`${Math.round(quality * 100)}%`, rect.x + 3, rect.y - 2);
     }
     
     ctx.restore();
@@ -816,14 +879,12 @@ function extractMultiROI(imageData, landmarks, overlayCtx, cW, cH) {
     const roiQualities = {};
     const roiSkipped = {};
     
-    drawAllFaceLandmarks(overlayCtx, landmarks, cW, cH);
-    
     for (const [key, roi] of Object.entries(FACE_ROIS)) {
         const rect = landmarksBoundingRect(landmarks, roi.landmarks, cW, cH);
         const quality = computeROIQualityWithSkin(imageData, rect, cW, cH);
         roiQualities[key] = quality;
         
-        const isSkipped = quality < ROI_MIN_QUALITY;
+        const isSkipped = quality < 0.20;
         
         if (isSkipped) {
             roiSkipped[key] = true;
@@ -901,6 +962,7 @@ const VitalScanPage = () => {
     const streamRef = useRef(null);
     const rafRef = useRef(null);
     const landmarkerRef = useRef(null);
+    const cameraControllerRef = useRef(null);
     
     const samplesRef = useRef({ r: [], g: [], b: [], ts: [] });
     const movementHistoryRef = useRef([]);
@@ -930,6 +992,15 @@ const VitalScanPage = () => {
     const [roiSkipped, setRoiSkipped] = useState({});
     const [calibrationDone, setCalibrationDone] = useState(false);
     const [signalQuality, setSignalQuality] = useState(60);
+    
+    const [brightnessMode, setBrightnessMode] = useState('off');
+    const [browserInfo, setBrowserInfo] = useState({ browser: 'unknown', isEdge: false });
+    
+    useEffect(() => {
+        const info = getBrowserInfo();
+        setBrowserInfo(info);
+        console.log(`Browser detected: ${info.browser}`);
+    }, []);
     
     useEffect(() => {
         let cancelled = false;
@@ -965,6 +1036,10 @@ const VitalScanPage = () => {
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         streamRef.current = null;
         setIsRecording(false);
+        
+        if (cameraControllerRef.current) {
+            cameraControllerRef.current.reset();
+        }
     }, []);
     
     useEffect(() => () => stopCamera(), [stopCamera]);
@@ -987,13 +1062,9 @@ const VitalScanPage = () => {
         
         const rppgSignal = ensembleRPPG(r, g, b, actualFps);
         
-        // Hitung Heart Rate & RMSSD (FIXED - tidak pernah return 120 default)
         const { heartRate, rmssd } = computeHRandRMSSD(rppgSignal, actualFps);
-        
-        // Hitung Respiratory Rate
         const respRate = computeRespiratoryRate(rppgSignal, actualFps);
         
-        // Hitung Signal Quality
         const snr = computeSNR(rppgSignal, actualFps);
         const signalSqi = Math.min(100, Math.max(0, Math.round((snr / 25) * 100)));
         setSignalQuality(signalSqi);
@@ -1038,18 +1109,24 @@ const VitalScanPage = () => {
         let recordingActive = true;
         let calibrationFrames = 0;
         let hasStartedRecording = false;
+        let frameCount = 0;
+        let fpsMeasureStart = performance.now();
+        
         setIsRecording(true);
         
         const loop = async (now) => {
+            frameCount++;
+            if (now - fpsMeasureStart >= 1000) {
+                setCurrentFPS(frameCount);
+                frameCount = 0;
+                fpsMeasureStart = now;
+            }
+            
             const delta = Math.min(0.1, (now - lastTimestamp) / 1000);
             lastTimestamp = now;
             
             frameTimestampsRef.current.push(now);
             if (frameTimestampsRef.current.length > 60) frameTimestampsRef.current.shift();
-            if (frameTimestampsRef.current.length > 5) {
-                const avgDelta = (frameTimestampsRef.current[frameTimestampsRef.current.length - 1] - frameTimestampsRef.current[0]) / frameTimestampsRef.current.length;
-                setCurrentFPS(Math.round(1000 / avgDelta));
-            }
             
             const cW = video.videoWidth || 640;
             const cH = video.videoHeight || 480;
@@ -1119,7 +1196,7 @@ const VitalScanPage = () => {
             if (movementHistoryRef.current.length >= REQUIRED_FACE_STABILITY_SEC * TARGET_FPS) {
                 const recentMovements = movementHistoryRef.current.slice(-REQUIRED_FACE_STABILITY_SEC * TARGET_FPS);
                 const avgMovement = recentMovements.reduce((a, b) => a + b, 0) / recentMovements.length;
-                isStable = avgMovement < MAX_NORMALIZED_MOVEMENT * 0.8;
+                isStable = avgMovement < 0.08;
                 stabilityProgress = Math.min(1, recentMovements.length / (REQUIRED_FACE_STABILITY_SEC * TARGET_FPS));
             }
             setFaceStability({ stable: isStable, progress: stabilityProgress });
@@ -1128,7 +1205,7 @@ const VitalScanPage = () => {
             setRoiQualities(rq);
             setRoiSkipped(rs);
             
-            const motionWeight = Math.max(0.3, Math.min(1, 1 - movement.normalizedMovement / MAX_NORMALIZED_MOVEMENT));
+            const motionWeight = Math.max(0.3, Math.min(1, 1 - movement.normalizedMovement / 0.10));
             
             let currentSnr = 12;
             if (samplesRef.current.g.length > 60) {
@@ -1143,7 +1220,7 @@ const VitalScanPage = () => {
             }
             
             const lightingScore = lightingResult.good ? 1 : 0.5;
-            const movementScore = movement.moving ? 0.4 : Math.max(0.5, 1 - movement.normalizedMovement / MAX_NORMALIZED_MOVEMENT);
+            const movementScore = movement.moving ? 0.4 : Math.max(0.5, 1 - movement.normalizedMovement / 0.10);
             const stabilityScore = isStable ? 1 : stabilityProgress;
             const tiltScore = tilt.isTilted ? 0.6 : 1;
             const occlusionScore = occlusionResult.hasOcclusion ? 0.6 : 1;
@@ -1192,50 +1269,22 @@ const VitalScanPage = () => {
                 }
             }
             
-            overlayCtx.font = '8px Poppins, sans-serif';
-            overlayCtx.fillStyle = lightingResult.good ? '#22c55e' : '#ef4444';
-            overlayCtx.fillText(`💡 ${lightingResult.percentage}%`, 10, 20);
-            overlayCtx.fillStyle = !movement.moving ? '#22c55e' : '#eab308';
-            overlayCtx.fillText(`📐 ${(movement.normalizedMovement * 100).toFixed(0)}%`, 10, 32);
-            overlayCtx.fillStyle = isStable ? '#22c55e' : '#eab308';
-            overlayCtx.fillText(`🎯 ${Math.round(stabilityProgress * 100)}%`, 10, 44);
-            
-            const tiltDisplay = tilt.deviation ? Math.max(tilt.deviation.roll, tilt.deviation.yaw, tilt.deviation.pitch) : Math.abs(tilt.roll);
-            overlayCtx.fillStyle = !tilt.isTilted ? '#22c55e' : '#ef4444';
-            overlayCtx.fillText(`↺ Tilt:${tiltDisplay}°${isCalibrated ? '✓' : '..'}`, 10, 56);
-            
-            overlayCtx.fillStyle = !occlusionResult.hasOcclusion ? '#22c55e' : '#ef4444';
-            overlayCtx.fillText(`🕶️ ${occlusionResult.hasOcclusion ? 'Tertutup' : 'Clear'}`, 10, 68);
-            overlayCtx.fillStyle = currentSnr > 10 ? '#22c55e' : '#f97316';
-            overlayCtx.fillText(`📊 SNR:${Math.round(currentSnr)}dB`, 10, 80);
-            
-            if (!hasStartedRecording && faceFound) {
-                overlayCtx.fillStyle = 'rgba(0,0,0,0.4)';
-                overlayCtx.fillRect(0, 0, cW, cH);
-                overlayCtx.fillStyle = '#fbbf24';
-                overlayCtx.font = 'bold 12px Poppins, sans-serif';
-                overlayCtx.textAlign = 'center';
-                
-                let reason = '';
-                if (!isCalibrated) reason = 'Kalibrasi wajah...';
-                else if (allSkipped) reason = 'Tidak ada area wajah valid';
-                else if (tilt.isTilted) reason = `Kepala miring ${tiltDisplay}°`;
-                else if (movement.moving) reason = 'Kurangi gerakan kepala';
-                else if (!lightingResult.good) reason = 'Perbaiki pencahayaan';
-                else if (occlusionResult.hasOcclusion) reason = 'Hindari penutup wajah';
-                else reason = 'Siap merekam...';
-                
-                overlayCtx.fillText(`📊 ${reason}`, cW / 2, cH / 2);
-                overlayCtx.font = '10px Poppins, sans-serif';
-                overlayCtx.fillStyle = '#94a3b8';
-                overlayCtx.fillText(`Confidence: ${Math.round(finalConfidence * 100)}%`, cW / 2, cH / 2 + 30);
-            }
+            // Only draw minimal overlay - just face landmarks and ROI boxes
+            drawAllFaceLandmarks(overlayCtx, landmarks, cW, cH);
             
             rafRef.current = requestAnimationFrame(loop);
         };
         
         rafRef.current = requestAnimationFrame(loop);
-    }, [processSignals]);
+    }, [processSignals, currentFPS]);
+    
+    const changeBrightnessMode = useCallback((mode) => {
+        setBrightnessMode(mode);
+        if (cameraControllerRef.current) {
+            const level = BRIGHTNESS_LEVELS[mode];
+            cameraControllerRef.current.applyBrightness(level);
+        }
+    }, []);
     
     const startScan = async () => {
         setErrorMsg('');
@@ -1243,30 +1292,42 @@ const VitalScanPage = () => {
         setPhase('countdown');
         setCountdown(3);
         
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: 640, height: 480, facingMode: 'user', frameRate: { ideal: TARGET_FPS } }
-            });
-            streamRef.current = stream;
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
-            }
-            
-            let cnt = 3;
-            const tick = setInterval(() => {
-                cnt--;
-                setCountdown(cnt);
-                if (cnt <= 0) {
-                    clearInterval(tick);
-                    setPhase('scanning');
-                    startSampling();
+        for (let i = 0; i < CAMERA_CONFIGS.length; i++) {
+            try {
+                console.log(`Trying camera config ${i + 1}...`);
+                const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONFIGS[i]);
+                streamRef.current = stream;
+                
+                const videoTrack = stream.getVideoTracks()[0];
+                const settings = videoTrack.getSettings();
+                console.log(`Camera connected: ${settings.width}x${settings.height} @ ${settings.frameRate || '?'}fps`);
+                
+                cameraControllerRef.current = new AdvancedCameraController(videoRef.current);
+                
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play();
                 }
-            }, 1000);
-        } catch {
-            setErrorMsg('Tidak dapat mengakses kamera. Pastikan izin kamera sudah diberikan.');
-            setPhase('error');
+                
+                break;
+            } catch (err) {
+                console.warn(`Config ${i + 1} failed:`, err);
+                if (i === CAMERA_CONFIGS.length - 1) {
+                    throw err;
+                }
+            }
         }
+        
+        let cnt = 3;
+        const tick = setInterval(() => {
+            cnt--;
+            setCountdown(cnt);
+            if (cnt <= 0) {
+                clearInterval(tick);
+                setPhase('scanning');
+                startSampling();
+            }
+        }, 1000);
     };
     
     const reset = () => {
@@ -1291,9 +1352,29 @@ const VitalScanPage = () => {
         setRoiQualities({});
         setRoiSkipped({});
         setSignalQuality(60);
+        setBrightnessMode('off');
+        
+        if (cameraControllerRef.current) {
+            cameraControllerRef.current.reset();
+        }
     };
     
     const isVideoVisible = phase === 'countdown' || phase === 'scanning';
+    
+    const brightnessModes = [
+        { value: 'off', label: 'OFF', icon: FaSun, level: 1.0, color: '#64748b' },
+        { value: 'low', label: 'LOW', icon: FaSun, level: 1.3, color: '#f59e0b' },
+        { value: 'medium', label: 'MED', icon: FaSun, level: 1.8, color: '#f97316' },
+        { value: 'high', label: 'HIGH', icon: FaSun, level: 2.3, color: '#ef4444' },
+        { value: 'extreme', label: 'EXT', icon: FaMagic, level: 3.0, color: '#dc2626' }
+    ];
+    
+    const getBrowserIcon = () => {
+        if (browserInfo.isEdge) return <FaEdge size={12} style={{ marginRight: 4 }} />;
+        if (browserInfo.isChrome) return <FaChrome size={12} style={{ marginRight: 4 }} />;
+        if (browserInfo.isFirefox) return <FaFirefox size={12} style={{ marginRight: 4 }} />;
+        return null;
+    };
     
     return (
         <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '40px 0 80px' }}>
@@ -1303,8 +1384,6 @@ const VitalScanPage = () => {
                 .vs-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 20px; }
                 .vs-metric { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px 20px; text-align: center; transition: all 0.2s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
                 .vs-metric:hover { box-shadow: 0 8px 25px rgba(0,0,0,0.08); transform: translateY(-3px); }
-                .vs-progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
-                .vs-progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); border-radius: 3px; transition: width 0.2s ease; }
                 .vs-pulse { animation: vsPulse 1.4s ease-in-out infinite; }
                 @keyframes vsPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
                 .vs-start-btn { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; border: none; border-radius: 12px; padding: 13px 28px; font-size: 15px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 9px; transition: all 0.15s; box-shadow: 0 4px 14px rgba(34,197,94,0.35); }
@@ -1319,6 +1398,14 @@ const VitalScanPage = () => {
                 .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px; }
                 @media (max-width: 640px) { .result-grid { grid-template-columns: 1fr; gap: 12px; } }
                 .info-card { background: #f8fafc; border-radius: 16px; padding: 16px 20px; border: 1px solid #e2e8f0; }
+                .camera-control-btn { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 16px; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }
+                .camera-control-btn.active { background: #22c55e; color: #fff; border-color: #22c55e; }
+                .camera-control-btn:hover { background: #e2e8f0; }
+                .brightness-btn { padding: 6px 10px; border-radius: 8px; font-size: 10px; font-weight: 600; transition: all 0.1s; cursor: pointer; border: none; }
+                .brightness-btn.active { background: #22c55e; color: #fff; }
+                .brightness-btn:hover { opacity: 0.8; }
+                .progress-ring { width: 80px; height: 80px; }
+                .percentage-text { font-size: 22px; font-weight: 700; fill: #22c55e; }
             `}</style>
             
             <div className="vs-wrap">
@@ -1329,8 +1416,12 @@ const VitalScanPage = () => {
                     <h1 style={{ fontFamily:'Poppins', fontSize:32, margin:'0 0 6px', background:'linear-gradient(135deg,#22c55e,#16a34a)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>
                         Vital Scan Pro
                     </h1>
-                    <p style={{ color:'#64748b', margin:0, fontSize:14 }}>
-                        Face Detection · Skin Detection · HR, RMSSD, Respiratory Rate
+                    <p style={{ color:'#64748b', margin:0, fontSize:14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span>Face Detection · Skin Detection · HR, RMSSD, Respiratory Rate</span>
+                        <span style={{ background: '#e2e8f0', padding: '2px 8px', borderRadius: 20, fontSize: 11 }}>
+                            {getBrowserIcon()}
+                            {browserInfo.browser}
+                        </span>
                     </p>
                 </div>
                 
@@ -1344,27 +1435,73 @@ const VitalScanPage = () => {
                     <div className="vs-card" style={{ marginBottom: 20, overflow: 'hidden' }}>
                         <div style={{ position: 'relative', background: '#0f172a' }}>
                             <video ref={videoRef} muted playsInline
-                                style={{ width: '100%', display: 'block', maxHeight: 450, objectFit: 'cover' }} />
+                                style={{ width: '100%', display: 'block', maxHeight: 450, objectFit: 'cover', transition: 'filter 0.1s ease' }} />
                             <canvas ref={overlayRef}
                                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
+                            
+                            {/* Camera Controls Overlay - Minimal */}
+                            <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 8, zIndex: 10, flexWrap: 'wrap', maxWidth: '90%' }}>
+                                {/* Brightness Control Group */}
+                                <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.6)', borderRadius: 10, padding: '4px 8px', alignItems: 'center' }}>
+                                    <FaAdjust size={10} style={{ color: '#fff', marginRight: 4 }} />
+                                    {brightnessModes.map(mode => {
+                                        const Icon = mode.icon;
+                                        return (
+                                            <button
+                                                key={mode.value}
+                                                onClick={() => changeBrightnessMode(mode.value)}
+                                                className="brightness-btn"
+                                                style={{
+                                                    background: brightnessMode === mode.value ? mode.color : 'rgba(255,255,255,0.2)',
+                                                    color: '#fff',
+                                                }}
+                                            >
+                                                <Icon size={8} style={{ marginRight: 2 }} />
+                                                {mode.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            
+                            {/* Live HR Display - Pojok kanan bawah */}
+                            {phase === 'scanning' && liveHR && (
+                                <div style={{ position: 'absolute', bottom: 15, right: 15, background: 'rgba(0,0,0,0.75)', borderRadius: 30, padding: '6px 14px' }}>
+                                    <span style={{ color: '#22c55e', fontSize: 18, fontWeight: 700 }}>♥ {liveHR}</span>
+                                    <span style={{ color: '#94a3b8', fontSize: 10, marginLeft: 4 }}>bpm</span>
+                                </div>
+                            )}
+                            
+                            {/* Circular Progress - Pojok kiri bawah (clean design) */}
+                            {phase === 'scanning' && progress > 0 && (
+                                <div style={{ position: 'absolute', bottom: 15, left: 15 }}>
+                                    <svg width="60" height="60" viewBox="0 0 60 60" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}>
+                                        <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="4"/>
+                                        <circle 
+                                            cx="30" cy="30" r="26" fill="none" 
+                                            stroke="#22c55e" strokeWidth="4"
+                                            strokeLinecap="round"
+                                            strokeDasharray={`${2 * Math.PI * 26}`}
+                                            strokeDashoffset={`${2 * Math.PI * 26 * (1 - progress / 100)}`}
+                                            style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 0.2s ease' }}
+                                        />
+                                        <text x="30" y="36" textAnchor="middle" fill="#22c55e" fontSize="14" fontWeight="bold">{Math.round(progress)}</text>
+                                    </svg>
+                                </div>
+                            )}
+                            
+                            {/* Face tilt warning - minimal */}
+                            {phase === 'scanning' && faceTilt.isTilted && (
+                                <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(239,68,68,0.85)', borderRadius: 20, padding: '4px 10px' }}>
+                                    <span style={{ color: '#fff', fontSize: 10, fontWeight: 600 }}>
+                                        ⚠️ {Math.max(faceTilt.deviation?.roll || 0, faceTilt.deviation?.yaw || 0, faceTilt.deviation?.pitch || 0)}°
+                                    </span>
+                                </div>
+                            )}
                             
                             {phase === 'countdown' && (
                                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <span style={{ fontSize: 80, fontWeight: 700, color: '#fff' }}>{countdown}</span>
-                                </div>
-                            )}
-                            
-                            {phase === 'scanning' && liveHR && (
-                                <div style={{ position: 'absolute', bottom: 10, right: 10, background: 'rgba(0,0,0,.7)', borderRadius: 20, padding: '4px 12px' }}>
-                                    <span style={{ color: '#22c55e', fontSize: 14, fontWeight: 600 }}>♥ {liveHR} bpm</span>
-                                </div>
-                            )}
-                            
-                            {phase === 'scanning' && faceTilt.isTilted && (
-                                <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(239,68,68,0.9)', borderRadius: 8, padding: '4px 10px' }}>
-                                    <span style={{ color: '#fff', fontSize: 10, fontWeight: 600 }}>
-                                        ⚠️ Miring {Math.max(faceTilt.deviation?.roll || 0, faceTilt.deviation?.yaw || 0, faceTilt.deviation?.pitch || 0)}°
-                                    </span>
                                 </div>
                             )}
                         </div>
@@ -1394,15 +1531,8 @@ const VitalScanPage = () => {
                                     <div className="quality-badge" style={{ background: sqi.overall > 50 ? '#dcfce7' : '#fef9c3', color: sqi.overall > 50 ? '#166534' : '#854d0e' }}>
                                         <FaChartLine size={12} /> SQI {sqi.overall}%
                                     </div>
-                                </div>
-                                
-                                <div style={{ marginTop: 12 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11, color: '#64748b' }}>
-                                        <span>{progress > 0 ? '✅ Merekam...' : '⏳ Menunggu...'}</span>
-                                        <span>{Math.round(progress)}%</span>
-                                    </div>
-                                    <div className="vs-progress-bar">
-                                        <div className="vs-progress-fill" style={{ width: `${progress}%` }} />
+                                    <div className="quality-badge" style={{ background: currentFPS >= 25 ? '#dcfce7' : '#fef9c3', color: currentFPS >= 25 ? '#166534' : '#854d0e' }}>
+                                        <FaTachometerAlt size={12} /> {currentFPS} FPS
                                     </div>
                                 </div>
                             </div>
@@ -1437,7 +1567,15 @@ const VitalScanPage = () => {
                             <li>Posisikan wajah <strong>tegak lurus</strong> di tengah kamera</li>
                             <li>Jarak <strong>30-50 cm</strong> dari kamera</li>
                             <li><strong>Jangan bergerak</strong> selama 30 detik</li>
+                            <li><strong>Fitur Brightness:</strong> OFF, LOW, MED, HIGH, EXT - pilih sesuai kebutuhan</li>
                         </ul>
+                        
+                        {browserInfo.isEdge && (
+                            <div style={{ background: '#e0f2fe', borderRadius: 12, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#0369a1' }}>
+                                <FaEdge size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+                                <strong>Mode Edge:</strong> Optimal untuk browser Microsoft Edge. Izin kamera akan diminta, pastikan mengizinkan.
+                            </div>
+                        )}
                         
                         <div className="info-card" style={{ marginBottom: 20 }}>
                             <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 8, color: '#166534' }}>📊 Yang Akan Diukur</div>
@@ -1462,7 +1600,6 @@ const VitalScanPage = () => {
                         <h2 style={{ margin: '0 0 24px', fontFamily: 'Poppins', fontSize: 28 }}>Hasil Scan</h2>
                         
                         <div className="result-grid">
-                            {/* Heart Rate Card */}
                             <div className="vs-metric">
                                 <div style={{ width: 56, height: 56, borderRadius: 28, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                                     <FaHeartbeat size={28} color="#22c55e" />
@@ -1477,7 +1614,6 @@ const VitalScanPage = () => {
                                 </div>
                             </div>
                             
-                            {/* RMSSD Card */}
                             <div className="vs-metric">
                                 <div style={{ width: 56, height: 56, borderRadius: 28, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                                     <FaWaveSquare size={28} color="#8b5cf6" />
@@ -1498,7 +1634,6 @@ const VitalScanPage = () => {
                                 </div>
                             </div>
                             
-                            {/* Respiratory Rate Card */}
                             <div className="vs-metric">
                                 <div style={{ width: 56, height: 56, borderRadius: 28, background: '#cffafe', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                                     <FaLungs size={28} color="#06b6d4" />
