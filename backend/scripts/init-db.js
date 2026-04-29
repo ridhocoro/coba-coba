@@ -1,34 +1,22 @@
 /**
- * init-db.js
- * 
- * Script standalone untuk create/sync tabel di Railway MySQL
- * Jalankan SATU KALI saja untuk setup database
- * 
- * cd backend
- * node scripts/init-db.js
+ * init-db.js — FIXED VERSION
  */
 
-require('dotenv').config({ path: '../.env' });
-const { Sequelize } = require('sequelize');
+// Gunakan path absolut untuk dotenv agar pasti terbaca dari folder root
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-const sequelize = new Sequelize(
-    process.env.MYSQL_DATABASE || 'klinik_ipb',
-    process.env.MYSQL_USER     || 'root',
-    process.env.MYSQL_PASSWORD || '',
-    {
-        host    : process.env.MYSQL_HOST || 'localhost',
-        port    : parseInt(process.env.MYSQL_PORT || '3306'),
-        dialect : 'mysql',
-        timezone: '+07:00',
-        logging : false,
-        pool: {
-            max    : 5,
-            min    : 2,
-            acquire: 60000,
-            idle   : 5000,
-        },
-    }
-);
+// IMPORT instance sequelize dan model sekaligus dari models/mysql/index.js
+const { 
+    sequelize, 
+    User, 
+    Doctor, 
+    DoctorSchedule, 
+    Medicine, 
+    Order, 
+    OrderItem, 
+    Payment 
+} = require('../models/mysql'); 
 
 async function initDB() {
     try {
@@ -39,22 +27,21 @@ async function initDB() {
         await sequelize.authenticate();
         console.log('✅ MySQL Connection OK\n');
 
-        console.log('📦 Loading models...');
-        const { User, Doctor, DoctorSchedule, Medicine, Order, OrderItem, Payment } 
-            = require('../models/mysql');
-        console.log('✅ Models loaded\n');
+        console.log('📦 Models found:');
+        console.log(`   - ${User.name}\n   - ${Doctor.name}\n   - ${Order.name}\n`);
 
-        console.log('🔄 Syncing tables...');
-        await sequelize.sync({ alter: false });
+        console.log('🔄 Syncing tables (Creating if not exist)...');
+        // Gunakan alter: true agar tabel dibuat otomatis
+        await sequelize.sync({ alter: true });
         console.log('✅ All tables synced\n');
 
-        // List tabel
+        // List tabel untuk verifikasi
         const [tables] = await sequelize.query(
-            "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?"
-            , { replacements: [process.env.MYSQL_DATABASE] }
+            "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?",
+            { replacements: [process.env.MYSQL_DATABASE] }
         );
 
-        console.log('📋 Tables created:');
+        console.log('📋 Tables in Railway:');
         tables.forEach((row, i) => {
             console.log(`   ${i + 1}. ${row.TABLE_NAME}`);
         });
@@ -66,7 +53,6 @@ async function initDB() {
 
     } catch (err) {
         console.error('\n❌ Error:', err.message);
-        if (err.original) console.error('Details:', err.original.message);
         process.exit(1);
     }
 }
