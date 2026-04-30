@@ -3,7 +3,7 @@ const router     = express.Router();
 const { body, validationResult } = require('express-validator');
 const jwt        = require('jsonwebtoken');
 const crypto     = require('crypto');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const { User }   = require('../models/mysql');
 const { Op }     = require('sequelize');
 const auth       = require('../middleware/auth');
@@ -15,13 +15,8 @@ const RESEND_COOLDOWN_S = 60;
 const RESEND_MAX        = 3;
 const RESEND_WINDOW_MS  = 60 * 60 * 1000;
 
-// ─── Nodemailer ──────────────────────────────────────────────────────────────
-const createTransporter = () => nodemailer.createTransport({
-    host   : process.env.SMTP_HOST || 'smtp.gmail.com',
-    port   : parseInt(process.env.SMTP_PORT) || 465,
-    secure : true,
-    auth   : { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-});
+// ─── Resend Config ───────────────────────────────────────────────────────────
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function generateOtp() {
@@ -29,7 +24,7 @@ function generateOtp() {
 }
 
 function normalisePhone(raw) {
-    let p = String(raw).replace(/[\s\-]/g, '').replace(/[^\d+]/g, '');
+    let p = String(raw).replace(/[\\s\\-]/g, '').replace(/[^\\d+]/g, '');
     if (p.startsWith('+62')) return p;
     if (p.startsWith('62'))  return '+' + p;
     if (p.startsWith('0'))   return '+62' + p.slice(1);
@@ -41,12 +36,12 @@ function stripHtml(str) {
 }
 
 async function sendOtpEmail(email, name, otp) {
-    const transporter = createTransporter();
-    await transporter.sendMail({
-        from    : `"Klinik Pratama IPB" <${process.env.SMTP_USER}>`,
-        to      : email,
-        subject : 'Kode OTP Verifikasi — Klinik Pratama IPB',
-        html    : `
+    try {
+        await resend.emails.send({
+            from: 'Klinik Pratama IPB <onboarding@resend.dev>',
+            to: email,
+            subject: 'Kode OTP Verifikasi — Klinik Pratama IPB',
+            html: `
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
   body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
   .wrap{max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
@@ -71,7 +66,11 @@ async function sendOtpEmail(email, name, otp) {
   <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
 </div>
 </body></html>`,
-    });
+        });
+    } catch (error) {
+        console.error('[Resend] Error sending OTP email:', error);
+        throw error;
+    }
 }
 
 const ipResendMap   = new Map();
@@ -166,7 +165,7 @@ router.post('/register', [
             return res.status(400).json({ message: 'Password dan konfirmasi password tidak cocok' });
 
         phone = normalisePhone(phone);
-        const digits = phone.replace(/\D/g, '');
+        const digits = phone.replace(/\\D/g, '');
         if (digits.length < 10)
             return res.status(400).json({ message: 'NoHP minimal 10 digit' });
 
@@ -360,7 +359,6 @@ router.post('/resend-otp', [
 
 // ─── POST /login ──────────────────────────────────────────────────────────────
 router.post('/login', [
-    // FIX-1: validasi harus benar-benar memeriksa format email dan password tidak kosong
     body('email')
         .notEmpty().withMessage('Email harus diisi')
         .isEmail().withMessage('Format email tidak valid')
@@ -369,7 +367,6 @@ router.post('/login', [
         .notEmpty().withMessage('Password harus diisi'),
 ], async (req, res) => {
     try {
-        // FIX-2: jalankan validasi DULU sebelum rate-limit agar error message jelas
         const errs = validationResult(req);
         if (!errs.isEmpty()) {
             return res.status(400).json({ message: errs.array()[0].msg });
@@ -390,7 +387,6 @@ router.post('/login', [
 
         if (!user) return res.status(400).json({ message: 'Email atau password salah' });
 
-        // user.isVerified === undefined artinya user lama (sebelum fitur OTP) → izinkan login
         if (user.isVerified === false)
             return res.status(403).json({
                 message: 'Akun belum diverifikasi. Cek email Anda.',
@@ -398,7 +394,6 @@ router.post('/login', [
                 email,
             });
 
-        // FIX-3: isActive bisa null/undefined pada user lama, pastikan hanya blokir jika eksplisit false
         if (user.isActive === false)
             return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
 
@@ -447,7 +442,7 @@ router.post('/forgot-email', [
         let { phone } = req.body;
         phone = normalisePhone(phone);
 
-        const digits = phone.replace(/\D/g, '');
+        const digits = phone.replace(/\\D/g, '');
         const altFormats = [
             phone,
             digits,
@@ -485,7 +480,7 @@ router.post('/forgot-email', [
         await user.save();
 
         await sendWhatsApp(phone,
-            `*Klinik Pratama IPB*\nKode OTP untuk melihat email terdaftar:\n\n*${otp}*\n\nBerlaku 5 menit. Jangan bagikan kode ini kepada siapapun.`
+            `*Klinik Pratama IPB*\\nKode OTP untuk melihat email terdaftar:\\n\\n*${otp}*\\n\\nBerlaku 5 menit. Jangan bagikan kode ini kepada siapapun.`
         );
 
         res.json({ message: 'Kode OTP telah dikirim via WhatsApp.', cooldownSeconds: RESEND_COOLDOWN_S });
@@ -507,7 +502,7 @@ router.post('/forgot-email/verify', [
         let { phone, otp } = req.body;
         phone = normalisePhone(phone);
 
-        const digits2 = phone.replace(/\D/g, '');
+        const digits2 = phone.replace(/\\D/g, '');
         const altFormats2 = [phone, digits2, '0' + digits2.slice(2)];
         const user = await User.findOne({
             where: {
@@ -579,12 +574,36 @@ router.post('/forgot-password', [
         user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
         await user.save();
         const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
-        const transporter = createTransporter();
-        await transporter.sendMail({
-            from: `"Klinik Pratama IPB" <${process.env.SMTP_USER}>`, to: email,
+        
+        await resend.emails.send({
+            from: 'Klinik Pratama IPB <onboarding@resend.dev>',
+            to: email,
             subject: 'Reset Password - Klinik Pratama IPB',
-            html: `<p>Klik link berikut untuk reset password (berlaku 15 menit):</p><p><a href="${resetLink}">${resetLink}</a></p>`,
+            html: `
+<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+  body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
+  .wrap{max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
+  .hdr{background:linear-gradient(135deg,#0d6efd,#0a58ca);padding:28px 36px;text-align:center}
+  .hdr h1{color:#fff;margin:0;font-size:20px}
+  .body{padding:32px 36px}
+  .body p{color:#444;font-size:14px;line-height:1.6;margin:0 0 14px}
+  .button{display:inline-block;background:#0d6efd;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold}
+  .note{background:#fff8e1;border-left:4px solid #ffc107;padding:10px 14px;font-size:12px;color:#7a6000;margin:12px 0}
+  .footer{border-top:1px solid #e9ecef;padding:16px 36px;text-align:center;color:#aaa;font-size:11px}
+</style></head><body>
+<div class="wrap">
+  <div class="hdr"><h1>🏥 Klinik Pratama IPB</h1></div>
+  <div class="body">
+    <p>Kami menerima permintaan untuk reset password Anda.</p>
+    <p>Klik tombol di bawah untuk membuat password baru:</p>
+    <p><a href="${resetLink}" class="button">Reset Password</a></p>
+    <div class="note">Link ini akan berlaku selama 15 menit. Jika Anda tidak meminta reset password, abaikan email ini.</div>
+  </div>
+  <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
+</div>
+</body></html>`,
         });
+        
         res.json({ message: 'Jika email terdaftar, link reset password akan dikirim ke email Anda.' });
     } catch (err) {
         console.error('[auth] forgot-password:', err);
