@@ -595,7 +595,10 @@ router.put('/orders/:id/selesai', auth, async (req, res) => {
 // USER — Daftar bank untuk refund
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/refund-banks', auth, async (req, res) => {
+// Endpoint ini PUBLIC (tanpa auth) karena bank list dibutuhkan di halaman
+// pharmacy & konsultasi bahkan sebelum user login (untuk tampilan UI refund).
+// Data ini tidak sensitif — hanya daftar nama bank.
+router.get('/refund-banks', async (req, res) => {
     try {
         const banks = await getAvailableBanks();
         // Normalise: Xendit mengembalikan { bank_code, name }, frontend butuh { code, name }
@@ -606,7 +609,21 @@ router.get('/refund-banks', auth, async (req, res) => {
         res.json({ success: true, banks: normalized });
     } catch (err) {
         console.error('[pharmacy] GET /refund-banks:', err.message);
-        res.status(500).json({ message: 'Gagal mengambil daftar bank' });
+        // Fallback statis jika Xendit API gagal — hindari 500 ke client
+        res.json({
+            success: true,
+            banks: [
+                { code: 'BCA',     name: 'Bank Central Asia (BCA)' },
+                { code: 'BNI',     name: 'Bank Negara Indonesia (BNI)' },
+                { code: 'BRI',     name: 'Bank Rakyat Indonesia (BRI)' },
+                { code: 'MANDIRI', name: 'Bank Mandiri' },
+                { code: 'BSI',     name: 'Bank Syariah Indonesia (BSI)' },
+                { code: 'CIMB',    name: 'CIMB Niaga' },
+                { code: 'PERMATA', name: 'Bank Permata' },
+                { code: 'DANAMON', name: 'Bank Danamon' },
+                { code: 'BTN',     name: 'Bank Tabungan Negara (BTN)' },
+            ],
+        });
     }
 });
 

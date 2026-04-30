@@ -289,26 +289,26 @@ router.post('/doctors', guard, async (req, res) => {
             name: name.trim(),
             email: email.toLowerCase().trim(),
             password,
-            phone: '',
+            phone: '-',
             role: 'doctor',
-            is_verified: true,
-            is_active: true,
+            isVerified: true,
+            isActive: true,
         });
 
         const doctor = await Doctor.create({
-            user_id: user.id,
+            userId: user.id,
             name: name.trim(),
             specialization: specialization.trim(),
             gender: gender || '',
             bio: bio?.trim() || '',
             experience: experience ? Number(experience) : 0,
-            consultation_fee: consultationFee ? Number(consultationFee) : 0,
-            str_number: strNumber?.trim() || '',
+            consultationFee: consultationFee ? Number(consultationFee) : 0,
+            strNumber: strNumber?.trim() || '',
             alumnus: alumnus?.trim() || '',
-            practice_location: practiceLocation?.trim() || '',
-            title_prefix: titlePrefix?.trim() || '',
-            title_suffix: titleSuffix?.trim() || '',
-            is_active: true,
+            practiceLocation: practiceLocation?.trim() || '',
+            titlePrefix: titlePrefix?.trim() || '',
+            titleSuffix: titleSuffix?.trim() || '',
+            isActive: true,
         });
 
         const populated = await Doctor.findByPk(doctor.id, {
