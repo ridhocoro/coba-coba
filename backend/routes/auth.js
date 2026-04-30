@@ -3,7 +3,7 @@ const router     = express.Router();
 const { body, validationResult } = require('express-validator');
 const jwt        = require('jsonwebtoken');
 const crypto     = require('crypto');
-const { Resend } = require('resend');
+const SibApiV3Sdk = require('@getbrevo/brevo');
 const { User }   = require('../models/mysql');
 const { Op }     = require('sequelize');
 const auth       = require('../middleware/auth');
@@ -15,8 +15,10 @@ const RESEND_COOLDOWN_S = 60;
 const RESEND_MAX        = 3;
 const RESEND_WINDOW_MS  = 60 * 60 * 1000;
 
-// ─── Resend Config ───────────────────────────────────────────────────────────
-const resend = new Resend(process.env.RESEND_API_KEY);
+// ─── Brevo Config ─────────────────────────────────────────────────────────────
+const brevoClient = SibApiV3Sdk.ApiClient.instance;
+brevoClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
+const transactionalEmailsApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function generateOtp() {
@@ -24,7 +26,7 @@ function generateOtp() {
 }
 
 function normalisePhone(raw) {
-    let p = String(raw).replace(/[\\s\\-]/g, '').replace(/[^\\d+]/g, '');
+    let p = String(raw).replace(/[\s\-]/g, '').replace(/[^\d+]/g, '');
     if (p.startsWith('+62')) return p;
     if (p.startsWith('62'))  return '+' + p;
     if (p.startsWith('0'))   return '+62' + p.slice(1);
@@ -37,11 +39,14 @@ function stripHtml(str) {
 
 async function sendOtpEmail(email, name, otp) {
     try {
-        await resend.emails.send({
-            from: 'Klinik Pratama IPB <onboarding@resend.dev>',
-            to: email,
-            subject: 'Kode OTP Verifikasi — Klinik Pratama IPB',
-            html: `
+        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+        sendSmtpEmail.sender  = {
+            name  : 'Klinik Pratama IPB',
+            email : process.env.BREVO_SENDER_EMAIL,
+        };
+        sendSmtpEmail.to      = [{ email, name }];
+        sendSmtpEmail.subject = 'Kode OTP Verifikasi — Klinik Pratama IPB';
+        sendSmtpEmail.htmlContent = `
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
   body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
   .wrap{max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
@@ -65,10 +70,12 @@ async function sendOtpEmail(email, name, otp) {
   </div>
   <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
 </div>
-</body></html>`,
-        });
+</body></html>`;
+
+        await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
+        console.log(`[Brevo] OTP email terkirim ke ${email}`);
     } catch (error) {
-        console.error('[Resend] Error sending OTP email:', error);
+        console.error('[Brevo] Error sending OTP email:', error?.response?.body || error.message);
         throw error;
     }
 }
@@ -78,11 +85,11 @@ const otpVerifyMap  = new Map();
 const OTP_VERIFY_MAX    = 5;
 const OTP_VERIFY_WINDOW = 15 * 60 * 1000;
 
-function checkOtpVerifyLimit(email) {
+function checkOtpVerifyLimit(identifier) {
     const now = Date.now();
-    const rec = otpVerifyMap.get(email) || { count: 0, windowStart: now };
+    const rec = otpVerifyMap.get(identifier) || { count: 0, windowStart: now };
     if (now - rec.windowStart > OTP_VERIFY_WINDOW) {
-        otpVerifyMap.set(email, { count: 1, windowStart: now });
+        otpVerifyMap.set(identifier, { count: 1, windowStart: now });
         return { allowed: true, remaining: OTP_VERIFY_MAX - 1 };
     }
     if (rec.count >= OTP_VERIFY_MAX) {
@@ -90,12 +97,12 @@ function checkOtpVerifyLimit(email) {
         return { allowed: false, waitMin };
     }
     rec.count++;
-    otpVerifyMap.set(email, rec);
+    otpVerifyMap.set(identifier, rec);
     return { allowed: true, remaining: OTP_VERIFY_MAX - rec.count };
 }
 
-function resetOtpVerifyLimit(email) {
-    otpVerifyMap.delete(email);
+function resetOtpVerifyLimit(identifier) {
+    otpVerifyMap.delete(identifier);
 }
 
 const loginLimitMap = new Map();
@@ -165,7 +172,7 @@ router.post('/register', [
             return res.status(400).json({ message: 'Password dan konfirmasi password tidak cocok' });
 
         phone = normalisePhone(phone);
-        const digits = phone.replace(/\\D/g, '');
+        const digits = phone.replace(/\D/g, '');
         if (digits.length < 10)
             return res.status(400).json({ message: 'NoHP minimal 10 digit' });
 
@@ -175,21 +182,21 @@ router.post('/register', [
                 return res.status(400).json({ message: 'Email sudah digunakan' });
             }
             const otp = generateOtp();
-            existingEmail.name              = name;
-            existingEmail.password          = password;
-            existingEmail.phone             = phone;
-            existingEmail.dateOfBirth       = dateOfBirth;
-            existingEmail.gender            = gender;
-            existingEmail.emailOtp          = otp;
-            existingEmail.emailOtpExpires   = new Date(Date.now() + OTP_EXPIRES_MIN * 60000);
+            existingEmail.name               = name;
+            existingEmail.password           = password;
+            existingEmail.phone              = phone;
+            existingEmail.dateOfBirth        = dateOfBirth;
+            existingEmail.gender             = gender;
+            existingEmail.emailOtp           = otp;
+            existingEmail.emailOtpExpires    = new Date(Date.now() + OTP_EXPIRES_MIN * 60000);
             existingEmail.emailOtpInvalidated = false;
-            existingEmail.otpResendCount    = 0;
+            existingEmail.otpResendCount     = 0;
             existingEmail.otpResendWindowStart = new Date();
-            existingEmail.createdAt         = new Date();
+            existingEmail.createdAt          = new Date();
             await existingEmail.save();
             await sendOtpEmail(email, name, otp);
             return res.status(200).json({
-                message : 'Akun belum terverifikasi. Kode OTP baru telah dikirim.',
+                message : 'Akun belum terverifikasi. Kode OTP baru telah dikirim ke email Anda.',
                 email,
                 needsVerification: true,
             });
@@ -442,12 +449,8 @@ router.post('/forgot-email', [
         let { phone } = req.body;
         phone = normalisePhone(phone);
 
-        const digits = phone.replace(/\\D/g, '');
-        const altFormats = [
-            phone,
-            digits,
-            '0' + digits.slice(2),
-        ];
+        const digits = phone.replace(/\D/g, '');
+        const altFormats = [phone, digits, '0' + digits.slice(2)];
         const user = await User.findOne({
             where: {
                 phone: { [Op.in]: altFormats },
@@ -480,7 +483,7 @@ router.post('/forgot-email', [
         await user.save();
 
         await sendWhatsApp(phone,
-            `*Klinik Pratama IPB*\\nKode OTP untuk melihat email terdaftar:\\n\\n*${otp}*\\n\\nBerlaku 5 menit. Jangan bagikan kode ini kepada siapapun.`
+            `*Klinik Pratama IPB*\nKode OTP untuk melihat email terdaftar:\n\n*${otp}*\n\nBerlaku 5 menit. Jangan bagikan kode ini kepada siapapun.`
         );
 
         res.json({ message: 'Kode OTP telah dikirim via WhatsApp.', cooldownSeconds: RESEND_COOLDOWN_S });
@@ -502,7 +505,7 @@ router.post('/forgot-email/verify', [
         let { phone, otp } = req.body;
         phone = normalisePhone(phone);
 
-        const digits2 = phone.replace(/\\D/g, '');
+        const digits2 = phone.replace(/\D/g, '');
         const altFormats2 = [phone, digits2, '0' + digits2.slice(2)];
         const user = await User.findOne({
             where: {
@@ -574,12 +577,15 @@ router.post('/forgot-password', [
         user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
         await user.save();
         const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
-        
-        await resend.emails.send({
-            from: 'Klinik Pratama IPB <onboarding@resend.dev>',
-            to: email,
-            subject: 'Reset Password - Klinik Pratama IPB',
-            html: `
+
+        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+        sendSmtpEmail.sender  = {
+            name  : 'Klinik Pratama IPB',
+            email : process.env.BREVO_SENDER_EMAIL,
+        };
+        sendSmtpEmail.to      = [{ email, name: user.name }];
+        sendSmtpEmail.subject = 'Reset Password - Klinik Pratama IPB';
+        sendSmtpEmail.htmlContent = `
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
   body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
   .wrap{max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
@@ -594,16 +600,17 @@ router.post('/forgot-password', [
 <div class="wrap">
   <div class="hdr"><h1>🏥 Klinik Pratama IPB</h1></div>
   <div class="body">
+    <p>Halo, <strong>${user.name}</strong>!</p>
     <p>Kami menerima permintaan untuk reset password Anda.</p>
     <p>Klik tombol di bawah untuk membuat password baru:</p>
     <p><a href="${resetLink}" class="button">Reset Password</a></p>
-    <div class="note">Link ini akan berlaku selama 15 menit. Jika Anda tidak meminta reset password, abaikan email ini.</div>
+    <div class="note">Link ini akan berlaku selama <strong>15 menit</strong>. Jika Anda tidak meminta reset password, abaikan email ini.</div>
   </div>
   <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
 </div>
-</body></html>`,
-        });
-        
+</body></html>`;
+        await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
+
         res.json({ message: 'Jika email terdaftar, link reset password akan dikirim ke email Anda.' });
     } catch (err) {
         console.error('[auth] forgot-password:', err);
