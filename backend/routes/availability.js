@@ -44,7 +44,7 @@ const calcWeekRange = () => {
     const nowWIB = nowAsWIB();
     const dow    = wibDay(nowWIB);
 
-    const daysToMonday = dow === 0 ? 1 : (1 - dow);
+    const daysToMonday = dow === 1 ? 0 : (dow === 0 ? 1 : 8 - dow);
 
     const monWIB     = new Date(nowWIB.getTime() + daysToMonday * 24 * 60 * 60 * 1000);
     const monDateStr = wibDateStr(monWIB);

@@ -81,7 +81,7 @@ const ManageDoctors = () => {
 
   const handleToggle = async (doc, closeModal = false) => {
     try {
-      const r = await api.put(`/api/admin/doctors/${doc._id}/toggle-status`);
+      const r = await api.put(`/api/admin/doctors/${doc.id || doc._id}/toggle-status`);
       const nowActive = r.data?.doctor?.isActive ?? !doc.isActive;
       toast.success(nowActive ? 'Dokter diaktifkan' : 'Dokter dinonaktifkan');
       fetchDoctors();

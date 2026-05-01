@@ -385,12 +385,12 @@ router.put('/doctors/:id/toggle-status', guard, async (req, res) => {
     try {
         const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
-        doctor.is_active = !doctor.is_active;
+        doctor.isActive = !doctor.isActive;
         await doctor.save();
         if (doctor.user_id) {
-            await User.update({ is_active: doctor.is_active }, { where: { id: doctor.user_id } });
+            await User.update({ isActive: doctor.isActive }, { where: { id: doctor.user_id } });
         }
-        res.json({ success: true, doctor: { ...doctor.toJSON(), _id: doctor.id }, isActive: doctor.is_active });
+        res.json({ success: true, doctor: { ...doctor.toJSON(), _id: doctor.id }, isActive: doctor.isActive });
     } catch (err) {
         console.error('[admin] PUT /doctors/:id/toggle-status error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
@@ -539,7 +539,7 @@ router.get('/users', guard, async (req, res) => {
         const formattedUsers = users.map(user => ({
             ...user,
             _id: user.id,
-            isActive: user.is_active !== false,
+            isActive: user.isActive !== false,
             createdAt: user.created_at,
             updatedAt: user.updated_at,
         }));
@@ -661,7 +661,7 @@ router.get('/users/:id', guard, async (req, res) => {
 
         res.json({
             success: true,
-            user: { ...user, _id: user.id, isActive: user.is_active !== false, createdAt: user.created_at },
+            user: { ...user, _id: user.id, isActive: user.isActive !== false, createdAt: user.created_at },
             consultations,
             appointments,
             orders
@@ -736,9 +736,9 @@ router.put('/users/:id/toggle-status', guard, async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id);
         if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
-        user.is_active = !user.is_active;
+        user.isActive = !user.isActive;
         await user.save();
-        res.json({ success: true, isActive: user.is_active });
+        res.json({ success: true, isActive: user.isActive });
     } catch (err) {
         console.error('[admin] PUT /users/:id/toggle-status error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
