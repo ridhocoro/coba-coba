@@ -3,7 +3,7 @@ const router     = express.Router();
 const { body, validationResult } = require('express-validator');
 const jwt        = require('jsonwebtoken');
 const crypto     = require('crypto');
-const { TransactionalEmailsApi, SendSmtpEmail } = require('@getbrevo/brevo');
+const { BrevoClient } = require('@getbrevo/brevo');
 const { User }   = require('../models/mysql');
 const { Op }     = require('sequelize');
 const auth       = require('../middleware/auth');
@@ -16,9 +16,7 @@ const RESEND_MAX        = 3;
 const RESEND_WINDOW_MS  = 60 * 60 * 1000;
 
 // ─── Brevo Config ─────────────────────────────────────────────────────────────
-
-const transactionalEmailsApi = new TransactionalEmailsApi();
-transactionalEmailsApi.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
+const brevo = new BrevoClient({ apiKey: process.env.BREVO_API_KEY });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function generateOtp() {
@@ -39,14 +37,11 @@ function stripHtml(str) {
 
 async function sendOtpEmail(email, name, otp) {
     try {
-        const sendSmtpEmail = new SendSmtpEmail();
-        sendSmtpEmail.sender  = {
-            name  : 'Klinik Pratama IPB',
-            email : process.env.BREVO_SENDER_EMAIL,
-        };
-        sendSmtpEmail.to      = [{ email, name }];
-        sendSmtpEmail.subject = 'Kode OTP Verifikasi — Klinik Pratama IPB';
-        sendSmtpEmail.htmlContent = `
+        await brevo.transactionalEmails.sendTransacEmail({
+        sender  : { name: 'Klinik Pratama IPB', email: process.env.BREVO_SENDER_EMAIL },
+        to      : [{ email, name }],
+        subject : 'Kode OTP Verifikasi — Klinik Pratama IPB',
+        htmlContent : `
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
   body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
   .wrap{max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
@@ -70,9 +65,9 @@ async function sendOtpEmail(email, name, otp) {
   </div>
   <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
 </div>
-</body></html>`;
+</body></html>`
 
-        await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
+        });
         console.log(`[Brevo] OTP email terkirim ke ${email}`);
     } catch (error) {
         console.error('[Brevo] Error sending OTP email:', error?.response?.body || error.message);
@@ -578,14 +573,11 @@ router.post('/forgot-password', [
         await user.save();
         const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
 
-        const sendSmtpEmail = new SendSmtpEmail();
-        sendSmtpEmail.sender  = {
-            name  : 'Klinik Pratama IPB',
-            email : process.env.BREVO_SENDER_EMAIL,
-        };
-        sendSmtpEmail.to      = [{ email, name: user.name }];
-        sendSmtpEmail.subject = 'Reset Password - Klinik Pratama IPB';
-        sendSmtpEmail.htmlContent = `
+        await brevo.transactionalEmails.sendTransacEmail({
+        sender  : { name: 'Klinik Pratama IPB', email: process.env.BREVO_SENDER_EMAIL },
+        to      : [{ email, name: user.name }],
+        subject : 'Reset Password - Klinik Pratama IPB',
+        htmlContent : `
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
   body{font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0}
   .wrap{max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
@@ -608,8 +600,8 @@ router.post('/forgot-password', [
   </div>
   <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
 </div>
-</body></html>`;
-        await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
+</body></html>`
+        });
 
         res.json({ message: 'Jika email terdaftar, link reset password akan dikirim ke email Anda.' });
     } catch (err) {
