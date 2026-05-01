@@ -76,7 +76,7 @@ function calcApptWeekRange() {
     const dowNum = nowWIB.getUTCDay();
 
     // Pergantian minggu dilakukan pada hari MINGGU (0)
-    const daysToMonday = dowNum === 1 ? 0 : (dowNum === 0 ? 1 : 8 - dowNum);
+    const daysToMonday = dowNum === 0 ? 1 : (1 - dowNum);
 
     const monWIB = new Date(nowWIB.getTime() + daysToMonday * 24 * 60 * 60 * 1000);
     const monDateStr = monWIB.toISOString().slice(0, 10);
