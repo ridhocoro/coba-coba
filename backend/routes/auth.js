@@ -3,7 +3,7 @@ const router     = express.Router();
 const { body, validationResult } = require('express-validator');
 const jwt        = require('jsonwebtoken');
 const crypto     = require('crypto');
-const SibApiV3Sdk = require('@getbrevo/brevo');
+const { TransactionalEmailsApi, SendSmtpEmail } = require('@getbrevo/brevo');
 const { User }   = require('../models/mysql');
 const { Op }     = require('sequelize');
 const auth       = require('../middleware/auth');
@@ -16,9 +16,9 @@ const RESEND_MAX        = 3;
 const RESEND_WINDOW_MS  = 60 * 60 * 1000;
 
 // ─── Brevo Config ─────────────────────────────────────────────────────────────
-const brevoClient = SibApiV3Sdk.ApiClient.instance;
-brevoClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
-const transactionalEmailsApi = new SibApiV3Sdk.TransactionalEmailsApi();
+
+const transactionalEmailsApi = new TransactionalEmailsApi();
+transactionalEmailsApi.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function generateOtp() {
@@ -39,7 +39,7 @@ function stripHtml(str) {
 
 async function sendOtpEmail(email, name, otp) {
     try {
-        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+        const sendSmtpEmail = new SendSmtpEmail();
         sendSmtpEmail.sender  = {
             name  : 'Klinik Pratama IPB',
             email : process.env.BREVO_SENDER_EMAIL,
@@ -578,7 +578,7 @@ router.post('/forgot-password', [
         await user.save();
         const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
 
-        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+        const sendSmtpEmail = new SendSmtpEmail();
         sendSmtpEmail.sender  = {
             name  : 'Klinik Pratama IPB',
             email : process.env.BREVO_SENDER_EMAIL,
