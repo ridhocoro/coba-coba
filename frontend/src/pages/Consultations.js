@@ -232,7 +232,7 @@ const DoctorProfileModal = ({ doc, onClose }) => {
     const online = isConsultDocOnlineNow(doc);
     const hasAnySchedule = consultDocHasAnySchedule(doc);
     // isOffline dari backend = belum buat jadwal sama sekali / jadwal expired
-    const noSchedule = doc?.isOffline === true || !hasAnySchedule;
+    const noSchedule = doc?.isOffline === true;
     const showOnline = !noSchedule && online;
     const nextAvail = (!showOnline && !noSchedule) ? getConsultNextAvailable(doc) : null;
 
@@ -1106,7 +1106,7 @@ const Consultations = () => {
                                         const online = isConsultDocOnlineNow(doc);
                                         const hasAnySchedule = consultDocHasAnySchedule(doc);
                                         // isOffline dari backend: belum buat jadwal / jadwal expired
-                                        const noSchedule = doc.isOffline === true || !hasAnySchedule;
+                                        const noSchedule = doc.isOffline === true;
                                         const showOnline = !noSchedule && online;
                                         // Bisa diklik jika ada jadwal (meski hari ini offline)
                                         const canBook = !noSchedule;
