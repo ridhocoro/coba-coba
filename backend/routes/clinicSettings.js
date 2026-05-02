@@ -14,6 +14,7 @@ const path     = require('path');
 const fs       = require('fs');
 const auth     = require('../middleware/auth');
 const ClinicSettings = require('../models/ClinicSettings');
+const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary');
 
 // Logo & stempel klinik → Cloudinary
 const imgUpload = createCloudinaryUpload('klinik-ipb/clinic', ['jpg','jpeg','png','webp'], 5);

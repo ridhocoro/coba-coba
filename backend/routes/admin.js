@@ -21,6 +21,7 @@ const AdminChat = require('../models/AdminChat');
 const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
 const DoctorAvailability = require('../models/DoctorAvailability');
 const AppointmentAvailability = require('../models/AppointmentAvailability');
+const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary');
 
 // ── Middleware shorthand ──
 const guard = [auth, adminAuth];

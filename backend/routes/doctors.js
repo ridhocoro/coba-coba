@@ -33,6 +33,7 @@ const Appointment   = require('../models/Appointment');
 const Consultation  = require('../models/Consultation');
 const auth          = require('../middleware/auth');
 const doctorAuth    = require('../middleware/doctorAuth');
+const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary');
 
 // ══════════════════════════════════════════════════════════════════
 // KONFIGURASI MULTER
