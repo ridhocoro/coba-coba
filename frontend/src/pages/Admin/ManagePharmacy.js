@@ -36,6 +36,28 @@ const STATUS_CFG = {
 const fmt = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
 
+/**
+ * Helper: normalise shipping fields.
+ * Backend menyimpan di kolom flat (shippingAddress string, shippingLat, shippingLng,
+ * shippingPhone, shippingDetail, distance), lalu formatOrder() membungkusnya menjadi
+ * objek shippingAddress = { address, detail, lat, lng }.
+ * Fungsi ini membaca kedua format agar tidak ada data yang hilang.
+ */
+const getShipping = (o) => {
+    if (!o) return {};
+    const sa = o.shippingAddress;
+    const isObj = sa && typeof sa === 'object';
+    return {
+        address  : isObj ? (sa.address || '') : (sa || ''),
+        detail   : isObj ? (sa.detail   || '') : (o.shippingDetail   || ''),
+        lat      : isObj ? sa.lat  : (o.shippingLat  ?? null),
+        lng      : isObj ? sa.lng  : (o.shippingLng  ?? null),
+        phone    : o.shippingPhone || o.userId?.phone || o.user?.phone || '',
+        // 'distance' disimpan dalam km (DECIMAL di MySQL), bukan meter
+        distanceKm: o.distance ?? (o.shippingDistance ? o.shippingDistance / 1000 : null),
+    };
+};
+
 const ManagePharmacy = () => {
     const [medicines, setMedicines] = useState([]);
     const [orders, setOrders] = useState([]);
@@ -472,9 +494,9 @@ const ManagePharmacy = () => {
                                         <div>
                                         <div style={{ fontWeight: 500 }}>{o.userId?.name || '-'}</div>
                                         <div style={{ fontSize: 11, color: '#64748b' }}>{o.userId?.email}</div>
-                                        {(o.shippingPhone || o.userId?.phone) && (
+                                        {getShipping(o).phone && (
                                             <div style={{ fontSize: 11, color: '#0ea5e9', fontWeight: 600 }}>
-                                                📞 {o.shippingPhone || o.userId?.phone}
+                                                📞 {getShipping(o).phone}
                                             </div>
                                              )}
                                         </div>
@@ -539,9 +561,9 @@ const ManagePharmacy = () => {
                                         <div style={{ fontWeight: 700, fontSize: 15 }}>{order.orderNumber}</div>
                                         <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
                                             {order.userId?.name || order.user?.name}
-                                            {(order.shippingPhone || order.userId?.phone || order.user?.phone) && (
+                                            {getShipping(order).phone && (
                                                 <> · <span style={{ color: '#0ea5e9', fontWeight: 600 }}>
-                                                    📞 {order.shippingPhone || order.userId?.phone || order.user?.phone}
+                                                    📞 {getShipping(order).phone}
                                                 </span></>
                                             )}
                                             {' · '}{order.userId?.email || order.user?.email}
@@ -644,11 +666,11 @@ const ManagePharmacy = () => {
                                 <span>{selectedOrder.userId?.name}</span>
                                 <span>·</span>
                                 <span>{selectedOrder.userId?.email}</span>
-                                {(selectedOrder.shippingPhone || selectedOrder.userId?.phone) && (
+                                {getShipping(selectedOrder).phone && (
                                     <>
                                         <span>·</span>
                                         <span style={{ color: '#0ea5e9', fontWeight: 600 }}>
-                                            📞 {selectedOrder.shippingPhone || selectedOrder.userId?.phone}
+                                            📞 {getShipping(selectedOrder).phone}
                                         </span>
                                     </>
                                     )}
@@ -657,20 +679,23 @@ const ManagePharmacy = () => {
                             </div>
 
                             {/* LOKASI PENGIRIMAN */}
-                            {selectedOrder.deliveryMethod !== 'pickup' && (selectedOrder.shippingAddress?.address || selectedOrder.shippingLat) && (
+                            {selectedOrder.deliveryMethod !== 'pickup' && (() => {
+                                const sh = getShipping(selectedOrder);
+                                if (!sh.address && !sh.lat) return null;
+                                return (
                                 <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
                                     <p style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px 0' }}>📍 Lokasi Pengiriman</p>
-                                    {(selectedOrder.shippingAddress?.address || typeof selectedOrder.shippingAddress === 'string') && (
+                                    {sh.address && (
                                         <p style={{ fontSize: 13, color: '#0c4a6e', margin: '0 0 4px 0', fontWeight: 500 }}>
-                                            {selectedOrder.shippingAddress?.address || selectedOrder.shippingAddress}
-                                            {selectedOrder.shippingAddress?.detail && (
-                                                <span style={{ color: '#0369a1' }}>, {selectedOrder.shippingAddress.detail}</span>
+                                            {sh.address}
+                                            {sh.detail && (
+                                                <span style={{ color: '#0369a1' }}>, {sh.detail}</span>
                                             )}
                                         </p>
                                     )}
-                                    {(selectedOrder.shippingLat || selectedOrder.shippingAddress?.lat) && (
+                                    {sh.lat && sh.lng && (
                                         <a
-                                            href={`https://www.google.com/maps?q=${selectedOrder.shippingAddress?.lat || selectedOrder.shippingLat},${selectedOrder.shippingAddress?.lng || selectedOrder.shippingLng}`}
+                                            href={`https://www.google.com/maps?q=${sh.lat},${sh.lng}`}
                                             target="_blank"
                                             rel="noreferrer"
                                             style={{ fontSize: 12, color: '#0284c7', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}
@@ -678,13 +703,14 @@ const ManagePharmacy = () => {
                                             🗺️ Buka di Google Maps →
                                         </a>
                                     )}
-                                    {selectedOrder.shippingDistance && (
+                                    {sh.distanceKm != null && (
                                         <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>
-                                            📏 Jarak: <strong>{(selectedOrder.shippingDistance / 1000).toFixed(1)} km</strong>
+                                            📏 Jarak: <strong>{Number(sh.distanceKm).toFixed(1)} km</strong>
                                         </p>
                                     )}
                                 </div>
-                            )}
+                                );
+                            })()}
 
                             {/* VERIFIKASI RESEP */}
                             {orderAction === 'verify-rx' && (
