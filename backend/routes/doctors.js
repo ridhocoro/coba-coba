@@ -720,7 +720,73 @@ router.get('/', async (req, res) => {
                 } // end else isNaN guard
             }
             doc.isOffline = isOffline;
-            
+
+            // Kirim jadwal konsultasi online per hari ke frontend
+            // Format: [{ day: 'Senin', dow: 1, slots: [{startTime, endTime, isAvailable}] }]
+            // Tambahan: nextAvailableSlot & isFullyBooked untuk badge frontend
+            if (avail && typeof avail.getSlotsForDay === 'function' && avail.isWeekActive()) {
+                const DAY_NAMES_WIB = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+                const CUTOFF_MS     = 20 * 60 * 1000;
+                const bookedSet     = consBookingsByDoctor[docIdStr] || new Set();
+                const msPerDay      = 24 * 60 * 60 * 1000;
+                const consAvailableDays = [];
+                let   nextAvailableSlot = null; // { date, dateLabel, startTime }
+                let   totalSlots        = 0;
+                let   availableSlots    = 0;
+
+                let cursor = new Date(avail.weekStart.getTime());
+                while (cursor.getTime() <= avail.weekEnd.getTime()) {
+                    const cursorWIB = new Date(cursor.getTime() + 7 * 60 * 60 * 1000);
+                    const dow       = cursorWIB.getUTCDay();
+                    if (dow === 0) { cursor = new Date(cursor.getTime() + msPerDay); continue; }
+
+                    const activeSlots = avail.getSlotsForDay(dow);
+                    const dateStr     = cursorWIB.toISOString().slice(0, 10);
+                    const [y, mo, dy] = dateStr.split('-').map(Number);
+
+                    const slotsForDay = activeSlots.map(s => {
+                        const [sh, sm] = s.split(':').map(Number);
+                        const slotUTC  = new Date(Date.UTC(y, mo - 1, dy, sh, sm, 0) - 7 * 60 * 60 * 1000);
+                        const isPast   = (slotUTC.getTime() - CUTOFF_MS) <= nowUTC.getTime();
+                        const isBooked = bookedSet.has(`${dateStr}|${s}`);
+                        const isAvail  = !isPast && !isBooked;
+                        totalSlots++;
+                        if (isAvail) {
+                            availableSlots++;
+                            // Catat slot tersedia pertama berikutnya
+                            if (!nextAvailableSlot) {
+                                const [dm, dd] = [mo, dy];
+                                const dayName  = DAY_NAMES_WIB[dow];
+                                const bulan    = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][mo - 1];
+                                nextAvailableSlot = {
+                                    date      : dateStr,
+                                    dateLabel : `${dayName}, ${dy} ${bulan}`,
+                                    startTime : s,
+                                };
+                            }
+                        }
+                        return {
+                            startTime : s,
+                            endTime   : `${String(parseInt(s.split(':')[0]) + 1).padStart(2,'0')}:${s.split(':')[1]}`,
+                            isAvailable: isAvail,
+                        };
+                    });
+
+                    if (slotsForDay.length > 0) {
+                        consAvailableDays.push({ day: DAY_NAMES_WIB[dow], dow, slots: slotsForDay });
+                    }
+                    cursor = new Date(cursor.getTime() + msPerDay);
+                }
+
+                doc.consAvailableDays   = consAvailableDays;
+                doc.nextAvailableSlot   = nextAvailableSlot;
+                doc.isFullyBooked       = totalSlots > 0 && availableSlots === 0;
+            } else {
+                doc.consAvailableDays = [];
+                doc.nextAvailableSlot = null;
+                doc.isFullyBooked     = false;
+            }
+
             return doc;
         });
         res.json(doctors);
