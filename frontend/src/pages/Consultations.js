@@ -136,18 +136,11 @@ const isConsultDocOnlineNow = (doc) => {
 
         const nowWIB  = new Date(Date.now() + 7 * 60 * 60 * 1000);
         const dow     = nowWIB.getUTCDay();
-        const nowMins = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
-
         const todayEntry = consAvailableDays.find(d => d.dow === dow);
         if (!todayEntry) return false;
 
-        // Dokter "online" jika jam sekarang masuk ke salah satu slot yang tersedia hari ini
-        return (todayEntry.slots || []).some(slot => {
-            if (!slot.isAvailable) return false;
-            const [sh, sm] = slot.startTime.split(':').map(Number);
-            const [eh, em] = slot.endTime.split(':').map(Number);
-            return nowMins >= sh * 60 + sm && nowMins < eh * 60 + em;
-        });
+        // Dokter "online" jika hari ini ada setidaknya 1 slot yang masih tersedia (belum past & belum booked)
+        return (todayEntry.slots || []).some(slot => slot.isAvailable === true);
     } catch { return false; }
 };
 
@@ -1110,7 +1103,7 @@ const Consultations = () => {
                                                                     border: `1px solid ${showOnline ? '#bbf7d0' : '#fecaca'}`,
                                                                     whiteSpace: 'nowrap',
                                                                 }}>
-                                                                    {showOnline ? '🟢 Online' : '🔴 Offline'}
+                                                                    {showOnline ? 'Online' : 'Offline'}
                                                                 </span>
                                                             </div>
                                                             {/* Keterangan sub-status */}
