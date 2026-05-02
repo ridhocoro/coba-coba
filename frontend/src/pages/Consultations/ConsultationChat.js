@@ -883,9 +883,9 @@ const ConsultationChat = () => {
   const isCompleted = ['completed', 'no_show'].includes(consultation?.status);
   // Status yang memungkinkan user beri rating (feedback)
   // User tidak bisa rating jika mereka no_show, tapi dokter bisa rating user no_show
-  const isRatable   = isDoctor 
-    ? ['completed', 'no_show', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(consultation?.status)
-    : ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(consultation?.status);
+  // Hanya user/pasien yang bisa memberi rating — dokter tidak perlu rating
+  const isRatable   = !isDoctor &&
+    ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(consultation?.status);
 
   // Dokter: bisa akses room kecuali saat pending_payment/expired
   // User: bisa akses room saat confirmed/live/completed/cancelled — untuk lihat history

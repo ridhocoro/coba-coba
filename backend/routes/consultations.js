@@ -3,6 +3,7 @@ const express = require('express');
 const { Doctor, User } = require('../models/mysql');
 const router = express.Router();
 const multer = require('multer');
+const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary');
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
@@ -56,27 +57,13 @@ const chatStorage = multer.diskStorage({
 });
 const uploadChat = multer({ storage: chatStorage, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// ── Multer untuk upload lampiran keluhan ──────────────────────────────────────
-const attachStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const dir = 'uploads/attachments';
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `attach-${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`);
-    }
-});
-const uploadAttachment = multer({
-    storage: attachStorage,
-    limits: { fileSize: 10 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const allowed = /jpeg|jpg|png|gif|webp|pdf|doc|docx/i;
-        const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
-        if (allowed.test(ext)) return cb(null, true);
-        cb(new Error('File harus berupa gambar, PDF, atau dokumen Word'));
-    }
-});
+// ── Multer untuk upload lampiran keluhan — disimpan ke Cloudinary ────────────
+const uploadAttachment = createCloudinaryUpload(
+    'klinik-ipb/attachments',
+    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx'],
+    10
+);
+
 
 // ── Konfigurasi Multer untuk Upload Bukti Refund ─────────────────────────────
 const uploadRefundProof = multer({
@@ -279,7 +266,8 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 
         const paymentDeadline = new Date(Date.now() + 15 * 60 * 1000);
 
-        const attachmentUrls = (req.files || []).map(f => `/uploads/attachments/${f.filename}`);
+        // Cloudinary: URL file ada di f.path (sudah full URL)
+        const attachmentUrls = (req.files || []).map(f => f.path || f.secure_url || f.url || `/uploads/attachments/${f.filename}`);
 
         const consultation = new Consultation({
             userId: req.userId,
