@@ -29,30 +29,11 @@ const guard = [auth, adminAuth];
 // MULTER CONFIGURATION
 // ════════════════════════════════════════════════════════════════════════════
 
-const photoDir = path.join(__dirname, '../uploads/doctors');
-if (!fs.existsSync(photoDir)) fs.mkdirSync(photoDir, { recursive: true });
-const uploadDoctorPhoto = multer({
-    storage: multer.diskStorage({
-        destination: (_, __, cb) => cb(null, photoDir),
-        filename: (req, file, cb) =>
-            cb(null, `doctor-${req.params.id}-${Date.now()}${path.extname(file.originalname).toLowerCase()}`),
-    }),
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (_, file, cb) => {
-        if (/image\/(jpeg|jpg|png|webp)/.test(file.mimetype)) cb(null, true);
-        else cb(new Error('Hanya gambar JPG/PNG/WebP'));
-    },
-});
+// Foto dokter → Cloudinary
+const uploadDoctorPhoto = createCloudinaryUpload('klinik-ipb/doctors', ['jpg','jpeg','png','webp'], 5);
 
-const chatDir = path.join(__dirname, '../uploads/admin-chat');
-if (!fs.existsSync(chatDir)) fs.mkdirSync(chatDir, { recursive: true });
-const uploadChatFile = multer({
-    storage: multer.diskStorage({
-        destination: (_, __, cb) => cb(null, chatDir),
-        filename: (_, file, cb) => cb(null, `chat-${Date.now()}-${file.originalname}`),
-    }),
-    limits: { fileSize: 10 * 1024 * 1024 },
-});
+// File chat admin → Cloudinary
+const uploadChatFile = createCloudinaryUpload('klinik-ipb/admin-chat', ['jpg','jpeg','png','webp','pdf','doc','docx','mp4','mov'], 10);
 
 // Helper function untuk format tanggal WIB
 function dateRange(period, from, to) {
@@ -400,7 +381,7 @@ router.put('/doctors/:id/toggle-status', guard, async (req, res) => {
 router.post('/doctors/:id/photo', guard, uploadDoctorPhoto.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'File tidak ada' });
-        const photoUrl = `/uploads/doctors/${req.file.filename}`;
+        const photoUrl = req.file.path || req.file.secure_url || req.file.url;
         await Doctor.update({ photo: photoUrl }, { where: { id: req.params.id } });
         const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
@@ -1473,7 +1454,7 @@ router.post('/chat/:doctorId', guard, uploadChatFile.single('file'), async (req,
 
         let fileUrl = null, fileName = null, fileType = null;
         if (req.file) {
-            fileUrl = `/uploads/admin-chat/${req.file.filename}`;
+            fileUrl = req.file.path || req.file.secure_url || req.file.url;
             fileName = req.file.originalname;
             fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
         }

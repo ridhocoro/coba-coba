@@ -653,8 +653,38 @@ const ManagePharmacy = () => {
                                     </>
                                     )}
                                 </div>
-                                <div style={{ display: 'flex', gap: 16, marginTop: 4, fontSize: 12 }}><span>Total: <strong style={{ color: '#2563eb' }}>{fmt(selectedOrder.totalAmount)}</strong></span><span>{selectedOrder.deliveryMethod === 'pickup' ? 'Pickup' : 'Diantar'}</span></div>
+                                <div style={{ display: 'flex', gap: 16, marginTop: 4, fontSize: 12 }}><span>Total: <strong style={{ color: '#2563eb' }}>{fmt(selectedOrder.totalAmount)}</strong></span><span>{selectedOrder.deliveryMethod === 'pickup' ? '📦 Pickup' : '🚚 Diantar'}</span></div>
                             </div>
+
+                            {/* LOKASI PENGIRIMAN */}
+                            {selectedOrder.deliveryMethod !== 'pickup' && (selectedOrder.shippingAddress?.address || selectedOrder.shippingLat) && (
+                                <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px 0' }}>📍 Lokasi Pengiriman</p>
+                                    {(selectedOrder.shippingAddress?.address || typeof selectedOrder.shippingAddress === 'string') && (
+                                        <p style={{ fontSize: 13, color: '#0c4a6e', margin: '0 0 4px 0', fontWeight: 500 }}>
+                                            {selectedOrder.shippingAddress?.address || selectedOrder.shippingAddress}
+                                            {selectedOrder.shippingAddress?.detail && (
+                                                <span style={{ color: '#0369a1' }}>, {selectedOrder.shippingAddress.detail}</span>
+                                            )}
+                                        </p>
+                                    )}
+                                    {(selectedOrder.shippingLat || selectedOrder.shippingAddress?.lat) && (
+                                        <a
+                                            href={`https://www.google.com/maps?q=${selectedOrder.shippingAddress?.lat || selectedOrder.shippingLat},${selectedOrder.shippingAddress?.lng || selectedOrder.shippingLng}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            style={{ fontSize: 12, color: '#0284c7', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}
+                                        >
+                                            🗺️ Buka di Google Maps →
+                                        </a>
+                                    )}
+                                    {selectedOrder.shippingDistance && (
+                                        <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>
+                                            📏 Jarak: <strong>{(selectedOrder.shippingDistance / 1000).toFixed(1)} km</strong>
+                                        </p>
+                                    )}
+                                </div>
+                            )}
 
                             {/* VERIFIKASI RESEP */}
                             {orderAction === 'verify-rx' && (

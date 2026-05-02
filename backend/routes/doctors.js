@@ -38,26 +38,8 @@ const doctorAuth    = require('../middleware/doctorAuth');
 // KONFIGURASI MULTER
 // ══════════════════════════════════════════════════════════════════
 
-const uploadDir = path.join(__dirname, '../uploads/doctors');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const photoStorage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadDir),
-    filename:    (req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, `doctor-${req.userId}-${Date.now()}${ext}`);
-    },
-});
-
-const photoUpload = multer({
-    storage: photoStorage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
-    fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-        if (allowed.includes(file.mimetype)) cb(null, true);
-        else cb(new Error('Hanya file gambar (JPG, PNG, WEBP) yang diizinkan'), false);
-    },
-});
+// Foto & tanda tangan dokter → Cloudinary
+const photoUpload = createCloudinaryUpload('klinik-ipb/doctors', ['jpg','jpeg','png','webp'], 5);
 
 // ══════════════════════════════════════════════════════════════════
 // HELPER TRANSLASI SCHEDULE (MySQL -> Mongoose Format)
@@ -194,15 +176,11 @@ router.post('/my/photo', auth, doctorAuth, photoUpload.single('photo'), async (r
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'File foto tidak ditemukan' });
 
-        const photoUrl = `/uploads/doctors/${req.file.filename}`;
+        const photoUrl = req.file.path || req.file.secure_url || req.file.url;
 
         // Hapus foto lama jika file lokal
         const existing = await Doctor.findOne({ where: { userId: req.userId }, attributes: ['photo'] });
-        if (existing?.photo?.includes('/uploads/doctors/')) {
-            const oldFilename = existing.photo.split('/uploads/doctors/').pop();
-            const oldPath = path.join(uploadDir, oldFilename);
-            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-        }
+        // Cloudinary: tidak perlu hapus file lama secara manual
 
         await Doctor.update(
             { photo: photoUrl },
@@ -230,84 +208,13 @@ router.post('/my/photo', auth, doctorAuth, photoUpload.single('photo'), async (r
  */
 router.post('/my/signature', auth, doctorAuth, photoUpload.single('signature'), async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ success: false, message: 'File tanda tangan tidak ditemukan' });
+        if (!req.file) return res.status(400).json({ success: false, message: 'File tanda tangan diperlukan' });
 
-        const uploadedPath = req.file.path;
-        let finalPath = uploadedPath;
-        let finalFilename = req.file.filename;
+        // Cloudinary sudah handle format otomatis
+        const signatureUrl = req.file.path || req.file.secure_url || req.file.url;
 
-        // Cek format file dan convert WebP ke PNG jika diperlukan
-        try {
-            const buf = Buffer.alloc(4);
-            const fd = fs.openSync(uploadedPath, 'r');
-            fs.readSync(fd, buf, 0, 4, 0);
-            fs.closeSync(fd);
-
-            const isWebP = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
-            const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
-            const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
-
-            if (isWebP) {
-                // File adalah WebP, convert ke PNG
-                try {
-                    const sharp = require('sharp');
-                    console.log('[signature upload] ⚠️ WebP detected, converting to PNG...');
-                    
-                    // Generate nama file PNG baru
-                    const pngFilename = req.file.filename.replace(/\.[^/.]+$/, '.png');
-                    const pngPath = path.join(uploadDir, pngFilename);
-
-                    // Convert WebP → PNG
-                    await sharp(uploadedPath)
-                        .png({ quality: 95, compressionLevel: 9 })
-                        .toFile(pngPath);
-
-                    // Hapus file WebP original
-                    try { fs.unlinkSync(uploadedPath); } catch (e) {}
-
-                    finalPath = pngPath;
-                    finalFilename = pngFilename;
-                    console.log('[signature upload] ✓ Converted to PNG:', pngFilename);
-                } catch (sharpErr) {
-                    if (sharpErr.code === 'MODULE_NOT_FOUND') {
-                        console.warn('[signature upload] ⚠️ Sharp tidak terinstall. Lanjut tanpa konversi (mungkin PDF akan gagal)');
-                        console.warn('[signature upload] 💡 Install dengan: npm install sharp --save');
-                        // Lanjut dengan file WebP, tapi tandai warning
-                    } else {
-                        throw sharpErr;
-                    }
-                }
-            } else if (!isJpeg && !isPng) {
-                // Format tidak didukung sama sekali
-                try { fs.unlinkSync(uploadedPath); } catch (e) {}
-                return res.status(400).json({
-                    success: false,
-                    message: 'Format file tidak didukung. Gunakan PNG, JPEG, atau WebP.'
-                });
-            }
-        } catch (formatCheckErr) {
-            console.warn('[signature upload] Could not check file format:', formatCheckErr.message);
-            // Lanjut dengan file seperti yang diupload
-        }
-
-        const signatureUrl = `/uploads/doctors/${finalFilename}`;
-
-        // Hapus tanda tangan lama
-        const existing = await Doctor.findOne({ where: { userId: req.userId }, attributes: ['signatureUrl'] });
-        if (existing?.signatureUrl?.includes('/uploads/doctors/')) {
-            const oldFilename = existing.signatureUrl.split('/uploads/doctors/').pop();
-            const oldPath = path.join(uploadDir, oldFilename);
-            if (fs.existsSync(oldPath)) {
-                try { fs.unlinkSync(oldPath); } catch (e) {}
-            }
-        }
-
-        await Doctor.update(
-            { signatureUrl },
-            { where: { userId: req.userId } }
-        );
+        await Doctor.update({ signatureUrl }, { where: { userId: req.userId } });
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
-
         if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
 
         res.json({ success: true, message: 'Tanda tangan berhasil diupload', signatureUrl, doctor });
@@ -320,14 +227,7 @@ router.post('/my/signature', auth, doctorAuth, photoUpload.single('signature'), 
     }
 });
 
-/**
- * GET /my/stats
- * Statistik untuk dashboard beranda.
- *
- * Response menyertakan DUA format sekaligus:
- * - nested  (appointments.today, consultations.today, dst.)
- * - flat    (apptToday, consToday, dst.) — dipakai DoctorDashboard.jsx
- */
+
 router.get('/my/stats', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -997,15 +897,8 @@ router.delete('/:id', auth, async (req, res) => {
 const AdminChat    = require('../models/AdminChat');
 const { createNotification } = require('../utils/notificationHelper');
 
-const chatDir = path.join(__dirname, '../uploads/admin-chat');
-if (!fs.existsSync(chatDir)) fs.mkdirSync(chatDir, { recursive: true });
-const uploadChatFile = multer({
-    storage: multer.diskStorage({
-        destination: (_, __, cb) => cb(null, chatDir),
-        filename: (_, file, cb) => cb(null, `chat-${Date.now()}-${file.originalname}`),
-    }),
-    limits: { fileSize: 10 * 1024 * 1024 },
-});
+// File chat dokter-admin → Cloudinary
+const uploadChatFile = createCloudinaryUpload('klinik-ipb/admin-chat', ['jpg','jpeg','png','webp','pdf','doc','docx'], 10);
 
 // GET /api/doctors/my/chat — baca pesan dari admin
 router.get('/my/chat', auth, doctorAuth, async (req, res) => {
@@ -1044,7 +937,7 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
         // Process file jika ada
         let fileUrl = null, fileName = null, fileType = null;
         if (req.file) {
-            fileUrl  = `/uploads/admin-chat/${req.file.filename}`;
+            fileUrl  = req.file.path || req.file.secure_url || req.file.url;
             fileName = req.file.originalname;
             fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
         }

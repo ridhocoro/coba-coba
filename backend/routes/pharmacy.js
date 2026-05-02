@@ -11,7 +11,7 @@ const adminAuth = require('../middleware/adminAuth');
 const { Medicine, Order, OrderItem, User } = require('../models/mysql');
 const { Op } = require('sequelize');
 const { createNotification } = require('../utils/notificationHelper');
-const { createCloudinaryUpload } = require('../config/cloudinary');
+const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary');
 const {
     deleteFromCloudinary,
     processXenditDisbursement,
@@ -126,28 +126,19 @@ async function getStudentFreeUsage(userId) {
     return orders.reduce((s, o) => s + (o.studentFreeQty || 0), 0);
 }
 
-// ─── Multer: gambar obat ──────────────────────────────────────────────────────
-const medDir = path.join(__dirname, '../uploads/medicines');
-if (!fs.existsSync(medDir)) fs.mkdirSync(medDir, { recursive: true });
-const uploadMedImage = multer({
-    storage: multer.diskStorage({
-        destination: (_, __, cb) => cb(null, medDir),
-        filename: (req, file, cb) => cb(null, `med-${req.params.id}-${Date.now()}${path.extname(file.originalname).toLowerCase()}`),
-    }),
-    limits: { fileSize: 3 * 1024 * 1024 },
-    fileFilter: (_, file, cb) => /jpeg|jpg|png|webp/.test(path.extname(file.originalname).toLowerCase()) ? cb(null, true) : cb(new Error('Hanya jpg/png/webp')),
-});
+// ─── Multer: gambar obat → Cloudinary ────────────────────────────────────────
+const uploadMedImage = createCloudinaryUpload(
+    'klinik-ipb/medicines',
+    ['jpg', 'jpeg', 'png', 'webp'],
+    3
+);
 
-const rxDir = path.join(__dirname, '../uploads/prescriptions');
-if (!fs.existsSync(rxDir)) fs.mkdirSync(rxDir, { recursive: true });
-const uploadRx = multer({
-    storage: multer.diskStorage({
-        destination: (_, __, cb) => cb(null, rxDir),
-        filename: (req, file, cb) => cb(null, `rx-${req.params.orderId}-${Date.now()}${path.extname(file.originalname).toLowerCase()}`),
-    }),
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (_, file, cb) => /jpeg|jpg|png|webp|pdf/.test(path.extname(file.originalname).toLowerCase()) ? cb(null, true) : cb(new Error('Hanya gambar/PDF')),
-});
+// ─── Multer: foto resep → Cloudinary ─────────────────────────────────────────
+const uploadRx = createCloudinaryUpload(
+    'klinik-ipb/prescriptions',
+    ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+    5
+);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC — Daftar & detail obat
@@ -257,11 +248,12 @@ router.post('/admin/medicines/:id/image', auth, adminAuth,
             if (!req.file) return res.status(400).json({ error: 'File gambar diperlukan' });
             const med = await Medicine.findByPk(req.params.id);
             if (!med) return res.status(404).json({ error: 'Obat tidak ditemukan' });
-            if (med.image) {
-                const old = path.join(__dirname, '..', med.image);
-                if (fs.existsSync(old)) fs.unlinkSync(old);
+            // Cloudinary: hapus gambar lama jika ada public_id
+            if (med.imagePublicId) {
+                try { await cloudinary.uploader.destroy(med.imagePublicId); } catch (_) {}
             }
-            med.image = `/uploads/medicines/${req.file.filename}`;
+            med.image = req.file.path || req.file.secure_url || req.file.url;
+            med.imagePublicId = req.file.filename || req.file.public_id || null;
             await med.save();
             res.json({ success: true, image: med.image });
         } catch (err) {
@@ -480,7 +472,7 @@ router.post('/orders/:orderId/prescription', auth,
                 return res.status(400).json({ message: 'Tidak bisa upload resep pada status ini' });
             if (!req.file) return res.status(400).json({ message: 'File resep diperlukan' });
 
-            order.prescriptionImageUrl = `/uploads/prescriptions/${req.file.filename}`;
+            order.prescriptionImageUrl = req.file.path || req.file.secure_url || req.file.url;
             order.prescriptionStatus = 'pending';
             order.prescriptionUploadCount = (order.prescriptionUploadCount || 0) + 1;
             order.status = 'waiting_prescription';
