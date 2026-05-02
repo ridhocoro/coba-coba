@@ -88,6 +88,7 @@ function formatOrder(o) {
             detail: json.shippingDetail || '',
             lat: json.shippingLat,
             lng: json.shippingLng,
+            phone: json.shippingPhone || '',
         };
     }
 

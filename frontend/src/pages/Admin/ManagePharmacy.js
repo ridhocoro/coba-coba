@@ -527,6 +527,36 @@ const ManagePharmacy = () => {
                                                         <span>Ongkir: <strong>{fmt(o.shippingCost)}</strong></span>
                                                         <span>Total: <strong style={{ color: '#2563eb' }}>{fmt(o.totalAmount)}</strong></span>
                                                     </div>
+
+                                                    {/* LOKASI PENGIRIMAN di expanded row */}
+                                                    {o.deliveryMethod !== 'pickup' && (() => {
+                                                        const sh = getShipping(o);
+                                                        if (!sh.address && !sh.lat) return null;
+                                                        return (
+                                                            <div style={{ marginTop: 12, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '10px 14px' }}>
+                                                                <p style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 6px 0' }}>📍 Lokasi Pengiriman</p>
+                                                                {sh.address && (
+                                                                    <p style={{ fontSize: 13, color: '#0c4a6e', margin: '0 0 4px 0', fontWeight: 500 }}>
+                                                                        {sh.address}
+                                                                        {sh.detail && <span style={{ color: '#0369a1' }}>, {sh.detail}</span>}
+                                                                    </p>
+                                                                )}
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+                                                                    {sh.lat && sh.lng && (
+                                                                        <a href={`https://www.google.com/maps?q=${sh.lat},${sh.lng}`} target="_blank" rel="noreferrer"
+                                                                            style={{ fontSize: 12, color: '#0284c7', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                                            🗺️ Buka di Google Maps →
+                                                                        </a>
+                                                                    )}
+                                                                    {sh.distanceKm != null && (
+                                                                        <span style={{ fontSize: 12, color: '#64748b' }}>
+                                                                            📏 {Number(sh.distanceKm).toFixed(1)} km
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                                 <div>
                                                     {o.status === 'waiting_prescription' && (
