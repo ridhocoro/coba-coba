@@ -521,7 +521,7 @@ router.get('/users', guard, async (req, res) => {
         const formattedUsers = users.map(user => ({
             ...user,
             _id: user.id,
-            isActive: user.isActive !== false,
+            isActive: Boolean(user.isActive),
             createdAt: user.created_at,
             updatedAt: user.updated_at,
         }));
@@ -643,7 +643,7 @@ router.get('/users/:id', guard, async (req, res) => {
 
         res.json({
             success: true,
-            user: { ...user, _id: user.id, isActive: user.isActive !== false, createdAt: user.created_at },
+            user: { ...user, _id: user.id, isActive: Boolean(user.isActive), createdAt: user.created_at },
             consultations,
             appointments,
             orders

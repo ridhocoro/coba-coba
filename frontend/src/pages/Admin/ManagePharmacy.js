@@ -11,6 +11,13 @@ import {
     FaStar, FaChevronDown, FaChevronUp, FaInfoCircle
 } from 'react-icons/fa';
 
+// Helper: jika URL sudah absolute (dari Cloudinary), gunakan langsung; jika relatif, tambahkan API_URL
+const getImageUrl = (imagePath) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return imagePath;
+    return `${API_URL}${imagePath}`;
+};
+
 const CATEGORIES = [
     { value: 'obat_bebas', label: 'Obat Bebas' },
     { value: 'obat_bebas_terbatas', label: 'Obat Bebas Terbatas' },
@@ -147,7 +154,7 @@ const ManagePharmacy = () => {
                 price: med.price || '', stock: med.stock || '', unit: med.unit || 'tablet', description: med.description || '',
                 requiresPrescription: !!med.requiresPrescription, availableForStudentQuota: !!med.availableForStudentQuota, isActive: med.isActive !== false
             });
-            setImagePreview(med.image ? `${API_URL}${med.image}` : null);
+            setImagePreview(med.image ? getImageUrl(med.image) : null);
         } else {
             setEditingMed(null);
             setMedForm({ name: '', genericName: '', category: 'obat_bebas', price: '', stock: '', unit: 'tablet', description: '', requiresPrescription: false, availableForStudentQuota: false, isActive: true });
@@ -452,7 +459,7 @@ const ManagePharmacy = () => {
                                     <tr><td colSpan={9} style={{ ...styles.td, textAlign: 'center', color: '#94a3b8' }}>Tidak ada obat</td></tr>
                                 ) : filteredMeds.map(m => (
                                     <tr key={m._id}>
-                                        <td style={styles.td}>{m.image ? <img src={`${API_URL}${m.image}`} alt={m.name} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 8 }} /> : <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaPills size={18} /></div>}</td>
+                                        <td style={styles.td}>{m.image ? <img src={getImageUrl(m.image)} alt={m.name} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 8 }} /> : <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaPills size={18} /></div>}</td>
                                         <td style={styles.td}><div style={{ fontWeight: 600 }}>{m.name}</div>{m.genericName && <div style={{ fontSize: 11, color: '#64748b' }}>{m.genericName}</div>}</td>
                                         <td style={styles.td}><span style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: 12, fontSize: 11 }}>{CATEGORIES.find(c => c.value === m.category)?.label || m.category}</span></td>
                                         <td style={styles.td}>{fmt(m.price)}</td>
@@ -653,7 +660,7 @@ const ManagePharmacy = () => {
                                     <div>
                                         <input ref={imageRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (!f) return; if (f.size > 3 * 1024 * 1024) { toast.error('Maks 3MB'); return; } setImageFile(f); setImagePreview(URL.createObjectURL(f)); }} />
                                         <button type="button" style={styles.btnOutline} onClick={() => imageRef.current.click()}><FaUpload size={12} />{imagePreview ? 'Ganti' : 'Pilih Gambar'}</button>
-                                        {imageFile && <button type="button" style={{ background: 'none', border: 'none', color: '#b91c1c', fontSize: 12, cursor: 'pointer', marginLeft: 8 }} onClick={() => { setImageFile(null); setImagePreview(editingMed?.image ? `${API_URL}${editingMed.image}` : null); }}>Hapus</button>}
+                                        {imageFile && <button type="button" style={{ background: 'none', border: 'none', color: '#b91c1c', fontSize: 12, cursor: 'pointer', marginLeft: 8 }} onClick={() => { setImageFile(null); setImagePreview(editingMed?.image ? getImageUrl(editingMed.image) : null); }}>Hapus</button>}
                                     </div>
                                 </div>
                             </Col>
