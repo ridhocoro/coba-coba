@@ -58,13 +58,16 @@ function dateRange(period, from, to) {
     return { start: new Date(todayStart.getTime() - 29 * 86400000), end: todayEnd };
 }
 
-// Helper untuk format nama dokter
+// Helper untuk format nama dokter (mendukung camelCase & snake_case)
+// Output: "dr. Bigmo, S.Pd"
 function fmtDoctorName(doctor) {
     if (!doctor) return 'Dokter';
+    const prefix = doctor.titlePrefix || doctor.title_prefix || '';
+    const suffix = doctor.titleSuffix || doctor.title_suffix || '';
     let name = '';
-    if (doctor.title_prefix) name += doctor.title_prefix + ' ';
+    if (prefix) name += prefix + ' ';
     name += doctor.name || '';
-    if (doctor.title_suffix) name += ', ' + doctor.title_suffix;
+    if (suffix) name += ', ' + suffix;
     return name.trim() || 'Dokter';
 }
 
@@ -1209,7 +1212,7 @@ router.get('/reports/revenue', guard, async (req, res) => {
             .lean();
 
         appointments = await populateFromMySQL(appointments, 'userId', 'User', 'id name email');
-        appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'id name');
+        appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'id name titlePrefix titleSuffix');
 
         let rows = [
             ...consultations.map(c => ({

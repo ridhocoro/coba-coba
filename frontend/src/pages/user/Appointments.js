@@ -205,7 +205,7 @@ const DoctorProfileModal = ({ doctorEntry, onClose }) => {
                                       boxShadow: '0 4px 16px rgba(0,0,0,.12)', display: 'flex',
                                       alignItems: 'center', justifyContent: 'center', fontSize: 42 }}>
                             {doc?.photo
-                                ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ? <img src={(doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 : '👨‍⚕️'}
                         </div>
                         {/* Badge online/offline */}
@@ -393,7 +393,7 @@ const ApptCard = ({ appt, onCancel, onReschedule, onRate, showActions }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, overflow: 'hidden', flexShrink: 0 }}>
                         {appt.doctorId?.photo
-                            ? <img src={`${API_URL}${appt.doctorId.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ? <img src={(appt.doctorId.photo.startsWith('http') ? appt.doctorId.photo : `${API_URL}${appt.doctorId.photo}`)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             : '🏥'}
                     </div>
                     <div>
@@ -869,7 +869,7 @@ const Appointments = () => {
                                                         onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(37,99,235,0.18)'; }}
                                                         onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}>
                                                         {doc.photo
-                                                            ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            ? <img src={(doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                             : '👨‍⚕️'}
                                                     </div>
                                                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1009,7 +1009,7 @@ const Appointments = () => {
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f3f4f6' }}>
                         <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
                             {bookDocInfo?.photo
-                                ? <img src={`${API_URL}${bookDocInfo.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ? <img src={(bookDocInfo.photo.startsWith('http') ? bookDocInfo.photo : `${API_URL}${bookDocInfo.photo}`)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 : '👨‍⚕️'}
                         </div>
                         <div>

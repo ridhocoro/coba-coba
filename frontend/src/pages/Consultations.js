@@ -224,7 +224,7 @@ const DoctorProfileModal = ({ doc, onClose }) => {
                                 alignItems: 'center', justifyContent: 'center', fontSize: 42
                             }}>
                                 {doc?.photo
-                                    ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    ? <img src={(doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     : '👨‍⚕️'}
                             </div>
                             {/* Badge online/offline */}
@@ -1084,7 +1084,7 @@ const Consultations = () => {
                                                         onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(37,99,235,0.18)'; }}
                                                         onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}>
                                                         {doc.photo
-                                                            ? <img src={`${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            ? <img src={(doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                             : '👨‍⚕️'}
                                                     </div>
                                                     <div>
@@ -1205,7 +1205,7 @@ const Consultations = () => {
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f3f4f6' }}>
                         <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
                             {selectedDoc?.photo
-                                ? <img src={`${API_URL}${selectedDoc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ? <img src={(selectedDoc.photo.startsWith('http') ? selectedDoc.photo : `${API_URL}${selectedDoc.photo}`)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 : '👨‍⚕️'}
                         </div>
                         <div>
