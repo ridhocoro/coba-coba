@@ -15,6 +15,42 @@ const doctorAuth = require('../middleware/doctorAuth');
 const { createNotification } = require('../utils/notificationHelper');
 const { populateFromMySQL } = require('../utils/hybridJoin');
 
+/**
+ * Mengambil gambar dari URL (Cloudinary atau lokal) dan mengembalikan Buffer.
+ * PDFKit bisa menerima Buffer langsung, sehingga tidak perlu file lokal.
+ */
+const fetchImageBuffer = async (fileUrl, fileType) => {
+    if (!fileUrl) return null;
+    try {
+        // Jika URL adalah Cloudinary / remote HTTP
+        if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+            const https = fileUrl.startsWith('https') ? require('https') : require('http');
+            return await new Promise((resolve, reject) => {
+                https.get(fileUrl, (res) => {
+                    if (res.statusCode !== 200) {
+                        res.resume();
+                        return reject(new Error(`HTTP ${res.statusCode}`));
+                    }
+                    const chunks = [];
+                    res.on('data', c => chunks.push(c));
+                    res.on('end', () => resolve(Buffer.concat(chunks)));
+                    res.on('error', reject);
+                }).on('error', reject);
+            });
+        }
+        // Fallback: path lokal
+        const filePath = require('path').join(__dirname, '..', fileUrl.replace(/^\//, ''));
+        if (require('fs').existsSync(filePath)) {
+            return require('fs').readFileSync(filePath);
+        }
+        console.warn(`[pdf] ${fileType} tidak ditemukan di disk:`, filePath);
+        return null;
+    } catch (err) {
+        console.warn(`[pdf] Gagal load ${fileType}:`, err.message);
+        return null;
+    }
+};
+
 const parseAddress = (fullAddress) => {
     if (!fullAddress || fullAddress.trim() === '') {
         return {
@@ -1214,28 +1250,8 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
 
-        const fs = require('fs');
-        const pathMod = require('path');
-        const getImagePath = (fileUrl, fileType) => {
-            if (!fileUrl) return null;
-            const filePath = pathMod.join(__dirname, '..', fileUrl.replace(/^\//, ''));
-            if (!fs.existsSync(filePath)) {
-                console.warn(`[prescription/pdf] ${fileType} file tidak ditemukan:`, filePath);
-                return null;
-            }
-            try {
-                const buf = Buffer.alloc(4);
-                const fd = fs.openSync(filePath, 'r');
-                fs.readSync(fd, buf, 0, 4, 0);
-                fs.closeSync(fd);
-                const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
-                const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
-                return (isJpeg || isPng) ? filePath : null;
-            } catch (e) { return null; }
-        };
-
-        const logoPath = getImagePath(clinicSettings.logoUrl, 'Logo klinik');
-        const signaturePath = getImagePath(doctor?.signatureUrl, 'Tanda tangan dokter');
+        const logoBuf     = await fetchImageBuffer(clinicSettings.logoUrl, 'Logo klinik');
+        const signatureBuf = await fetchImageBuffer(doctor?.signatureUrl, 'Tanda tangan dokter');
 
         const doc = new PDFDocument({ margin: 50 });
         res.setHeader('Content-Type', 'application/pdf');
@@ -1254,9 +1270,9 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         const headerStartY = doc.y;
         const logoSize = 55;
 
-        if (logoPath) {
+        if (logoBuf) {
             try {
-                doc.image(logoPath, headerStartX, headerStartY, { height: logoSize, width: logoSize });
+                doc.image(logoBuf, headerStartX, headerStartY, { height: logoSize, width: logoSize });
             } catch (imgErr) {
                 console.warn('[prescription/pdf] Failed to load logo:', imgErr.message);
             }
@@ -1399,10 +1415,10 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         const signY = doc.y;
         const imgSize = 65;
 
-        if (signaturePath) {
+        if (signatureBuf) {
             try {
                 const sigImgX = signatureX + (signatureWidth - imgSize) / 2;
-                doc.image(signaturePath, sigImgX, signY, { width: imgSize, height: imgSize });
+                doc.image(signatureBuf, sigImgX, signY, { width: imgSize, height: imgSize });
                 const nameY = signY + imgSize + 3;
                 doc.fontSize(10).font('Times-Bold').text(`${fmtDoctorName(doctor)}`, signatureX, nameY, { width: signatureWidth, align: 'center' });
                 // SPESIALISASI DOKTER DIHAPUS
@@ -1505,28 +1521,8 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
  
-        const fs = require('fs');
-        const pathMod = require('path');
-        const getImagePath = (fileUrl, fileType) => {
-            if (!fileUrl) return null;
-            const filePath = pathMod.join(__dirname, '..', fileUrl.replace(/^\//, ''));
-            if (!fs.existsSync(filePath)) {
-                console.warn(`[medical-record/pdf] ${fileType} file tidak ditemukan:`, filePath);
-                return null;
-            }
-            try {
-                const buf = Buffer.alloc(4);
-                const fd = fs.openSync(filePath, 'r');
-                fs.readSync(fd, buf, 0, 4, 0);
-                fs.closeSync(fd);
-                const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
-                const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
-                return (isJpeg || isPng) ? filePath : null;
-            } catch (e) { return null; }
-        };
- 
-        const logoPath = getImagePath(clinicSettings.logoUrl, 'Logo klinik');
-        const signaturePath = getImagePath(doctor?.signatureUrl, 'Tanda tangan dokter');
+        const logoBuf      = await fetchImageBuffer(clinicSettings.logoUrl, 'Logo klinik');
+        const signatureBuf = await fetchImageBuffer(doctor?.signatureUrl, 'Tanda tangan dokter');
  
         const doc = new PDFDocument({ margin: 50 });
         res.setHeader('Content-Type', 'application/pdf');
@@ -1545,9 +1541,9 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         const headerStartY = doc.y;
         const logoSize = 55;
  
-        if (logoPath) {
+        if (logoBuf) {
             try {
-                doc.image(logoPath, headerStartX, headerStartY, { height: logoSize, width: logoSize });
+                doc.image(logoBuf, headerStartX, headerStartY, { height: logoSize, width: logoSize });
             } catch (imgErr) {
                 console.warn('[medical-record/pdf] Failed to load logo:', imgErr.message);
             }
@@ -1668,10 +1664,10 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         const signY = doc.y;
         const imgSize = 65;
  
-        if (signaturePath) {
+        if (signatureBuf) {
             try {
                 const sigImgX = signatureX + (signatureWidth - imgSize) / 2;
-                doc.image(signaturePath, sigImgX, signY, { width: imgSize, height: imgSize });
+                doc.image(signatureBuf, sigImgX, signY, { width: imgSize, height: imgSize });
                 const nameY = signY + imgSize + 3;
                 doc.fontSize(10).font('Times-Bold').text(`${fmtDoctorName(doctor)}`, signatureX, nameY, { width: signatureWidth, align: 'center' });
                 if (doctor?.specialization) {
@@ -1856,51 +1852,9 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
 
-        const fs = require('fs');
-        const pathMod = require('path');
-
-        const getImagePath = (fileUrl, fileType) => {
-            if (!fileUrl) {
-                console.log(`[sick-letter/pdf] ${fileType} tidak ditemukan (URL kosong)`);
-                return null;
-            }
-
-            const filePath = pathMod.join(__dirname, '..', fileUrl.replace(/^\//, ''));
-
-            if (!fs.existsSync(filePath)) {
-                console.warn(`[sick-letter/pdf] ${fileType} file tidak ditemukan di disk:`, filePath);
-                return null;
-            }
-
-            try {
-                const buf = Buffer.alloc(4);
-                const fd = fs.openSync(filePath, 'r');
-                fs.readSync(fd, buf, 0, 4, 0);
-                fs.closeSync(fd);
-
-                const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
-                const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
-                const isWebP = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
-
-                if (isPng) {
-                    console.log(`[sick-letter/pdf] ✓ ${fileType} (PNG):`, filePath);
-                } else if (isJpeg) {
-                    console.log(`[sick-letter/pdf] ✓ ${fileType} (JPEG):`, filePath);
-                } else if (isWebP) {
-                    console.warn(`[sick-letter/pdf] ⚠ ${fileType} detected as WebP, akan dicoba di-load (mungkin gagal):`, filePath);
-                } else {
-                    console.warn(`[sick-letter/pdf] ⚠ ${fileType} format tidak dikenal [bytes: ${buf.map(b => '0x' + b.toString(16)).join(' ')}]:`, filePath);
-                }
-            } catch (e) {
-                console.warn(`[sick-letter/pdf] Could not read ${fileType} header:`, e.message);
-            }
-
-            return filePath;
-        };
-
-        const logoPath = getImagePath(clinicSettings.logoUrl, 'Logo klinik');
-        const stampPath = getImagePath(clinicSettings.stampUrl, 'Stempel klinik');
-        const signaturePath = getImagePath(doctor?.signatureUrl, 'Tanda tangan dokter');
+        const logoBuf      = await fetchImageBuffer(clinicSettings.logoUrl, 'Logo klinik');
+        const stampBuf     = await fetchImageBuffer(clinicSettings.stampUrl, 'Stempel klinik');
+        const signatureBuf = await fetchImageBuffer(doctor?.signatureUrl, 'Tanda tangan dokter');
 
         const doc = new PDFDocument({ margin: 70, size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
@@ -1929,9 +1883,9 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         const headerStartY = doc.y;
         const logoSize = 55;
 
-        if (logoPath) {
+        if (logoBuf) {
             try {
-                doc.image(logoPath, headerStartX, headerStartY, { height: logoSize, width: logoSize });
+                doc.image(logoBuf, headerStartX, headerStartY, { height: logoSize, width: logoSize });
                 console.log('[sick-letter/pdf] ✓ Logo loaded successfully');
             } catch (imgErr) {
                 console.warn('[sick-letter/pdf] Failed to load logo in header:', imgErr.message);
@@ -2016,21 +1970,21 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         const sigAndStampY = doc.y;
         const sigImgX = rightX + (190 - imgSize) / 2;
 
-        if (signaturePath) {
+        if (signatureBuf) {
             try {
-                doc.image(signaturePath, sigImgX, sigAndStampY, { width: imgSize, height: imgSize });
+                doc.image(signatureBuf, sigImgX, sigAndStampY, { width: imgSize, height: imgSize });
                 console.log('[sick-letter/pdf] ✓ Signature loaded at X:', sigImgX, 'Y:', sigAndStampY);
             } catch (imgErr) {
                 console.warn('[sick-letter/pdf] Failed to load signature image:', imgErr.message);
             }
         }
 
-        if (stampPath) {
+        if (stampBuf) {
             try {
                 const stampSize = 40;
                 const stampX = sigImgX + (imgSize - stampSize) / 2;
                 const stampY = sigAndStampY + (imgSize * 0.45) - (stampSize / 2);
-                doc.image(stampPath, stampX, stampY, { width: stampSize, height: stampSize });
+                doc.image(stampBuf, stampX, stampY, { width: stampSize, height: stampSize });
                 console.log('[sick-letter/pdf] ✓ Stamp loaded at X:', stampX, 'Y:', stampY);
             } catch (imgErr) {
                 console.warn('[sick-letter/pdf] Failed to load stamp overlay:', imgErr.message);
