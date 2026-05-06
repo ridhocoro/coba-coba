@@ -17,7 +17,7 @@ const ClinicSettings = () => {
     const [uploadingLogo,  setUploadingLogo]  = useState(false);
     const [uploadingStamp, setUploadingStamp] = useState(false);
 
-    const [form, setForm] = useState({ clinicName: '', clinicAddress: '', clinicPhone: '' });
+    const [form, setForm] = useState({ clinicName: '', clinicAddress: '', clinicPhone: '', signLocation: '' });
 
     const logoRef  = useRef(null);
     const stampRef = useRef(null);
@@ -35,6 +35,7 @@ const ClinicSettings = () => {
                 clinicName:    s.clinicName    || '',
                 clinicAddress: s.clinicAddress || '',
                 clinicPhone:   s.clinicPhone   || '',
+                signLocation:  s.signLocation  || 'Bogor',
             });
         } catch {
             toast.error('Gagal memuat pengaturan klinik');
@@ -150,6 +151,22 @@ const ClinicSettings = () => {
                                             />
                                             <Form.Text className="text-muted">
                                                 Ditampilkan di header surat sakit dan dokumen PDF lainnya.
+                                            </Form.Text>
+                                        </Form.Group>
+                                    </Col>
+                                    <Col xs={12} md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="fw-semibold small">
+                                                Lokasi Tanda Tangan di PDF <span className="text-danger">*</span>
+                                            </Form.Label>
+                                            <Form.Control
+                                                value={form.signLocation}
+                                                onChange={e => setForm(f => ({ ...f, signLocation: e.target.value }))}
+                                                placeholder="mis. Bogor"
+                                                required
+                                            />
+                                            <Form.Text className="text-muted">
+                                                Muncul di atas tanda tangan dokter pada resep, rekam medis, dan surat sakit — contoh: <em>"Bogor, 6 Mei 2026"</em>.
                                             </Form.Text>
                                         </Form.Group>
                                     </Col>

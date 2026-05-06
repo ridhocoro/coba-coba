@@ -1647,7 +1647,7 @@ const ConsultationChat = () => {
                     {!isMine && <div style={{ color: '#6b7280', fontSize: 11, marginBottom: 4, fontWeight: 600 }}>{msg.senderName}</div>}
                     {msg.imageUrl ? (
                       <div>
-                        <img src={`${API_URL}${msg.imageUrl}`} alt="img" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: msg.message ? 6 : 0 }} />
+                        <img src={msg.imageUrl.startsWith('http') ? msg.imageUrl : `${API_URL}${msg.imageUrl}`} alt="img" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: msg.message ? 6 : 0 }} />
                         {msg.message && <div>{msg.message}</div>}
                       </div>
                     ) : (

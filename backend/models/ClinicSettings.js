@@ -9,6 +9,7 @@ const clinicSettingsSchema = new mongoose.Schema({
     clinicName:  { type: String, default: 'Klinik Pratama IPB' },
     clinicAddress:{ type: String, default: 'Bogor, Jawa Barat' },
     clinicPhone: { type: String, default: '' },
+    signLocation: { type: String, default: 'Bogor' },
     logoUrl:     { type: String, default: '' }, // path ke file logo/stempel
     stampUrl:    { type: String, default: '' }, // path ke file stempel (bisa sama dengan logo)
     updatedAt:   { type: Date, default: Date.now },

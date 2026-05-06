@@ -290,7 +290,7 @@ const SectionKonsultasi = ({ socketRef }) => {
                                                         <div style={{ fontSize: 10, color: colors.muted, marginBottom: 2, fontWeight: 600 }}>
                                                             {isDoc ? 'Dokter' : d.userId?.name}
                                                         </div>
-                                                        {m.imageUrl && <img src={m.imageUrl} alt="" style={{ maxWidth: 120, borderRadius: 6, display: 'block', marginBottom: 4 }} />}
+                                                        {m.imageUrl && <img src={m.imageUrl.startsWith('http') ? m.imageUrl : `${API_URL}${m.imageUrl}`} alt="" style={{ maxWidth: 120, borderRadius: 6, display: 'block', marginBottom: 4 }} />}
                                                         {m.text || m.message || ''}
                                                     </div>
                                                 </div>

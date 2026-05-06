@@ -1249,6 +1249,7 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
         const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+        const signLocation  = clinicSettings.signLocation  || 'Bogor';
 
         const logoBuf     = await fetchImageBuffer(clinicSettings.logoUrl, 'Logo klinik');
         const signatureBuf = await fetchImageBuffer(doctor?.signatureUrl, 'Tanda tangan dokter');
@@ -1408,7 +1409,7 @@ router.get('/:id/prescription/pdf', auth, async (req, res) => {
         const signatureWidth = 160;
         
         doc.font('Times-Roman').fontSize(11);
-        doc.text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglResep.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 
+        doc.text(`${signLocation}, ${tglResep.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 
             signatureX, doc.y, { width: signatureWidth, align: 'center' });
         doc.moveDown(1.6);
 
@@ -1520,6 +1521,7 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
         const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+        const signLocation  = clinicSettings.signLocation  || 'Bogor';
  
         const logoBuf      = await fetchImageBuffer(clinicSettings.logoUrl, 'Logo klinik');
         const signatureBuf = await fetchImageBuffer(doctor?.signatureUrl, 'Tanda tangan dokter');
@@ -1657,7 +1659,7 @@ router.get('/:id/medical-record/pdf', auth, async (req, res) => {
         const signatureWidth = 160;
         
         doc.font('Times-Roman').fontSize(11);
-        doc.text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglRekamMedis.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 
+        doc.text(`${signLocation}, ${tglRekamMedis.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 
             signatureX, doc.y, { width: signatureWidth, align: 'center' });
         doc.moveDown(1.6);
  
@@ -1851,6 +1853,7 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
         const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
         const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+        const signLocation  = clinicSettings.signLocation  || 'Bogor';
 
         const logoBuf      = await fetchImageBuffer(clinicSettings.logoUrl, 'Logo klinik');
         const stampBuf     = await fetchImageBuffer(clinicSettings.stampUrl, 'Stempel klinik');
@@ -1962,7 +1965,7 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         const rightX = 360;
         const imgSize = 52;
 
-        doc.text(`${clinicAddress ? clinicAddress.split(',')[0] : 'Bogor'}, ${tglBogor.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightX, signY, { align: 'center', width: 200 });
+        doc.text(`${signLocation}, ${tglBogor.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightX, signY, { align: 'center', width: 200 });
         doc.moveDown(0.5);
         doc.text('Dokter yang memeriksa', rightX, doc.y, { align: 'center', width: 200 });
         doc.moveDown(0.7);

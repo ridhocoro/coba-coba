@@ -44,11 +44,12 @@ router.get('/', async (req, res) => {
 // PUT / — update teks (admin)
 router.put('/', auth, adminOnly, async (req, res) => {
     try {
-        const { clinicName, clinicAddress, clinicPhone } = req.body;
+        const { clinicName, clinicAddress, clinicPhone, signLocation } = req.body;
         const s = await getSettings();
         if (clinicName)    s.clinicName    = clinicName.trim();
         if (clinicAddress) s.clinicAddress = clinicAddress.trim();
         if (clinicPhone !== undefined) s.clinicPhone = clinicPhone.trim();
+        if (signLocation !== undefined) s.signLocation = signLocation.trim();
         s.updatedAt = new Date();
         await s.save();
         res.json({ success: true, settings: s });

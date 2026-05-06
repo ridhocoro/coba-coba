@@ -60,9 +60,14 @@ function dateRange(period, from, to) {
 
 // Helper untuk format nama dokter (mendukung camelCase & snake_case)
 // Output: "dr. Bigmo, S.Pd"
+function normalizeTitlePrefix(prefix) {
+    if (!prefix) return '';
+    const t = prefix.trim();
+    return t.endsWith('.') ? t : t + '.';
+}
 function fmtDoctorName(doctor) {
     if (!doctor) return 'Dokter';
-    const prefix = doctor.titlePrefix || doctor.title_prefix || '';
+    const prefix = normalizeTitlePrefix(doctor.titlePrefix || doctor.title_prefix || '');
     const suffix = doctor.titleSuffix || doctor.title_suffix || '';
     let name = '';
     if (prefix) name += prefix + ' ';
@@ -701,16 +706,17 @@ router.put('/users/:id/quota', guard, async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
         if (user.role !== 'mahasiswa') return res.status(400).json({ success: false, message: 'Hanya untuk mahasiswa' });
 
+        let newBonus;
         if (action === 'reset') {
-            user.quota_bonus = 0;
+            newBonus = 0;
         } else if (action === 'add') {
-            user.quota_bonus = (user.quota_bonus || 0) + Number(amount || 0);
+            newBonus = (user.quotaBonus || 0) + Number(amount || 0);
         } else {
             return res.status(400).json({ success: false, message: 'action harus add atau reset' });
         }
 
-        await user.save();
-        res.json({ success: true, quotaBonus: user.quota_bonus });
+        await User.update({ quotaBonus: newBonus }, { where: { id: req.params.id } });
+        res.json({ success: true, quotaBonus: newBonus });
     } catch (err) {
         console.error('[admin] PUT /users/:id/quota error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });

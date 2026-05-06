@@ -84,6 +84,7 @@ const SectionChatAdmin = ({ socketRef }) => {
         : '';
 
     const API = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    const resolveUrl = (url) => !url ? '' : url.startsWith('http') ? url : `${API}${url}`;
 
     return (
         <div>
@@ -202,9 +203,9 @@ const SectionChatAdmin = ({ socketRef }) => {
                                     }}>
                                         {/* File */}
                                         {msg.fileUrl && msg.fileType === 'image' && (
-                                            <a href={`${API}${msg.fileUrl}`} target="_blank" rel="noreferrer">
+                                            <a href={resolveUrl(msg.fileUrl)} target="_blank" rel="noreferrer">
                                                 <img
-                                                    src={`${API}${msg.fileUrl}`}
+                                                    src={resolveUrl(msg.fileUrl)}
                                                     alt={msg.fileName}
                                                     style={{ maxWidth: 220, borderRadius: 8, display: 'block', marginBottom: msg.text ? 8 : 0 }}
                                                 />
@@ -212,7 +213,7 @@ const SectionChatAdmin = ({ socketRef }) => {
                                         )}
                                         {msg.fileUrl && msg.fileType === 'file' && (
                                             <a
-                                                href={`${API}${msg.fileUrl}`}
+                                                href={resolveUrl(msg.fileUrl)}
                                                 target="_blank" rel="noreferrer"
                                                 style={{
                                                     display: 'flex', alignItems: 'center', gap: 6,

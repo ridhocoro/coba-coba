@@ -172,7 +172,7 @@ const SectionProfile = () => {
                     {/* Name & specialization */}
                     <div style={{ textAlign: 'center', marginTop: 14 }}>
                         <div style={{ fontWeight: 800, fontSize: 18, color: colors.text, lineHeight: 1.2 }}>
-                            {[form.titlePrefix, form.name, form.titleSuffix].filter(Boolean).join(' ') || 'Nama Dokter'}
+                            {(() => { const NTP = p => { if (!p) return ''; const t = p.trim(); return t.endsWith('.') ? t : t + '.'; }; let n = ''; const p = NTP(form.titlePrefix); if (p) n += p + ' '; n += form.name || ''; if (form.titleSuffix) n += ', ' + form.titleSuffix; return n.trim() || 'Nama Dokter'; })()}
                         </div>
                         <div style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
                             {form.specialization || 'Spesialisasi'}

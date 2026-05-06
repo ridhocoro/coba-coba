@@ -9,8 +9,23 @@
  * @param {object|null} doc - object dokter dengan field titlePrefix, name, titleSuffix
  * @returns {string}
  */
+// Normalisasi gelar depan: "dr" -> "dr.", "drg" -> "drg.", "Prof" -> "Prof.", dst.
+// Normalisasi gelar depan: tambah titik di akhir jika belum ada.
+// Casing dipertahankan persis seperti input user.
+function normalizeTitlePrefix(prefix) {
+    if (!prefix) return '';
+    const t = prefix.trim();
+    return t.endsWith('.') ? t : t + '.';
+}
+
 export const fmtDoctorName = (doc) => {
     if (!doc) return '-';
-    const parts = [doc.titlePrefix, doc.name, doc.titleSuffix].filter(Boolean);
-    return parts.length > 0 ? parts.join(' ') : (doc.name || '-');
+    const rawPrefix = doc.titlePrefix || doc.title_prefix || '';
+    const suffix    = doc.titleSuffix || doc.title_suffix || '';
+    const prefix    = normalizeTitlePrefix(rawPrefix);
+    let name = '';
+    if (prefix) name += prefix + ' ';
+    name += doc.name || '';
+    if (suffix) name += ', ' + suffix;
+    return name.trim() || '-';
 };
