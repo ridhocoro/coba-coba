@@ -151,10 +151,12 @@ const AIChatbot = () => {
 
                             {/* Ekor bubble → kanan bawah mengarah ke logo */}
                             <div style={{
-                                position: 'absolute', bottom: '-9px', right: '0px',
+                                position: 'absolute', top: '50%', right: '-10px',
+                                transform: 'translateY(-50%)',
                                 width: 0, height: 0,
-                                borderLeft: '12px solid transparent',
-                                borderTop: '10px solid #0d5fc4',
+                                borderTop: '8px solid transparent',
+                                borderBottom: '8px solid transparent',
+                                borderLeft: '10px solid #0d5fc4',
                             }} />
                         </div>
                     )}
