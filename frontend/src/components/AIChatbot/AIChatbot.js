@@ -14,13 +14,14 @@ const SUGGESTIONS = [
 
 const AIChatbot = () => {
     const { user } = useAuth();
-    const [isOpen, setIsOpen]         = useState(false);
-    const [messages, setMessages]     = useState([]);
-    const [input, setInput]           = useState('');
-    const [loading, setLoading]       = useState(false);
-    const [hasGreeted, setHasGreeted] = useState(false);
-    const messagesEndRef               = useRef(null);
-    const inputRef                     = useRef(null);
+    const [isOpen, setIsOpen]           = useState(false);
+    const [messages, setMessages]       = useState([]);
+    const [input, setInput]             = useState('');
+    const [loading, setLoading]         = useState(false);
+    const [hasGreeted, setHasGreeted]   = useState(false);
+    const [showTooltip, setShowTooltip] = useState(true);
+    const messagesEndRef                 = useRef(null);
+    const inputRef                       = useRef(null);
 
     useEffect(() => {
         if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,6 +33,7 @@ const AIChatbot = () => {
 
     const handleOpen = () => {
         setIsOpen(true);
+        setShowTooltip(false);
         if (!hasGreeted) {
             const greeting = user
                 ? `Halo, **${user.name || user.email}**! 👋 Saya asisten AI Klinik IPB. Ada yang bisa saya bantu seputar layanan klinik atau informasi kesehatan?`
@@ -81,7 +83,6 @@ const AIChatbot = () => {
         });
     };
 
-    /* ─── Logo avatar reusable ─── */
     const LogoAvatar = ({ size = 28 }) => (
         <div style={{
             width: size, height: size, borderRadius: '50%',
@@ -100,40 +101,94 @@ const AIChatbot = () => {
 
     return (
         <>
-            {/* ── Floating button ── TANPA WARNA BIRU, HANYA LOGO ── */}
+            {/* ── FAB + Tooltip ── */}
             {!isOpen && (
-                <button
-                    onClick={handleOpen}
-                    title="Chat dengan ASK IPB"
-                    style={{
-                        position: 'fixed', bottom: '28px', right: '28px',
-                        width: '60px', height: '60px', borderRadius: '50%',
-                        background: 'transparent',  /* Transparan, tanpa warna */
-                        border: 'none',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer',
-                        zIndex: 9999, transition: 'transform 0.2s',
-                        overflow: 'hidden', padding: 0,
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-                >
-                    <img
-                        src={LOGO}
-                        alt="Klinik IPB"
-                        style={{ 
-                            width: '100%', 
-                            height: '100%', 
-                            objectFit: 'cover', 
-                            borderRadius: '50%',
-                            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',  /* Shadow halus saja */
+                <div style={{
+                    position: 'fixed', bottom: '28px', right: '28px',
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    zIndex: 9999,
+                }}>
+                    {/* Tooltip bubble */}
+                    {showTooltip && (
+                        <div
+                            onClick={handleOpen}
+                            style={{
+                                position: 'relative',
+                                background: 'linear-gradient(135deg, #1a73e8 0%, #0d5fc4 100%)',
+                                color: '#fff',
+                                padding: '10px 38px 10px 14px',
+                                borderRadius: '16px 16px 4px 16px',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                maxWidth: '210px',
+                                lineHeight: 1.45,
+                                boxShadow: '0 6px 20px rgba(26,115,232,0.35)',
+                                cursor: 'pointer',
+                                animation: 'slideLeft 0.3s ease-out',
+                                userSelect: 'none',
+                            }}
+                        >
+                            Bingung mulai dari mana? ASK IPB bisa bantu!
+
+                            {/* Tombol × */}
+                            <button
+                                onClick={e => { e.stopPropagation(); setShowTooltip(false); }}
+                                style={{
+                                    position: 'absolute', top: '7px', right: '8px',
+                                    background: 'rgba(255,255,255,0.25)', border: 'none',
+                                    borderRadius: '50%', width: '20px', height: '20px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', color: '#fff', fontSize: '13px',
+                                    lineHeight: 1, padding: 0, fontWeight: 700,
+                                    transition: 'background 0.15s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.4)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
+                                title="Tutup"
+                            >
+                                ×
+                            </button>
+
+                            {/* Ekor bubble → kanan bawah mengarah ke logo */}
+                            <div style={{
+                                position: 'absolute', bottom: '-9px', right: '0px',
+                                width: 0, height: 0,
+                                borderLeft: '12px solid transparent',
+                                borderTop: '10px solid #0d5fc4',
+                            }} />
+                        </div>
+                    )}
+
+                    {/* Logo FAB */}
+                    <button
+                        onClick={handleOpen}
+                        title="Chat dengan ASK IPB"
+                        style={{
+                            width: '60px', height: '60px', borderRadius: '50%',
+                            background: 'transparent', border: 'none',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', flexShrink: 0,
+                            transition: 'transform 0.2s',
+                            overflow: 'hidden', padding: 0,
                         }}
-                        onError={e => {
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.parentElement.innerHTML += '<span style="font-size:28px">🏥</span>';
-                        }}
-                    />
-                </button>
+                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                    >
+                        <img
+                            src={LOGO}
+                            alt="Klinik IPB"
+                            style={{
+                                width: '100%', height: '100%',
+                                objectFit: 'cover', borderRadius: '50%',
+                                boxShadow: '0 4px 14px rgba(26,115,232,0.3)',
+                            }}
+                            onError={e => {
+                                e.currentTarget.style.display = 'none';
+                                e.currentTarget.parentElement.innerHTML += '<span style="font-size:28px">🏥</span>';
+                            }}
+                        />
+                    </button>
+                </div>
             )}
 
             {/* ── Chat window ── */}
@@ -142,14 +197,14 @@ const AIChatbot = () => {
                     position: 'fixed', bottom: '28px', right: '28px', width: '380px',
                     maxWidth: 'calc(100vw - 32px)', height: '560px', maxHeight: 'calc(100vh - 60px)',
                     display: 'flex', flexDirection: 'column', borderRadius: '18px',
-                    boxShadow: '0 8px 40px rgba(0,0,0,0.18)', zIndex: 9999, overflow: 'hidden',
-                    background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
+                    boxShadow: '0 8px 40px rgba(26,115,232,0.18)', zIndex: 9999, overflow: 'hidden',
+                    background: '#fff', border: '1px solid rgba(26,115,232,0.12)',
                     animation: 'slideUp 0.25s ease-out',
                 }}>
 
                     {/* Header */}
                     <div style={{
-                        background: '#2c3e50',
+                        background: 'linear-gradient(135deg, #1a73e8 0%, #0d5fc4 100%)',
                         padding: '14px 16px', display: 'flex', alignItems: 'center',
                         gap: '10px', flexShrink: 0,
                     }}>
@@ -157,8 +212,7 @@ const AIChatbot = () => {
                             width: '38px', height: '38px', borderRadius: '50%',
                             background: '#fff',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            overflow: 'hidden', flexShrink: 0,
-                            padding: '2px',
+                            overflow: 'hidden', flexShrink: 0, padding: '2px',
                         }}>
                             <img
                                 src={LOGO}
@@ -177,7 +231,10 @@ const AIChatbot = () => {
                                 background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
                                 width: '30px', height: '30px', display: 'flex', alignItems: 'center',
                                 justifyContent: 'center', cursor: 'pointer', color: '#fff',
+                                transition: 'background 0.15s',
                             }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.28)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
                         >
                             <FaTimes size={14} />
                         </button>
@@ -186,7 +243,7 @@ const AIChatbot = () => {
                     {/* Messages */}
                     <div style={{
                         flex: 1, overflowY: 'auto', padding: '14px',
-                        display: 'flex', flexDirection: 'column', gap: '10px', background: '#f8f9fb',
+                        display: 'flex', flexDirection: 'column', gap: '10px', background: '#f4f7fd',
                     }}>
                         {messages.map(msg => (
                             <div key={msg.id} style={{
@@ -200,10 +257,15 @@ const AIChatbot = () => {
                                 <div style={{
                                     maxWidth: '78%', padding: '10px 13px',
                                     borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                                    background: msg.role === 'user' ? '#e9ecef' : '#fff',  /* Abu-abu terang untuk user, bukan biru */
-                                    color: msg.role === 'user' ? '#333' : '#333',
+                                    background: msg.role === 'user'
+                                        ? 'linear-gradient(135deg, #1a73e8 0%, #0d5fc4 100%)'
+                                        : '#fff',
+                                    color: msg.role === 'user' ? '#fff' : '#333',
                                     fontSize: '13.5px', lineHeight: '1.55',
-                                    boxShadow: '0 1px 4px rgba(0,0,0,0.08)', wordBreak: 'break-word',
+                                    boxShadow: msg.role === 'user'
+                                        ? '0 2px 8px rgba(26,115,232,0.25)'
+                                        : '0 1px 4px rgba(0,0,0,0.08)',
+                                    wordBreak: 'break-word',
                                     overflowWrap: 'break-word',
                                 }}>
                                     {renderText(msg.content)}
@@ -211,6 +273,7 @@ const AIChatbot = () => {
                             </div>
                         ))}
 
+                        {/* Loading dots */}
                         {loading && (
                             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px' }}>
                                 <LogoAvatar size={28} />
@@ -222,7 +285,7 @@ const AIChatbot = () => {
                                     {[0, 1, 2].map(i => (
                                         <span key={i} style={{
                                             width: '7px', height: '7px', borderRadius: '50%',
-                                            background: '#6c757d', display: 'inline-block',  /* Abu-abu, bukan biru */
+                                            background: '#1a73e8', display: 'inline-block',
                                             animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
                                         }} />
                                     ))}
@@ -230,16 +293,27 @@ const AIChatbot = () => {
                             </div>
                         )}
 
+                        {/* Suggestion chips */}
                         {messages.length === 1 && !loading && (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
                                 {SUGGESTIONS.map((s, i) => (
                                     <button key={i} onClick={() => handleSend(s)} style={{
-                                        background: '#fff', border: '1px solid #ced4da', borderRadius: '20px',
-                                        padding: '5px 12px', fontSize: '12px', color: '#495057',
+                                        background: '#fff',
+                                        border: '1px solid #c5d8f8',
+                                        borderRadius: '20px',
+                                        padding: '5px 12px', fontSize: '12px',
+                                        color: '#1a73e8',
                                         cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap',
+                                        fontWeight: 500,
                                     }}
-                                        onMouseEnter={e => { e.currentTarget.style.background = '#e9ecef'; e.currentTarget.style.borderColor = '#adb5bd'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#ced4da'; }}
+                                        onMouseEnter={e => {
+                                            e.currentTarget.style.background = '#e8f0fe';
+                                            e.currentTarget.style.borderColor = '#1a73e8';
+                                        }}
+                                        onMouseLeave={e => {
+                                            e.currentTarget.style.background = '#fff';
+                                            e.currentTarget.style.borderColor = '#c5d8f8';
+                                        }}
                                     >
                                         {s}
                                     </button>
@@ -251,7 +325,7 @@ const AIChatbot = () => {
 
                     {/* Input area */}
                     <div style={{
-                        padding: '10px 12px', borderTop: '1px solid #e8ecf0',
+                        padding: '10px 12px', borderTop: '1px solid #e3ecfb',
                         background: '#fff', display: 'flex', gap: '8px',
                         alignItems: 'flex-end', flexShrink: 0,
                     }}>
@@ -271,7 +345,7 @@ const AIChatbot = () => {
                                 transition: 'border-color 0.15s',
                                 background: loading ? '#f5f5f5' : '#fff',
                             }}
-                            onFocus={e => e.target.style.borderColor = '#6c757d'}
+                            onFocus={e => e.target.style.borderColor = '#1a73e8'}
                             onBlur={e => e.target.style.borderColor = '#dde2ea'}
                             onInput={e => {
                                 e.target.style.height = 'auto';
@@ -283,11 +357,14 @@ const AIChatbot = () => {
                             disabled={!input.trim() || loading}
                             style={{
                                 width: '40px', height: '40px', borderRadius: '50%',
-                                background: input.trim() && !loading ? '#6c757d' : '#e0e0e0',
+                                background: input.trim() && !loading
+                                    ? 'linear-gradient(135deg, #1a73e8 0%, #0d5fc4 100%)'
+                                    : '#e0e0e0',
                                 border: 'none', color: '#fff',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
                                 flexShrink: 0, transition: 'all 0.15s',
+                                boxShadow: input.trim() && !loading ? '0 2px 8px rgba(26,115,232,0.3)' : 'none',
                             }}
                         >
                             {loading
@@ -308,6 +385,7 @@ const AIChatbot = () => {
 
             <style>{`
                 @keyframes slideUp   { from{opacity:0;transform:translateY(20px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
+                @keyframes slideLeft { from{opacity:0;transform:translateX(16px)} to{opacity:1;transform:translateX(0)} }
                 @keyframes bounce    { 0%,80%,100%{transform:translateY(0);opacity:0.5} 40%{transform:translateY(-6px);opacity:1} }
                 @keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
             `}</style>
