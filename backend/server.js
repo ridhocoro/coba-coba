@@ -111,6 +111,9 @@ require('./utils/CleanupUnverifiedUsersCron').startCron();
 // 5. Reminder jadwal mingguan dokter
 require('./utils/WeeklyScheduleReminderCron').startCron(io);
 
+// 6. Hapus video log konsultasi yang sudah > 24 jam
+require('./utils/VideoLogCleanupCron').startCron();
+
 // ── Error handler global ─────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('[API Error]', err.message);

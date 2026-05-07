@@ -154,6 +154,18 @@ const consultationSchema = new mongoose.Schema({
         reason        : { type: String, default: '' },
     }],
 
+    // ── Video Call Log ────────────────────────────────────────────
+    // Rekaman sesi video call, tersedia max 24 jam setelah upload
+    videoLog: {
+        url          : { type: String },    // pre-signed URL B2 (di-refresh tiap GET)
+        b2Key        : { type: String },    // key permanen di Backblaze B2 (untuk hapus & re-sign)
+        uploadedAt   : { type: Date },      // waktu upload
+        expiresAt    : { type: Date },      // uploadedAt + 24 jam → dihapus oleh cron
+        uploadedBy   : { type: String },    // userId yang upload (dokter/admin)
+        fileSizeMB   : { type: Number },
+        durationSec  : { type: Number },
+    },
+
     createdAt: { type: Date, default: Date.now }
 });
 

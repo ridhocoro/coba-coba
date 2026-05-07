@@ -145,7 +145,7 @@ const ManageUsers = () => {
       });
       
       if (response.data && response.data.success !== false) {
-        toast.success('Kuota diperbarui');
+        toast.success(quotaAction === 'reset' ? 'Kuota direset: pemakaian bulan ini → 0, maks → 8' : 'Kuota berhasil ditambahkan');
         // Refresh quota data
         const quotaRes = await api.get(`/api/admin/users/${uid}/quota`);
         setQuota(quotaRes.data);
@@ -183,7 +183,7 @@ const ManageUsers = () => {
   };
 
   const handleResetQuotaBonus = async () => {
-    if (!window.confirm('Reset bonus kuota semua mahasiswa ke 0?\n\nKuota bulanan otomatis tidak akan berubah.')) {
+    if (!window.confirm('Reset kuota semua mahasiswa?\n\nPemakaian bulan ini akan direset ke 0 dan kuota kembali ke 8.')) {
       return;
     }
     
@@ -297,9 +297,9 @@ const ManageUsers = () => {
                 onMouseLeave={e => e.currentTarget.style.background='none'}
                 onClick={handleResetQuotaBonus}
               >
-                🔄 Reset Kuota Bonus Semua Mahasiswa
+                🔄 Reset Kuota Semua Mahasiswa
                 <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                  Reset quotaBonus ke 0 untuk semua
+                  Reset pemakaian bulan ini → 0, maks → 8
                 </div>
               </button>
             </div>
@@ -501,7 +501,7 @@ const ManageUsers = () => {
                   >
                     <option value="">Pilih aksi...</option>
                     <option value="add">Tambah kuota</option>
-                    <option value="reset">Reset bonus ke 0</option>
+                    <option value="reset">Reset kuota (used → 0, max → 8)</option>
                   </select>
                   {quotaAction === 'add' && (
                     <input 

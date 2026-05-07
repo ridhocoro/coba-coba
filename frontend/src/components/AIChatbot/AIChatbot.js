@@ -3,12 +3,12 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { FaTimes, FaPaperPlane, FaSpinner } from 'react-icons/fa';
 
-const LOGO = '/images/logo-klinik.png';
+const LOGO = '/images/AI-logo.png';
 
 const SUGGESTIONS = [
-    'Cara membuat janji temu?',
-    'Informasi konsultasi online',
-    'Cara pesan obat online?',
+    'Manfaat vitamin c',
+    'Gejala demam berdarah',
+    'Cara menurunkan tekanan darah',
     'Tips hidup sehat',
 ];
 

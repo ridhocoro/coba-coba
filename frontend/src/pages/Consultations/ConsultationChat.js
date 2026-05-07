@@ -383,6 +383,16 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
   const [error,  setError]          = useState(null);
   const [remoteJoined, setRemoteJoined] = useState(false);
 
+  // ── Recording state ───────────────────────────────────────────
+  const mediaRecorderRef   = useRef(null);
+  const recordedChunksRef  = useRef([]);
+  const [isRecording,  setIsRecording]   = useState(false);
+  const [recordedBlob, setRecordedBlob]  = useState(null);   // blob siap download/upload
+  const [uploadStatus,   setUploadStatus]   = useState('idle'); // idle | compressing | uploading | done | error
+  const [compressProgress, setCompressProgress] = useState(0);  // 0-100
+  const [videoLogInfo, setVideoLogInfo]  = useState(null);   // { url, expiresAt, timeLeft }
+  const [showLogPanel, setShowLogPanel]  = useState(false);
+
   // ── Bersihkan semua resource ──────────────────────────────────
   const cleanup = useCallback(() => {
     localStreamRef.current?.getTracks().forEach(t => t.stop());
@@ -501,6 +511,178 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
     localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
     setCamOn(p => !p);
   };
+
+  // ── Recording: mulai merekam stream lokal + remote ────────────
+  const startRecording = useCallback(() => {
+    // Gabungkan stream lokal dan remote menjadi satu stream
+    const tracks = [];
+    localStreamRef.current?.getTracks().forEach(t => tracks.push(t));
+
+    // Coba ambil remote stream dari video element
+    const remoteStream = remoteVideoRef.current?.srcObject;
+    remoteStream?.getTracks().forEach(t => tracks.push(t));
+
+    if (tracks.length === 0) {
+      toast.error('Tidak ada stream yang bisa direkam');
+      return;
+    }
+
+    const combinedStream = new MediaStream(tracks);
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9'
+      : MediaRecorder.isTypeSupported('video/webm')
+      ? 'video/webm'
+      : 'video/mp4';
+
+    try {
+      const recorder = new MediaRecorder(combinedStream, { mimeType });
+      recordedChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+        setRecordedBlob(blob);
+        setShowLogPanel(true);
+        toast.success('Rekaman selesai. Siap diunduh atau diupload.');
+      };
+
+      recorder.start(1000); // simpan setiap 1 detik
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordedBlob(null);
+      toast('🔴 Perekaman dimulai');
+    } catch (err) {
+      toast.error('Browser tidak mendukung perekaman: ' + err.message);
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  }, []);
+
+  // ── Upload video log ke server ────────────────────────────────
+  // ── Kompresi video menggunakan ffmpeg.wasm sebelum upload ───────
+  const compressVideo = useCallback(async (blob) => {
+    try {
+      // Lazy-load ffmpeg.wasm hanya saat dibutuhkan
+      const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+      const { fetchFile, toBlobURL } = await import('@ffmpeg/util');
+
+      const ffmpeg = new FFmpeg();
+
+      // Load core ffmpeg.wasm dari CDN
+      await ffmpeg.load({
+        coreURL    : await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',      'text/javascript'),
+        wasmURL    : await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',    'application/wasm'),
+      });
+
+      ffmpeg.on('progress', ({ progress }) => {
+        setCompressProgress(Math.round(progress * 100));
+      });
+
+      const inputName  = 'input.webm';
+      const outputName = 'output.mp4';
+
+      await ffmpeg.writeFile(inputName, await fetchFile(blob));
+
+      // Kompresi: CRF 28 (kualitas cukup), scale 720p, audio 96kbps
+      await ffmpeg.exec([
+        '-i',       inputName,
+        '-vcodec',  'libx264',
+        '-crf',     '28',
+        '-preset',  'fast',
+        '-vf',      'scale=trunc(iw/2)*2:trunc(ih/2)*2',  // pastikan dimensi genap
+        '-acodec',  'aac',
+        '-b:a',     '96k',
+        '-movflags', '+faststart',
+        outputName,
+      ]);
+
+      const data = await ffmpeg.readFile(outputName);
+      return new Blob([data.buffer], { type: 'video/mp4' });
+    } catch (err) {
+      console.warn('[compress] ffmpeg.wasm gagal, upload tanpa kompresi:', err.message);
+      return blob; // fallback: upload blob asli
+    }
+  }, []);
+
+  const uploadVideoLog = useCallback(async () => {
+    if (!recordedBlob) return;
+    setUploadStatus('compressing');
+    setCompressProgress(0);
+
+    try {
+      toast('⚙️ Mengompresi video...');
+      const blobToUpload = await compressVideo(recordedBlob);
+
+      const sizeMB = (blobToUpload.size / (1024 * 1024)).toFixed(1);
+      toast.success(`Kompresi selesai — ${sizeMB} MB. Mengupload...`);
+
+      setUploadStatus('uploading');
+      setCompressProgress(0);
+
+      const ext      = blobToUpload.type.includes('mp4') ? 'mp4' : 'webm';
+      const fileName = `video-log-${consultationId}-${Date.now()}.${ext}`;
+      const formData = new FormData();
+      formData.append('video', blobToUpload, fileName);
+
+      const res = await api.post(
+        `/api/consultations/${consultationId}/video-log`,
+        formData,
+        {
+          headers              : { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress     : (e) => {
+            if (e.total) setCompressProgress(Math.round((e.loaded / e.total) * 100));
+          },
+          timeout: 10 * 60 * 1000, // 10 menit timeout untuk file besar
+        }
+      );
+
+      setUploadStatus('done');
+      setCompressProgress(100);
+      setVideoLogInfo({
+        url      : res.data.url,
+        expiresAt: res.data.expiresAt,
+        timeLeft : '24 jam',
+      });
+      toast.success('Video log berhasil diupload ke Backblaze B2! Tersedia 24 jam.');
+    } catch (err) {
+      setUploadStatus('error');
+      toast.error('Gagal upload video log: ' + (err.response?.data?.message || err.message));
+    }
+  }, [recordedBlob, consultationId, compressVideo]);
+
+  // ── Download rekaman lokal (tanpa upload) ─────────────────────
+  const downloadLocalRecording = useCallback(() => {
+    if (!recordedBlob) return;
+    const ext  = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
+    const url  = URL.createObjectURL(recordedBlob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `rekaman-konsultasi-${consultationId}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [recordedBlob, consultationId]);
+
+  // ── Cek status video log yang sudah ada di server ─────────────
+  const fetchVideoLog = useCallback(async () => {
+    try {
+      const res = await api.get(`/api/consultations/${consultationId}/video-log`);
+      if (res.data.available) {
+        setVideoLogInfo(res.data);
+        setShowLogPanel(true);
+      }
+    } catch { /* silent */ }
+  }, [consultationId]);
+
+  // Cek saat komponen mount
+  useEffect(() => { fetchVideoLog(); }, [fetchVideoLog]);
 
   // ── Socket events ──────────────────────────────────────────────
   useEffect(() => {
@@ -622,7 +804,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
       </div>
 
       {/* Controls bar */}
-      <div style={{ background: '#161b22', borderTop: '1px solid #30363d', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+      <div style={{ background: '#161b22', borderTop: '1px solid #30363d', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
         <button onClick={toggleMic}
           style={{ width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', fontSize: 20, background: micOn ? '#21262d' : '#c0392b', color: micOn ? '#e6edf3' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {micOn ? '🎙️' : '🔇'}
@@ -635,7 +817,84 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
           style={{ width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', fontSize: 20, background: camOn ? '#21262d' : '#c0392b', color: camOn ? '#e6edf3' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {camOn ? '📹' : '📷'}
         </button>
+
+        {/* Tombol Rekam — hanya saat call connected */}
+        {callState === 'connected' && (
+          <button
+            onClick={isRecording ? stopRecording : startRecording}
+            title={isRecording ? 'Stop Rekam' : 'Mulai Rekam'}
+            style={{ width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', fontSize: 20, background: isRecording ? '#c0392b' : '#166534', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: isRecording ? '0 0 0 3px rgba(192,57,43,.5)' : 'none', animation: isRecording ? 'vcPulse 1.5s infinite' : 'none' }}>
+            {isRecording ? '⏹' : '⏺'}
+          </button>
+        )}
+
+        {/* Tombol buka panel log jika ada rekaman */}
+        {(recordedBlob || videoLogInfo) && (
+          <button
+            onClick={() => setShowLogPanel(p => !p)}
+            title="Log Video"
+            style={{ width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', fontSize: 20, background: '#1d4ed8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            🎞
+          </button>
+        )}
       </div>
+
+      {/* ── Panel Video Log ───────────────────────────────────────── */}
+      {showLogPanel && (
+        <div style={{ background: '#0d1117', borderTop: '1px solid #30363d', padding: '16px 24px', color: '#e6edf3', fontFamily: "'DM Sans', sans-serif" }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            🎞 Video Log Konsultasi
+            <button onClick={() => setShowLogPanel(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: 18 }}>✕</button>
+          </div>
+
+          {/* Rekaman lokal baru selesai */}
+          {recordedBlob && uploadStatus !== 'done' && (
+            <div style={{ background: '#161b22', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 8 }}>Rekaman selesai — {(recordedBlob.size / (1024*1024)).toFixed(1)} MB</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={downloadLocalRecording}
+                  style={{ padding: '7px 14px', background: '#1f6feb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                  ⬇ Download Lokal
+                </button>
+                <button onClick={uploadVideoLog} disabled={uploadStatus === 'compressing' || uploadStatus === 'uploading'}
+                  style={{ padding: '7px 14px', background: (uploadStatus === 'compressing' || uploadStatus === 'uploading') ? '#374151' : '#166534', color: '#fff', border: 'none', borderRadius: 8, cursor: (uploadStatus === 'compressing' || uploadStatus === 'uploading') ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, minWidth: 200 }}>
+                  {uploadStatus === 'compressing' ? `⚙️ Mengompresi... ${compressProgress}%`
+                    : uploadStatus === 'uploading' ? `☁ Mengupload... ${compressProgress}%`
+                    : '☁ Upload ke Server (24 jam)'}
+                </button>
+                {(uploadStatus === 'compressing' || uploadStatus === 'uploading') && (
+                  <div style={{ width: '100%', background: '#374151', borderRadius: 4, height: 6, marginTop: 6 }}>
+                    <div style={{ width: `${compressProgress}%`, background: uploadStatus === 'compressing' ? '#f59e0b' : '#22c55e', height: '100%', borderRadius: 4, transition: 'width 0.3s' }} />
+                  </div>
+                )}
+                {uploadStatus === 'error' && <span style={{ color: '#f85149', fontSize: 12, alignSelf: 'center' }}>❌ Upload gagal. Coba lagi.</span>}
+              </div>
+            </div>
+          )}
+
+          {/* Video log sudah ada di server */}
+          {(uploadStatus === 'done' || videoLogInfo?.available) && (
+            <div style={{ background: '#0f2d1a', border: '1px solid #166534', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ color: '#4ade80', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>✅ Video log tersedia di server</div>
+              <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 8 }}>
+                ⏳ Kadaluarsa: {videoLogInfo?.expiresAt ? new Date(videoLogInfo.expiresAt).toLocaleString('id-ID') : '24 jam dari sekarang'}
+                {videoLogInfo?.timeLeft && <span style={{ marginLeft: 8, color: '#fbbf24' }}>({videoLogInfo.timeLeft} tersisa)</span>}
+              </div>
+              {videoLogInfo?.url && (
+                <a href={videoLogInfo.url} target="_blank" rel="noreferrer" download
+                  style={{ display: 'inline-block', padding: '7px 14px', background: '#1f6feb', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
+                  ⬇ Download dari Server
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Video log dari server yang sudah ada sebelumnya tapi tidak available */}
+          {!recordedBlob && videoLogInfo && !videoLogInfo.available && (
+            <div style={{ color: '#8b949e', fontSize: 13 }}>ℹ️ {videoLogInfo.message}</div>
+          )}
+        </div>
+      )}
 
       <style>{`
         @keyframes vcPulse {

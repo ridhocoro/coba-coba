@@ -708,7 +708,26 @@ router.put('/users/:id/quota', guard, async (req, res) => {
 
         let newBonus;
         if (action === 'reset') {
+            // Reset quota_bonus ke 0 (max kembali ke 8)
             newBonus = 0;
+
+            // Reset juga pemakaian kuota bulan ini (student_free_qty = 0)
+            const now = new Date();
+            const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            const endMonth   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+            await Order.update(
+                { studentFreeQty: 0 },
+                {
+                    where: {
+                        user_id   : req.params.id,
+                        is_student_discount: true,
+                        student_free_qty   : { [Op.gt]: 0 },
+                        status             : { [Op.notIn]: ['cancelled', 'expired', 'prescription_rejected'] },
+                        created_at         : { [Op.between]: [startMonth, endMonth] },
+                    },
+                }
+            );
         } else if (action === 'add') {
             newBonus = (user.quotaBonus || 0) + Number(amount || 0);
         } else {
@@ -755,11 +774,43 @@ router.post('/users/upgrade-mahasiswa', guard, async (req, res) => {
 
 router.post('/users/reset-quota-bonus', guard, async (req, res) => {
     try {
+        // Reset quota_bonus ke 0 untuk semua mahasiswa
         const [affectedCount] = await User.update(
             { quota_bonus: 0 },
-            { where: { role: 'mahasiswa', quota_bonus: { [Op.gt]: 0 } } }
+            { where: { role: 'mahasiswa' } }
         );
-        res.json({ success: true, reset: affectedCount, message: `Kuota bonus ${affectedCount} mahasiswa berhasil direset ke 0` });
+
+        // Reset juga pemakaian kuota bulan ini untuk semua mahasiswa
+        const now = new Date();
+        const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endMonth   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+        // Ambil ID semua mahasiswa
+        const mahasiswaIds = (await User.findAll({ where: { role: 'mahasiswa' }, attributes: ['id'], raw: true })).map(u => u.id);
+
+        let resetOrders = 0;
+        if (mahasiswaIds.length > 0) {
+            const [orderAffected] = await Order.update(
+                { studentFreeQty: 0 },
+                {
+                    where: {
+                        user_id            : { [Op.in]: mahasiswaIds },
+                        is_student_discount: true,
+                        student_free_qty   : { [Op.gt]: 0 },
+                        status             : { [Op.notIn]: ['cancelled', 'expired', 'prescription_rejected'] },
+                        created_at         : { [Op.between]: [startMonth, endMonth] },
+                    },
+                }
+            );
+            resetOrders = orderAffected;
+        }
+
+        res.json({
+            success: true,
+            reset: affectedCount,
+            resetOrders,
+            message: `Kuota ${affectedCount} mahasiswa berhasil direset ke 0/8 (${resetOrders} order bulan ini direset)`,
+        });
     } catch (err) {
         console.error('[admin] POST /users/reset-quota-bonus error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });

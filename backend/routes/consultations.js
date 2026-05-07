@@ -3,7 +3,8 @@ const express = require('express');
 const { Doctor, User } = require('../models/mysql');
 const router = express.Router();
 const multer = require('multer');
-const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary');
+const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary'); // masih dipakai untuk attachment
+const { uploadToB2, getDownloadUrl, deleteFromB2 } = require('../config/b2');
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
@@ -100,6 +101,19 @@ const uploadAttachment = createCloudinaryUpload(
     10
 );
 
+
+// ── Multer untuk upload video log — disimpan ke Backblaze B2 ────────────────
+// Gunakan memoryStorage karena file akan diteruskan langsung ke B2 via SDK
+const uploadVideoLog = multer({
+    storage : multer.memoryStorage(),
+    limits  : { fileSize: 600 * 1024 * 1024 }, // 600 MB max (sudah dikompress di frontend)
+    fileFilter: (req, file, cb) => {
+        const allowed = ['mp4', 'webm', 'mkv', 'mov', 'avi'];
+        const ext = file.originalname.split('.').pop().toLowerCase();
+        if (allowed.includes(ext)) return cb(null, true);
+        cb(new Error('Format video tidak didukung. Gunakan: mp4, webm, mkv, mov, avi'));
+    },
+});
 
 // ── Konfigurasi Multer untuk Upload Bukti Refund ─────────────────────────────
 const uploadRefundProof = multer({
@@ -2062,6 +2076,182 @@ router.delete('/:id', auth, async (req, res) => {
         await Consultation.findByIdAndDelete(req.params.id);
         res.json({ success: true, message: 'Konsultasi dihapus' });
     } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ── Video Log: Upload rekaman video call (dokter/admin) ke Backblaze B2 ──────
+// POST /api/consultations/:id/video-log
+// Hanya dokter yang terlibat atau admin yang boleh upload
+router.post('/:id/video-log', auth, uploadVideoLog.single('video'), async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id).lean();
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (consultation.consultationType !== 'video_call') {
+            return res.status(400).json({ message: 'Hanya konsultasi video call yang bisa upload video log' });
+        }
+
+        // Cek akses: hanya dokter yang terlibat atau admin
+        const isAdmin  = req.user.role === 'admin';
+        const isDoctor = req.user.role === 'doctor';
+
+        if (!isAdmin && !isDoctor) {
+            return res.status(403).json({ message: 'Hanya dokter atau admin yang dapat mengupload video log' });
+        }
+
+        if (isDoctor) {
+            const Doctor = require('../models/Doctor');
+            const doctorRecord = await Doctor.findOne({ userId: req.user.userId });
+            if (!doctorRecord || doctorRecord.id.toString() !== consultation.doctorId.toString()) {
+                return res.status(403).json({ message: 'Anda bukan dokter pada konsultasi ini' });
+            }
+        }
+
+        if (!req.file) return res.status(400).json({ message: 'File video tidak ditemukan' });
+
+        // Hapus video lama di B2 jika ada (replace)
+        if (consultation.videoLog?.b2Key) {
+            try { await deleteFromB2(consultation.videoLog.b2Key); } catch (e) {
+                console.warn('[video-log/upload] Gagal hapus file lama B2:', e.message);
+            }
+        }
+
+        // Tentukan key unik di B2
+        const ext      = req.file.originalname.split('.').pop().toLowerCase() || 'webm';
+        const b2Key    = `video-logs/${req.params.id}-${Date.now()}.${ext}`;
+        const mimeType = req.file.mimetype || 'video/webm';
+
+        // Upload buffer ke Backblaze B2
+        await uploadToB2(req.file.buffer, b2Key, mimeType);
+
+        const uploadedAt = new Date();
+        const expiresAt  = new Date(uploadedAt.getTime() + 24 * 60 * 60 * 1000); // +24 jam
+
+        // Buat signed URL untuk download (berlaku 1 jam — akan di-refresh saat GET)
+        const signedUrl = await getDownloadUrl(b2Key, 3600);
+
+        const videoLog = {
+            url        : signedUrl,   // pre-signed URL (1 jam), di-refresh saat GET
+            b2Key,                    // key permanen di B2 untuk delete & re-sign
+            uploadedAt,
+            expiresAt,
+            uploadedBy : req.user.userId,
+            fileSizeMB : parseFloat((req.file.size / (1024 * 1024)).toFixed(2)),
+        };
+
+        await Consultation.findByIdAndUpdate(req.params.id, { $set: { videoLog } });
+
+        res.json({
+            success : true,
+            message : 'Video log berhasil diupload ke Backblaze B2. Tersedia selama 24 jam.',
+            expiresAt,
+            url     : signedUrl,
+        });
+    } catch (err) {
+        console.error('[video-log/upload]', err);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// ── Video Log: Cek status & URL untuk download ───────────────────────────────
+// GET /api/consultations/:id/video-log
+// Pasien, dokter yang terlibat, dan admin boleh akses
+router.get('/:id/video-log', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id)
+            .select('consultationType videoLog userId doctorId status')
+            .lean();
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        // Cek akses
+        const isAdmin   = req.user.role === 'admin';
+        const isPatient = consultation.userId?.toString() === req.user.userId;
+        let   isDoctor  = false;
+        if (req.user.role === 'doctor') {
+            const Doctor = require('../models/Doctor');
+            const doctorRecord = await Doctor.findOne({ userId: req.user.userId });
+            isDoctor = doctorRecord && doctorRecord.id.toString() === consultation.doctorId?.toString();
+        }
+
+        if (!isAdmin && !isPatient && !isDoctor) {
+            return res.status(403).json({ message: 'Akses ditolak' });
+        }
+
+        if (!consultation.videoLog?.url) {
+            return res.json({ available: false, message: 'Video log tidak tersedia' });
+        }
+
+        const now = new Date();
+        if (consultation.videoLog.expiresAt && new Date(consultation.videoLog.expiresAt) < now) {
+            return res.json({ available: false, message: 'Video log sudah kadaluarsa (lebih dari 24 jam)' });
+        }
+
+        const msLeft        = new Date(consultation.videoLog.expiresAt) - now;
+        const hoursLeft     = Math.floor(msLeft / (1000 * 60 * 60));
+        const minutesLeft   = Math.floor((msLeft % (1000 * 60 * 60)) / (1000 * 60));
+
+        // Re-generate signed URL (berlaku 1 jam) agar link tidak expired saat user buka
+        let downloadUrl = consultation.videoLog.url;
+        if (consultation.videoLog.b2Key) {
+            try {
+                downloadUrl = await getDownloadUrl(consultation.videoLog.b2Key, 3600);
+                // Update URL terbaru di DB (opsional — untuk konsistensi)
+                await Consultation.findByIdAndUpdate(req.params.id, {
+                    $set: { 'videoLog.url': downloadUrl },
+                });
+            } catch (e) {
+                console.warn('[video-log/get] Gagal re-sign URL B2:', e.message);
+            }
+        }
+
+        res.json({
+            available    : true,
+            url          : downloadUrl,
+            uploadedAt   : consultation.videoLog.uploadedAt,
+            expiresAt    : consultation.videoLog.expiresAt,
+            fileSizeMB   : consultation.videoLog.fileSizeMB,
+            durationSec  : consultation.videoLog.durationSec,
+            timeLeft     : `${hoursLeft} jam ${minutesLeft} menit`,
+        });
+    } catch (err) {
+        console.error('[video-log/get]', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ── Video Log: Hapus manual (admin/dokter) ───────────────────────────────────
+// DELETE /api/consultations/:id/video-log
+router.delete('/:id/video-log', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id)
+            .select('videoLog userId doctorId')
+            .lean();
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        const isAdmin  = req.user.role === 'admin';
+        const isDoctor = req.user.role === 'doctor';
+
+        if (!isAdmin && !isDoctor) {
+            return res.status(403).json({ message: 'Hanya dokter atau admin yang dapat menghapus video log' });
+        }
+
+        if (!consultation.videoLog?.url) {
+            return res.status(404).json({ message: 'Video log tidak ditemukan' });
+        }
+
+        // Hapus dari Backblaze B2
+        if (consultation.videoLog.b2Key) {
+            try {
+                await deleteFromB2(consultation.videoLog.b2Key);
+            } catch (e) {
+                console.warn('[video-log/delete] B2 delete warning:', e.message);
+            }
+        }
+
+        await Consultation.findByIdAndUpdate(req.params.id, { $unset: { videoLog: '' } });
+        res.json({ success: true, message: 'Video log berhasil dihapus' });
+    } catch (err) {
+        console.error('[video-log/delete]', err);
         res.status(500).json({ message: 'Server error' });
     }
 });
