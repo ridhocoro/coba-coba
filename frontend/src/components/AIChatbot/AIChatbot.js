@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { FaTimes, FaPaperPlane, FaSpinner } from 'react-icons/fa';
 
-const LOGO = '/images/logo-klinik.png';
+const LOGO = '/images/AI-logo.png';
 
 const SUGGESTIONS = [
     'Manfaat vitamin c',
