@@ -131,6 +131,7 @@ const AIChatbot = () => {
                             objectFit: 'contain',
                             borderRadius: '50%',
                             display: 'block',
+                            mixBlendMode: 'multiply',
                         }}
                         onError={e => {
                             e.currentTarget.style.display = 'none';
