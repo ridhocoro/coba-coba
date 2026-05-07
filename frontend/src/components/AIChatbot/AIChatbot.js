@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { FaTimes, FaPaperPlane, FaSpinner } from 'react-icons/fa';
 
-const LOGO = '/images/AI-logo.png';
+const LOGO = '/images/logo-klinik.png';
 
 const SUGGESTIONS = [
     'Manfaat vitamin c',
@@ -107,30 +107,34 @@ const AIChatbot = () => {
                     title="Chat dengan ASK IPB"
                     style={{
                         position: 'fixed', bottom: '28px', right: '28px',
-                        width: '60px', height: '60px', borderRadius: '50%',
-                        background: 'transparent',  /* Transparan, tanpa warna */
+                        width: '64px', height: '64px', borderRadius: '50%',
+                        background: 'transparent',
                         border: 'none',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer',
-                        zIndex: 9999, transition: 'transform 0.2s',
-                        overflow: 'hidden', padding: 0,
+                        zIndex: 9999,
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        overflow: 'visible',
+                        padding: 0,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                        borderRadius: '50%',
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(0,0,0,0.28)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.18)'; }}
                 >
                     <img
                         src={LOGO}
                         alt="Klinik IPB"
                         style={{ 
-                            width: '100%', 
-                            height: '100%', 
-                            objectFit: 'cover', 
+                            width: '64px', 
+                            height: '64px', 
+                            objectFit: 'contain',
                             borderRadius: '50%',
-                            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',  /* Shadow halus saja */
+                            display: 'block',
                         }}
                         onError={e => {
                             e.currentTarget.style.display = 'none';
-                            e.currentTarget.parentElement.innerHTML += '<span style="font-size:28px">🏥</span>';
+                            e.currentTarget.parentElement.innerHTML += '<span style="font-size:36px">🏥</span>';
                         }}
                     />
                 </button>
