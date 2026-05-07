@@ -107,35 +107,30 @@ const AIChatbot = () => {
                     title="Chat dengan ASK IPB"
                     style={{
                         position: 'fixed', bottom: '28px', right: '28px',
-                        width: '64px', height: '64px', borderRadius: '50%',
-                        background: 'transparent',
+                        width: '60px', height: '60px', borderRadius: '50%',
+                        background: 'transparent',  /* Transparan, tanpa warna */
                         border: 'none',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer',
-                        zIndex: 9999,
-                        transition: 'transform 0.2s, box-shadow 0.2s',
-                        overflow: 'visible',
-                        padding: 0,
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-                        borderRadius: '50%',
+                        zIndex: 9999, transition: 'transform 0.2s',
+                        overflow: 'hidden', padding: 0,
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(0,0,0,0.28)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.18)'; }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
                 >
                     <img
                         src={LOGO}
                         alt="Klinik IPB"
                         style={{ 
-                            width: '64px', 
-                            height: '64px', 
-                            objectFit: 'contain',
+                            width: '100%', 
+                            height: '100%', 
+                            objectFit: 'cover', 
                             borderRadius: '50%',
-                            display: 'block',
-                            mixBlendMode: 'multiply',
+                            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',  /* Shadow halus saja */
                         }}
                         onError={e => {
                             e.currentTarget.style.display = 'none';
-                            e.currentTarget.parentElement.innerHTML += '<span style="font-size:36px">🏥</span>';
+                            e.currentTarget.parentElement.innerHTML += '<span style="font-size:28px">🏥</span>';
                         }}
                     />
                 </button>
