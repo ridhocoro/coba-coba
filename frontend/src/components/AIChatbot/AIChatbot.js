@@ -212,14 +212,12 @@ const AIChatbot = () => {
                     }}>
                         <div style={{
                             width: '38px', height: '38px', borderRadius: '50%',
-                            background: '#fff',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            overflow: 'hidden', flexShrink: 0, padding: '2px',
+                            overflow: 'hidden', flexShrink: 0,
                         }}>
                             <img
                                 src={LOGO}
                                 alt="Klinik IPB"
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+                                style={{ width: '38px', height: '38px', objectFit: 'cover', display: 'block' }}
                                 onError={e => { e.currentTarget.style.display = 'none'; }}
                             />
                         </div>
