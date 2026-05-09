@@ -101,6 +101,9 @@ const consultationSchema = new mongoose.Schema({
     paymentDeadline: Date,
     symptoms:        String,
     medicalHistory:  String,
+    disease_category:    { type: String, default: null },   // ← TAMBAH
+    category_confidence: { type: Number, default: null },   // ← TAMBAH
+    category_method:     { type: String, default: null },   // ← TAMBAH
     attachmentUrls:  [String],
 
     // ── Hasil Konsultasi ──────────────────────────────────────────

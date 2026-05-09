@@ -9,6 +9,14 @@ import {
     CONS_STATUS, APPT_STATUS,
     Card, Btn, Spinner, Empty, SBadge,
 } from './shared';
+import {
+    Chart as ChartJS,
+    ArcElement, CategoryScale, LinearScale,
+    BarElement, Tooltip, Legend,
+} from 'chart.js';
+import { Doughnut, Bar } from 'react-chartjs-2';
+
+ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 const toDateKey = (d) =>
@@ -58,6 +66,26 @@ const SectionBeranda = () => {
     const [completedAppointments, setCompletedAppointments] = useState([]);
     const [cancelledConsultations, setCancelledConsultations] = useState([]);
     const [cancelledAppointments, setCancelledAppointments] = useState([]);
+
+    // Tren penyakit (ML)
+    const [diseaseData,    setDiseaseData]    = useState(null);
+    const [diseaseLoading, setDiseaseLoading] = useState(true);
+    const [diseasePeriod,  setDiseasePeriod]  = useState('30d');
+
+    const CATEGORY_COLORS = {
+        'ISPA':                '#ef4444',
+        'Hipertensi':          '#f97316',
+        'Diabetes':            '#eab308',
+        'Gangguan Pencernaan': '#22c55e',
+        'Penyakit Kulit':      '#14b8a6',
+        'Gangguan Jantung':    '#e11d48',
+        'Gangguan Paru':       '#06b6d4',
+        'Gangguan Saraf':      '#8b5cf6',
+        'Gangguan Mata':       '#3b82f6',
+        'Gangguan Ginjal':     '#f59e0b',
+        'Gangguan Mental':     '#a855f7',
+        'Lainnya':             '#94a3b8',
+    };
 
     // Jam berjalan
     useEffect(() => {
@@ -174,6 +202,22 @@ const SectionBeranda = () => {
     }, []);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    // ── Fetch tren penyakit ──────────────────────────────────────────────────
+    const fetchDiseaseTrend = useCallback(async () => {
+        setDiseaseLoading(true);
+        try {
+            const res = await api.get(`/api/admin/analytics/disease-trend?period=${diseasePeriod}`);
+            setDiseaseData(res.data?.data || null);
+        } catch (e) {
+            console.error('[Beranda] disease-trend error:', e);
+            setDiseaseData(null);
+        } finally {
+            setDiseaseLoading(false);
+        }
+    }, [diseasePeriod]);
+
+    useEffect(() => { fetchDiseaseTrend(); }, [fetchDiseaseTrend]);
 
     // ── Reminder ────────────────────────────────────────────────────────────
     const reminders = allItems.filter(s => {
@@ -505,6 +549,98 @@ const SectionBeranda = () => {
                             </Card>
                         ))}
                     </div>
+
+                    {/* ── TREN PENYAKIT PASIEN (ML) ── */}
+                    <Card style={{ borderRadius: 20, marginBottom: 24 }}>
+                        <div style={{ padding: '18px 24px', borderBottom: `1px solid ${colors.border}`, background: '#fafafa' }}>
+                            <div style={{ fontWeight: 700, fontSize: 16, color: colors.text, marginBottom: 12 }}>
+                                🦠 Tren Penyakit Pasien Saya
+                            </div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                {[{ v: '7d', l: '7 Hari' }, { v: '30d', l: '30 Hari' }].map(o => (
+                                    <button
+                                        key={o.v}
+                                        onClick={() => setDiseasePeriod(o.v)}
+                                        style={{
+                                            padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                                            cursor: 'pointer', border: `1px solid ${diseasePeriod === o.v ? colors.primary : colors.border}`,
+                                            background: diseasePeriod === o.v ? colors.primary : '#fff',
+                                            color: diseasePeriod === o.v ? '#fff' : colors.muted,
+                                            fontFamily: 'inherit',
+                                        }}
+                                    >{o.l}</button>
+                                ))}
+                                {diseaseLoading && <span style={{ fontSize: 12, color: colors.muted, alignSelf: 'center' }}>⏳ Memuat...</span>}
+                            </div>
+                        </div>
+
+                        <div style={{ padding: '20px 24px' }}>
+                            {diseaseLoading ? (
+                                <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.muted }}>
+                                    <Spinner />
+                                </div>
+                            ) : !diseaseData || Object.keys(diseaseData).length === 0 ? (
+                                <Empty icon="📊" text="Belum ada data klasifikasi penyakit. Data akan muncul setelah pasien submit keluhan." />
+                            ) : (() => {
+                                const topKategori = Object.entries(diseaseData)
+                                    .map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }))
+                                    .sort((a, b) => b.total - a.total);
+
+                                const donutChartData = {
+                                    labels: topKategori.map(x => x.k),
+                                    datasets: [{
+                                        data: topKategori.map(x => x.total),
+                                        backgroundColor: topKategori.map(x => CATEGORY_COLORS[x.k] || '#94a3b8'),
+                                        borderWidth: 2,
+                                        borderColor: '#fff',
+                                    }],
+                                };
+
+                                return (
+                                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                                        {/* Donut chart */}
+                                        <div style={{ width: 180, height: 180, flexShrink: 0 }}>
+                                            <Doughnut
+                                                data={donutChartData}
+                                                options={{
+                                                    responsive: true,
+                                                    maintainAspectRatio: false,
+                                                    plugins: {
+                                                        legend: { display: false },
+                                                        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} kasus` } },
+                                                    },
+                                                }}
+                                            />
+                                        </div>
+
+                                        {/* Top kategori list */}
+                                        <div style={{ flex: 1, minWidth: 160 }}>
+                                            <div style={{ fontSize: 11, fontWeight: 700, color: colors.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                                Distribusi Keluhan
+                                            </div>
+                                            {topKategori.slice(0, 6).map(({ k, total }, i) => (
+                                                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                    <span style={{ fontSize: 11, color: colors.subtle, width: 14 }}>{i + 1}.</span>
+                                                    <span style={{
+                                                        display: 'inline-block', width: 10, height: 10,
+                                                        borderRadius: '50%', background: CATEGORY_COLORS[k] || '#94a3b8', flexShrink: 0,
+                                                    }} />
+                                                    <span style={{ flex: 1, fontSize: 13, color: colors.text }}>{k}</span>
+                                                    <span style={{
+                                                        fontSize: 12, fontWeight: 700,
+                                                        background: '#f1f5f9', borderRadius: 10,
+                                                        padding: '2px 8px', color: colors.muted,
+                                                    }}>
+                                                        {total} kasus
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </Card>
 
                     {/* ── JADWAL KESELURUHAN ── */}
                     <Card style={{ borderRadius: 20, overflow: 'hidden' }}>

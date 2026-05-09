@@ -41,6 +41,9 @@ const appointmentSchema = new mongoose.Schema({
 
     // ── Konten ────────────────────────────────────────────────────
     complaint : { type: String, default: '' },  // keluhan singkat dari user
+    disease_category     : { type: String, default: null },   // ← TAMBAH
+    category_confidence  : { type: Number, default: null },   // ← TAMBAH
+    category_method      : { type: String, default: null },   // ← TAMBAH
 
     // ── Keterangan pembatalan/penyelesaian ────────────────────────
     cancelReason  : { type: String, default: '' },  // wajib saat cancel

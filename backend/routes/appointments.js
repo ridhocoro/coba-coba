@@ -5,6 +5,7 @@ const fmtDoctorName = require('../utils/fmtDoctorName');
 
 const express  = require('express');
 const router   = express.Router();
+const { classifyKeluhan } = require('../utils/mlService');
 
 const Appointment             = require('../models/Appointment');
 const AppointmentAvailability = require('../models/AppointmentAvailability');
@@ -514,6 +515,22 @@ router.post('/book', auth, async (req, res) => {
         });
 
         await appointment.save();
+
+        // ── Klasifikasi penyakit ML (async, tidak blocking response) ──
+        if (complaint) {
+            classifyKeluhan(complaint)
+                .then(async (result) => {
+                    if (result) {
+                        await Appointment.findByIdAndUpdate(appointment._id, {
+                            disease_category:    result.kategori,
+                            category_confidence: result.confidence,
+                            category_method:     result.metode,
+                        });
+                    }
+                })
+                .catch(err => console.error('[ML classify appointment]', err.message));
+        }
+        // ── End ML ────────────────────────────────────────────────────
 
         await createNotification({
             userId  : req.userId,

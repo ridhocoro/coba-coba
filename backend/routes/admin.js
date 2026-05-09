@@ -1784,4 +1784,83 @@ router.get('/analytics/consultations/frequency', guard, async (req, res) => {
     }
 });
 
+// ── Analytics: Tren Penyakit (ML) ────────────────────────────────────────────
+router.get('/analytics/disease-trend', guard, async (req, res) => {
+    try {
+        const { start, end } = analyticsDateRange(req.query);
+
+        const [consultResults, apptResults] = await Promise.all([
+            Consultation.aggregate([
+                {
+                    $match: {
+                        disease_category: { $ne: null },
+                        scheduledAt: { $gte: start, $lte: end },
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            kategori: '$disease_category',
+                            tanggal: {
+                                $dateToString: {
+                                    format: '%Y-%m-%d',
+                                    date: '$scheduledAt',
+                                    timezone: '+07:00',
+                                }
+                            }
+                        },
+                        jumlah: { $sum: 1 }
+                    }
+                }
+            ]),
+            Appointment.aggregate([
+                {
+                    $match: {
+                        disease_category: { $ne: null },
+                        scheduledAt: { $gte: start, $lte: end },
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            kategori: '$disease_category',
+                            tanggal: {
+                                $dateToString: {
+                                    format: '%Y-%m-%d',
+                                    date: '$scheduledAt',
+                                    timezone: '+07:00',
+                                }
+                            }
+                        },
+                        jumlah: { $sum: 1 }
+                    }
+                }
+            ])
+        ]);
+
+        // Gabungkan hasil konsultasi & janji temu, group by kategori
+        const merged = {};
+        [...consultResults, ...apptResults].forEach(r => {
+            const { kategori, tanggal } = r._id;
+            if (!merged[kategori]) merged[kategori] = [];
+            const existing = merged[kategori].find(x => x.tanggal === tanggal);
+            if (existing) {
+                existing.jumlah += r.jumlah;
+            } else {
+                merged[kategori].push({ tanggal, jumlah: r.jumlah });
+            }
+        });
+
+        // Sort tanggal per kategori
+        Object.keys(merged).forEach(k => {
+            merged[k].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+        });
+
+        res.json({ success: true, data: merged });
+    } catch (err) {
+        console.error('[admin] GET /analytics/disease-trend error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
 module.exports = router;

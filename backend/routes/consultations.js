@@ -15,6 +15,7 @@ const auth = require('../middleware/auth');
 const doctorAuth = require('../middleware/doctorAuth');
 const { createNotification } = require('../utils/notificationHelper');
 const { populateFromMySQL } = require('../utils/hybridJoin');
+const { classifyKeluhan } = require('../utils/mlService');
 
 /**
  * Mengambil gambar dari URL (Cloudinary atau lokal) dan mengembalikan Buffer.
@@ -336,6 +337,22 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         });
 
         await consultation.save();
+
+        // ── Klasifikasi penyakit ML (async, tidak blocking response) ──
+        if (symptoms) {
+            classifyKeluhan(symptoms)
+                .then(async (result) => {
+                    if (result) {
+                        await Consultation.findByIdAndUpdate(consultation._id, {
+                            disease_category:    result.kategori,
+                            category_confidence: result.confidence,
+                            category_method:     result.metode,
+                        });
+                    }
+                })
+                .catch(err => console.error('[ML classify consultation]', err.message));
+        }
+        // ── End ML ────────────────────────────────────────────────────
 
         res.json({
             success: true,

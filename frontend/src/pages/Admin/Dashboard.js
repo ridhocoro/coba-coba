@@ -3,15 +3,15 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, BarElement, LineElement,
-  PointElement, Title, Tooltip, Legend, Filler,
+  PointElement, Title, Tooltip, Legend, Filler, ArcElement,
 } from 'chart.js';
-import { Bar, Line } from 'react-chartjs-2';
+import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import api from '../../utils/api';
 import { fmtDoctorName } from '../../utils/format';
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
-  PointElement, Title, Tooltip, Legend, Filler,
+  PointElement, Title, Tooltip, Legend, Filler, ArcElement,
 );
 
 /* ─── Formatters ─────────────────────────────────────────── */
@@ -177,6 +177,42 @@ const AdminDashboard = ({ onNavigate }) => {
   const prev = getYM(-1);
   const [monthA, setMonthA] = useState({ year: cur.year,  month: cur.month  });
   const [monthB, setMonthB] = useState({ year: prev.year, month: prev.month });
+
+  /* ── Disease Trend (ML) ── */
+  const [diseasePeriod,  setDiseasePeriod]  = useState('30d');
+  const [diseaseData,    setDiseaseData]    = useState(null);
+  const [diseaseLoading, setDiseaseLoading] = useState(true);
+  const [diseaseView,    setDiseaseView]    = useState('donut'); // 'donut' | 'bar'
+
+  const CATEGORY_COLORS = {
+    'ISPA':                '#ef4444',
+    'Hipertensi':          '#f97316',
+    'Diabetes':            '#eab308',
+    'Gangguan Pencernaan': '#22c55e',
+    'Penyakit Kulit':      '#14b8a6',
+    'Gangguan Jantung':    '#e11d48',
+    'Gangguan Paru':       '#06b6d4',
+    'Gangguan Saraf':      '#8b5cf6',
+    'Gangguan Mata':       '#3b82f6',
+    'Gangguan Ginjal':     '#f59e0b',
+    'Gangguan Mental':     '#a855f7',
+    'Lainnya':             '#94a3b8',
+  };
+
+  const fetchDiseaseTrend = useCallback(async () => {
+    setDiseaseLoading(true);
+    try {
+      const res = await api.get(`/api/admin/analytics/disease-trend?period=${diseasePeriod}`);
+      setDiseaseData(res.data?.data || null);
+    } catch (e) {
+      console.error('[Dashboard] disease-trend error:', e);
+      setDiseaseData(null);
+    } finally {
+      setDiseaseLoading(false);
+    }
+  }, [diseasePeriod]);
+
+  useEffect(() => { fetchDiseaseTrend(); }, [fetchDiseaseTrend]);
 
   /* ════════ Fetch ops + growth ════════ */
   const fetchAll = useCallback(async () => {
@@ -627,6 +663,145 @@ const AdminDashboard = ({ onNavigate }) => {
           <p>Memuat dashboard...</p>
         </div>
       )}
+
+      {/* ════════════════════════════════════════════════════
+          BLOK 4 — Tren Penyakit (ML)
+      ════════════════════════════════════════════════════ */}
+      <div style={S.section}>
+        <p style={S.sectionTitle}>🦠 Tren Penyakit Pasien</p>
+
+        {/* Controls */}
+        <div style={{ ...S.row, marginBottom: 16 }}>
+          {[{ v: '7d', l: '7 Hari' }, { v: '30d', l: '30 Hari' }].map(o => (
+            <button key={o.v} style={S.chip(diseasePeriod === o.v)} onClick={() => setDiseasePeriod(o.v)}>
+              {o.l}
+            </button>
+          ))}
+          <button style={S.chip(diseaseView === 'donut')} onClick={() => setDiseaseView('donut')}>🍩 Donut</button>
+          <button style={S.chip(diseaseView === 'bar')}   onClick={() => setDiseaseView('bar')}>📊 Bar</button>
+          {diseaseLoading && <span style={{ fontSize: 12, color: '#94a3b8' }}>⏳ Memuat...</span>}
+        </div>
+
+        {diseaseLoading ? (
+          <Card>
+            <div style={S.emptyChart}><span style={{ fontSize: 28 }}>⏳</span><span style={{ fontSize: 12 }}>Memuat data tren penyakit...</span></div>
+          </Card>
+        ) : !diseaseData || Object.keys(diseaseData).length === 0 ? (
+          <Card>
+            <div style={S.emptyChart}>
+              <span style={{ fontSize: 32 }}>📭</span>
+              <span style={{ fontSize: 12 }}>Belum ada data klasifikasi penyakit</span>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>Data akan muncul setelah pasien submit keluhan</span>
+            </div>
+          </Card>
+        ) : (() => {
+          // Hitung total per kategori
+          const topKategori = Object.entries(diseaseData)
+            .map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }))
+            .sort((a, b) => b.total - a.total);
+
+          // Donut chart data
+          const donutChartData = {
+            labels: topKategori.map(x => x.k),
+            datasets: [{
+              data: topKategori.map(x => x.total),
+              backgroundColor: topKategori.map(x => CATEGORY_COLORS[x.k] || '#94a3b8'),
+              borderWidth: 2,
+              borderColor: '#fff',
+            }],
+          };
+
+          // Bar chart data (stacked per tanggal)
+          const allDates = [...new Set(
+            Object.values(diseaseData).flatMap(arr => arr.map(r => r.tanggal))
+          )].sort();
+          const barChartData = {
+            labels: allDates.map(d => fmtDate(d)),
+            datasets: Object.entries(diseaseData).map(([kategori, arr]) => {
+              const map = Object.fromEntries(arr.map(r => [r.tanggal, r.jumlah]));
+              return {
+                label: kategori,
+                data: allDates.map(d => map[d] || 0),
+                backgroundColor: CATEGORY_COLORS[kategori] || '#94a3b8',
+                borderRadius: 3,
+                stack: 'stack',
+              };
+            }),
+          };
+
+          return (
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              {/* Chart */}
+              <Card style={{ flex: 2, minWidth: 280 }}>
+                <div style={{ height: 240, position: 'relative' }}>
+                  {diseaseView === 'donut' ? (
+                    <Doughnut
+                      data={donutChartData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} kasus` } },
+                        },
+                      }}
+                    />
+                  ) : (
+                    <Bar
+                      data={barChartData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: { mode: 'index' },
+                        },
+                        scales: {
+                          x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+                          y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { color: '#94a3b8', font: { size: 10 }, precision: 0 }, beginAtZero: true },
+                        },
+                      }}
+                    />
+                  )}
+                </div>
+              </Card>
+
+              {/* Top 5 kategori */}
+              <Card style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Top Kategori Penyakit
+                </div>
+                {topKategori.slice(0, 6).map(({ k, total }, i) => (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 11, color: '#94a3b8', width: 14 }}>{i + 1}.</span>
+                    <span style={{
+                      display: 'inline-block', width: 10, height: 10,
+                      borderRadius: '50%', background: CATEGORY_COLORS[k] || '#94a3b8', flexShrink: 0,
+                    }} />
+                    <span style={{ flex: 1, fontSize: 12, color: '#334155' }}>{k}</span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700,
+                      background: '#f1f5f9', borderRadius: 10,
+                      padding: '2px 8px', color: '#475569',
+                    }}>
+                      {total}
+                    </span>
+                  </div>
+                ))}
+                {/* Legend warna */}
+                <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 10, paddingTop: 10, display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
+                  {Object.keys(diseaseData).map(k => (
+                    <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#64748b' }}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: CATEGORY_COLORS[k] || '#94a3b8' }} />
+                      {k}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 };
