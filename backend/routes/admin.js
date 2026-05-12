@@ -729,12 +729,12 @@ router.put('/users/:id/quota', guard, async (req, res) => {
                 }
             );
         } else if (action === 'add') {
-            newBonus = (user.quota_bonus || 0) + Number(amount || 0);
+            newBonus = (user.quotaBonus || 0) + Number(amount || 0);
         } else {
             return res.status(400).json({ success: false, message: 'action harus add atau reset' });
         }
 
-        await User.update({ quota_bonus: newBonus }, { where: { id: req.params.id } });
+        await User.update({ quotaBonus: newBonus }, { where: { id: req.params.id } });
         res.json({ success: true, quotaBonus: newBonus });
     } catch (err) {
         console.error('[admin] PUT /users/:id/quota error:', err);
@@ -774,9 +774,9 @@ router.post('/users/upgrade-mahasiswa', guard, async (req, res) => {
 
 router.post('/users/reset-quota-bonus', guard, async (req, res) => {
     try {
-        // Reset quota_bonus ke 0 untuk semua mahasiswa
+        // Reset quotaBonus ke 0 untuk semua mahasiswa
         const [affectedCount] = await User.update(
-            { quota_bonus: 0 },
+            { quotaBonus: 0 },
             { where: { role: 'mahasiswa' } }
         );
 

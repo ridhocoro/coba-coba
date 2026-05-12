@@ -1002,6 +1002,11 @@ const MedicalRecordModal = ({ existing, consultation, onClose, onSave, isEndSess
 // ── Attachment Viewer (lampiran dari pasien) ──────────────────────
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
 const isImage = (url) => IMAGE_EXTS.some(ext => url.toLowerCase().endsWith(ext));
+const resolveAttachmentUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url; // sudah absolute
+  return `${API_URL}${url}`;
+};
 
 const AttachmentViewer = ({ attachmentUrls }) => {
   const [lightbox, setLightbox] = useState(null); // url gambar yang dibuka
@@ -1019,11 +1024,11 @@ const AttachmentViewer = ({ attachmentUrls }) => {
               <div key={i}>
                 {img ? (
                   <div
-                    onClick={() => setLightbox(`${API_URL}${url}`)}
+                    onClick={() => setLightbox(resolveAttachmentUrl(url))}
                     style={{ cursor: 'zoom-in', borderRadius: 8, overflow: 'hidden', border: '1px solid #30363d', position: 'relative' }}
                   >
                     <img
-                      src={`${API_URL}${url}`}
+                      src={resolveAttachmentUrl(url)}
                       alt={filename}
                       style={{ width: '100%', maxHeight: 140, objectFit: 'cover', display: 'block' }}
                       onError={e => { e.target.style.display = 'none'; }}
@@ -1034,7 +1039,7 @@ const AttachmentViewer = ({ attachmentUrls }) => {
                   </div>
                 ) : (
                   <a
-                    href={`${API_URL}${url}`}
+                    href={resolveAttachmentUrl(url)}
                     target="_blank"
                     rel="noreferrer"
                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, textDecoration: 'none' }}
