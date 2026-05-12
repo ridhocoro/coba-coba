@@ -1086,4 +1086,104 @@ router.put('/my/chat/read', auth, doctorAuth, async (req, res) => {
     }
 });
 
+
+// ── Tren penyakit ML khusus dokter yang login ────────────────────────────────
+router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
+
+        const { period, year, month } = req.query;
+        const now = new Date();
+        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        let start, end;
+        if (period === 'month' && year && month) {
+            const y = parseInt(year, 10);
+            const m = parseInt(month, 10) - 1;
+            start = new Date(y, m, 1, 0, 0, 0, 0);
+            end   = new Date(y, m + 1, 0, 23, 59, 59, 999);
+        } else if (period === '7d') {
+            start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+            end   = todayEnd;
+        } else {
+            // default 30d
+            start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0);
+            end   = todayEnd;
+        }
+
+        const doctorIdStr = doctor.id.toString();
+
+        const [consultResults, apptResults] = await Promise.all([
+            Consultation.aggregate([
+                {
+                    $match: {
+                        doctorId: doctorIdStr,
+                        disease_category: { $ne: null },
+                        scheduledAt: { $gte: start, $lte: end },
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            kategori: '$disease_category',
+                            tanggal: {
+                                $dateToString: {
+                                    format: '%Y-%m-%d',
+                                    date: '$scheduledAt',
+                                    timezone: '+07:00',
+                                }
+                            }
+                        },
+                        jumlah: { $sum: 1 }
+                    }
+                }
+            ]),
+            Appointment.aggregate([
+                {
+                    $match: {
+                        doctorId: doctorIdStr,
+                        disease_category: { $ne: null },
+                        scheduledAt: { $gte: start, $lte: end },
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            kategori: '$disease_category',
+                            tanggal: {
+                                $dateToString: {
+                                    format: '%Y-%m-%d',
+                                    date: '$scheduledAt',
+                                    timezone: '+07:00',
+                                }
+                            }
+                        },
+                        jumlah: { $sum: 1 }
+                    }
+                }
+            ])
+        ]);
+
+        // Gabungkan konsultasi & janji temu, group by kategori
+        const merged = {};
+        [...consultResults, ...apptResults].forEach(r => {
+            const { kategori, tanggal } = r._id;
+            if (!merged[kategori]) merged[kategori] = [];
+            const existing = merged[kategori].find(x => x.tanggal === tanggal);
+            if (existing) existing.jumlah += r.jumlah;
+            else merged[kategori].push({ tanggal, jumlah: r.jumlah });
+        });
+
+        Object.keys(merged).forEach(k => {
+            merged[k].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+        });
+
+        res.json({ success: true, data: merged });
+    } catch (err) {
+        console.error('[doctors] GET /my/disease-trend error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
 module.exports = router;

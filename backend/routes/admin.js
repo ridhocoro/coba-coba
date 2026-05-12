@@ -689,7 +689,7 @@ router.get('/users/:id/quota', guard, async (req, res) => {
         });
 
         const used = orders.reduce((s, o) => s + (o.student_free_qty || 0), 0);
-        const manualExtra = user.quotaBonus || 0;
+        const manualExtra = user.quota_bonus || 0;
         const max = STUDENT_MAX_PCS + manualExtra;
 
         res.json({ success: true, used, max, remaining: Math.max(0, max - used), manualExtra, orders, month: startMonth });
@@ -1859,6 +1859,70 @@ router.get('/analytics/disease-trend', guard, async (req, res) => {
         res.json({ success: true, data: merged });
     } catch (err) {
         console.error('[admin] GET /analytics/disease-trend error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+
+// ── Backfill ML: classify ulang data lama yang belum punya disease_category ──
+router.post('/analytics/disease-backfill', guard, async (req, res) => {
+    try {
+        const { classifyKeluhan } = require('../utils/mlService');
+
+        // Ambil konsultasi & janji temu yang belum punya kategori
+        const [consultsToFill, apptsToFill] = await Promise.all([
+            Consultation.find({
+                disease_category: null,
+                symptoms: { $exists: true, $ne: '' }
+            }).select('_id symptoms').lean(),
+            Appointment.find({
+                disease_category: null,
+                complaint: { $exists: true, $ne: '' }
+            }).select('_id complaint').lean(),
+        ]);
+
+        let successCount = 0;
+        let failCount = 0;
+
+        // Proses konsultasi
+        for (const c of consultsToFill) {
+            try {
+                const result = await classifyKeluhan(c.symptoms);
+                if (result) {
+                    await Consultation.findByIdAndUpdate(c._id, {
+                        disease_category:    result.kategori,
+                        category_confidence: result.confidence,
+                        category_method:     result.metode,
+                    });
+                    successCount++;
+                }
+            } catch (e) { failCount++; }
+        }
+
+        // Proses janji temu
+        for (const a of apptsToFill) {
+            try {
+                const result = await classifyKeluhan(a.complaint);
+                if (result) {
+                    await Appointment.findByIdAndUpdate(a._id, {
+                        disease_category:    result.kategori,
+                        category_confidence: result.confidence,
+                        category_method:     result.metode,
+                    });
+                    successCount++;
+                }
+            } catch (e) { failCount++; }
+        }
+
+        res.json({
+            success: true,
+            message: `Backfill selesai: ${successCount} berhasil, ${failCount} gagal`,
+            total: consultsToFill.length + apptsToFill.length,
+            successCount,
+            failCount,
+        });
+    } catch (err) {
+        console.error('[admin] POST /analytics/disease-backfill error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
     }
 });

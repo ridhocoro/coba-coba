@@ -82,18 +82,12 @@ const parseAddress = (fullAddress) => {
     }
 };
 
-// ── Multer untuk upload foto chat ─────────────────────────────────────────────
-const chatStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const dir = 'uploads/chat';
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `chat-${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`);
-    }
-});
-const uploadChat = multer({ storage: chatStorage, limits: { fileSize: 5 * 1024 * 1024 } });
+// ── Multer untuk upload foto chat — disimpan ke Cloudinary ──────────────────
+const uploadChat = createCloudinaryUpload(
+    'klinik-ipb/chat-images',
+    ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+    5
+);
 
 // ── Multer untuk upload lampiran keluhan — disimpan ke Cloudinary ────────────
 const uploadAttachment = createCloudinaryUpload(
@@ -1164,7 +1158,7 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
         }
 
         const senderName = isUser ? patient.name : `${fmtDoctorName(doctor)}`;
-        const imageUrl = `/uploads/chat/${req.file.filename}`;
+        const imageUrl = req.file.path;
 
         const msg = {
             senderId: req.userId,

@@ -207,7 +207,7 @@ const SectionBeranda = () => {
     const fetchDiseaseTrend = useCallback(async () => {
         setDiseaseLoading(true);
         try {
-            const res = await api.get(`/api/admin/analytics/disease-trend?period=${diseasePeriod}`);
+            const res = await api.get(`/api/doctors/my/disease-trend?period=${diseasePeriod}`);
             setDiseaseData(res.data?.data || null);
         } catch (e) {
             console.error('[Beranda] disease-trend error:', e);
@@ -376,7 +376,7 @@ const SectionBeranda = () => {
     const METRIC_CARDS = [
         { 
             label: 'Janji Temu Hari Ini', 
-            val: stats?.apptToday || 0, 
+            val: stats?.patientsTodayCount || stats?.apptToday || 0, 
             icon: '👥', 
             color: '#7c3aed', 
             bg: '#f5f3ff',

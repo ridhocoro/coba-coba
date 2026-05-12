@@ -680,6 +680,19 @@ const AdminDashboard = ({ onNavigate }) => {
           <button style={S.chip(diseaseView === 'donut')} onClick={() => setDiseaseView('donut')}>🍩 Donut</button>
           <button style={S.chip(diseaseView === 'bar')}   onClick={() => setDiseaseView('bar')}>📊 Bar</button>
           {diseaseLoading && <span style={{ fontSize: 12, color: '#94a3b8' }}>⏳ Memuat...</span>}
+          <button
+            onClick={async () => {
+              if (!window.confirm('Classify ulang semua data lama yang belum terdeteksi ML? Proses ini bisa memakan waktu beberapa menit.')) return;
+              try {
+                const r = await api.post('/api/admin/analytics/disease-backfill');
+                alert(r.data.message);
+                fetchDiseaseTrend();
+              } catch(e) { alert('Backfill gagal: ' + (e.response?.data?.message || e.message)); }
+            }}
+            style={{ marginLeft: 'auto', padding: '5px 12px', borderRadius: 16, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', fontFamily: 'inherit' }}
+          >
+            🔄 Classify Data Lama
+          </button>
         </div>
 
         {diseaseLoading ? (

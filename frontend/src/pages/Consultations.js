@@ -1361,7 +1361,7 @@ const Consultations = () => {
                             <span style={{ color: '#6b7280', fontSize: 13 }}>
                                 {bookAttachments.length > 0 ? `${bookAttachments.length} file dipilih` : 'Pilih foto keluhan...'}
                             </span>
-                            <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                            <input type="file" accept="image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple style={{ display: 'none' }}
                                 onChange={e => setBookAttachments(Array.from(e.target.files).slice(0, 5))} />
                         </label>
                     </div>
