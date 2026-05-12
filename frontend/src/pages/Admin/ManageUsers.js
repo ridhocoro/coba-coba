@@ -145,7 +145,7 @@ const ManageUsers = () => {
       });
       
       if (response.data && response.data.success !== false) {
-        toast.success(quotaAction === 'reset' ? 'Kuota direset: pemakaian bulan ini → 0, maks → 8' : 'Kuota berhasil ditambahkan');
+        toast.success(quotaAction === 'reset' ? 'Kuota direset: pemakaian bulan ini → 0, bonus → 0' : 'Kuota berhasil ditambahkan');
         // Refresh quota data
         const quotaRes = await api.get(`/api/admin/users/${uid}/quota`);
         setQuota(quotaRes.data);
@@ -183,7 +183,7 @@ const ManageUsers = () => {
   };
 
   const handleResetQuotaBonus = async () => {
-    if (!window.confirm('Reset kuota semua mahasiswa?\n\nPemakaian bulan ini akan direset ke 0 dan kuota kembali ke 8.')) {
+    if (!window.confirm('Reset kuota semua mahasiswa?\n\nPemakaian bulan ini akan direset ke 0 dan bonus kuota kembali ke 0 (kuota dasar tetap berlaku).')) {
       return;
     }
     
@@ -480,19 +480,31 @@ const ManageUsers = () => {
                 <p style={{ fontWeight: 700, fontSize: 13, color: '#5b21b6', marginBottom: 8 }}>
                   🎓 Kuota Obat Gratis Bulan Ini
                 </p>
-                <div style={{ display: 'flex', gap: 16, fontSize: 13, marginBottom: 10, flexWrap: 'wrap' }}>
-                  <div><span style={{ color: '#7c3aed' }}>Digunakan:</span> <strong>{quota.used || 0}</strong></div>
-                  <div><span style={{ color: '#7c3aed' }}>Maks:</span> <strong>{quota.max || 8}</strong></div>
+                <div style={{ display: 'flex', gap: 16, fontSize: 13, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <div><span style={{ color: '#7c3aed' }}>Digunakan:</span> <strong>{quota.used ?? 0}</strong></div>
+                  <div><span style={{ color: '#7c3aed' }}>Maks:</span> <strong>{quota.max ?? 0}</strong></div>
                   <div>
                     <span style={{ color: '#7c3aed' }}>Sisa:</span> 
-                    <strong style={{ color: (quota.remaining || 0) > 0 ? '#16a34a' : '#ef4444' }}>
-                      {quota.remaining || 0}
+                    <strong style={{ color: (quota.remaining ?? 0) > 0 ? '#16a34a' : '#ef4444' }}>
+                      {quota.remaining ?? 0}
                     </strong>
                   </div>
                   {(quota.manualExtra || 0) > 0 && (
                     <div><span style={{ color: '#7c3aed' }}>Bonus Admin:</span> <strong>+{quota.manualExtra}</strong></div>
                   )}
                 </div>
+                {/* Progress bar */}
+                {(quota.max ?? 0) > 0 && (
+                  <div style={{ background: '#c4b5fd', borderRadius: 4, height: 6, marginBottom: 10, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${Math.min(100, ((quota.used ?? 0) / (quota.max ?? 1)) * 100)}%`,
+                      height: '100%',
+                      background: (quota.remaining ?? 0) === 0 ? '#ef4444' : '#7c3aed',
+                      borderRadius: 4,
+                      transition: 'width 0.4s'
+                    }} />
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <select 
                     value={quotaAction} 
@@ -501,7 +513,7 @@ const ManageUsers = () => {
                   >
                     <option value="">Pilih aksi...</option>
                     <option value="add">Tambah kuota</option>
-                    <option value="reset">Reset kuota (used → 0, max → 8)</option>
+                    <option value="reset">Reset kuota (used → 0, bonus → 0)</option>
                   </select>
                   {quotaAction === 'add' && (
                     <input 

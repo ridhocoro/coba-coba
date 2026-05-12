@@ -1001,11 +1001,35 @@ const MedicalRecordModal = ({ existing, consultation, onClose, onSave, isEndSess
 
 // ── Attachment Viewer (lampiran dari pasien) ──────────────────────
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
-const isImage = (url) => IMAGE_EXTS.some(ext => url.toLowerCase().endsWith(ext));
+// FIX: strip query params sebelum cek ekstensi agar Cloudinary URL dengan ?v=... tidak gagal
+const isImage = (url) => {
+  const cleanUrl = url.split('?')[0].toLowerCase();
+  return IMAGE_EXTS.some(ext => cleanUrl.endsWith(ext));
+};
 const resolveAttachmentUrl = (url) => {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://')) return url; // sudah absolute
   return `${API_URL}${url}`;
+};
+// FIX: gunakan fetch+blob untuk download cross-origin (Cloudinary)
+// karena atribut `download` pada <a> diabaikan browser untuk URL lintas domain
+const downloadFile = async (url, filename) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Gagal mengunduh file');
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || url.split('/').pop().split('?')[0];
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    // Fallback: buka di tab baru jika fetch gagal (misal CORS tidak diizinkan)
+    window.open(url, '_blank');
+  }
 };
 
 const AttachmentViewer = ({ attachmentUrls }) => {
@@ -1018,35 +1042,48 @@ const AttachmentViewer = ({ attachmentUrls }) => {
         </span>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {attachmentUrls.map((url, i) => {
-            const filename = url.split('/').pop();
+            const resolvedUrl = resolveAttachmentUrl(url);
+            // FIX: strip query params agar nama file bersih
+            const filename = url.split('/').pop().split('?')[0];
             const img = isImage(url);
             return (
               <div key={i}>
                 {img ? (
-                  <div
-                    onClick={() => setLightbox(resolveAttachmentUrl(url))}
-                    style={{ cursor: 'zoom-in', borderRadius: 8, overflow: 'hidden', border: '1px solid #30363d', position: 'relative' }}
-                  >
-                    <img
-                      src={resolveAttachmentUrl(url)}
-                      alt={filename}
-                      style={{ width: '100%', maxHeight: 140, objectFit: 'cover', display: 'block' }}
-                      onError={e => { e.target.style.display = 'none'; }}
-                    />
-                    <div style={{ position: 'absolute', bottom: 4, right: 6, background: 'rgba(0,0,0,.55)', borderRadius: 4, padding: '1px 6px', fontSize: 10, color: '#c9d1d9' }}>
-                      🔍 Klik untuk perbesar
+                  <div>
+                    <div
+                      onClick={() => setLightbox(resolvedUrl)}
+                      style={{ cursor: 'zoom-in', borderRadius: 8, overflow: 'hidden', border: '1px solid #30363d', position: 'relative' }}
+                    >
+                      <img
+                        src={resolvedUrl}
+                        alt={filename}
+                        style={{ width: '100%', maxHeight: 140, objectFit: 'cover', display: 'block' }}
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                      <div style={{ position: 'absolute', bottom: 4, right: 6, background: 'rgba(0,0,0,.55)', borderRadius: 4, padding: '1px 6px', fontSize: 10, color: '#c9d1d9' }}>
+                        🔍 Klik untuk perbesar
+                      </div>
                     </div>
+                    {/* FIX: tombol download gambar menggunakan downloadFile (bukan <a download>) */}
+                    <button
+                      onClick={() => downloadFile(resolvedUrl, filename)}
+                      style={{ marginTop: 4, width: '100%', padding: '5px 0', background: '#1f6feb22', border: '1px solid #1f6feb55', borderRadius: 6, color: '#58a6ff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      ⬇ Unduh Gambar
+                    </button>
                   </div>
                 ) : (
-                  <a
-                    href={resolveAttachmentUrl(url)}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, textDecoration: 'none' }}
-                  >
+                  // FIX: non-image (PDF, DOC, DOCX) sekarang punya tombol download
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: '#161b22', border: '1px solid #30363d', borderRadius: 8 }}>
                     <span style={{ fontSize: 18 }}>📄</span>
-                    <span style={{ color: '#58a6ff', fontSize: 12, wordBreak: 'break-all' }}>{filename}</span>
-                  </a>
+                    <span style={{ color: '#c9d1d9', fontSize: 12, wordBreak: 'break-all', flex: 1 }}>{filename}</span>
+                    <button
+                      onClick={() => downloadFile(resolvedUrl, filename)}
+                      style={{ flexShrink: 0, padding: '4px 12px', background: '#1f6feb', border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      ⬇ Unduh
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -1066,12 +1103,12 @@ const AttachmentViewer = ({ attachmentUrls }) => {
               onClick={() => setLightbox(null)}
               style={{ position: 'absolute', top: -14, right: -14, width: 32, height: 32, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#e6edf3', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}
             >×</button>
-            <a
-              href={lightbox}
-              download
-              onClick={e => e.stopPropagation()}
-              style={{ position: 'absolute', bottom: -40, left: '50%', transform: 'translateX(-50%)', background: '#1f6feb', color: '#fff', padding: '6px 18px', borderRadius: 20, fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
-            >⬇ Unduh</a>
+            {/* FIX: ganti <a download> dengan button + downloadFile karena
+                atribut download diabaikan browser untuk URL cross-origin (Cloudinary) */}
+            <button
+              onClick={(e) => { e.stopPropagation(); downloadFile(lightbox, lightbox.split('/').pop().split('?')[0]); }}
+              style={{ position: 'absolute', bottom: -40, left: '50%', transform: 'translateX(-50%)', background: '#1f6feb', color: '#fff', padding: '6px 18px', borderRadius: 20, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >⬇ Unduh</button>
           </div>
         </div>
       )}
@@ -1613,7 +1650,11 @@ const ConsultationChat = () => {
           <div style={s.sideSection}>
             <span style={s.label}>Dokter</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👨‍⚕️</div>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, overflow: 'hidden', flexShrink: 0, border: '2px solid #e5e7eb' }}>
+                {doc?.photo
+                  ? <img src={doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : '👨‍⚕️'}
+              </div>
               <div>
                 <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
                 <div style={{ color: '#2563eb', fontSize: 12 }}>{doc?.specialization}</div>
@@ -1841,7 +1882,11 @@ const ConsultationChat = () => {
         {/* ── Chat Area ────────────────────────────────────────── */}
         <div style={s.chat}>
           <div style={s.header}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👨‍⚕️</div>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, overflow: 'hidden', flexShrink: 0, border: '2px solid #e5e7eb' }}>
+              {doc?.photo
+                ? <img src={doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : '👨‍⚕️'}
+            </div>
             <div style={{ flex: 1 }}>
               <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
               <div style={{ color: '#6b7280', fontSize: 12 }}>{doc?.specialization} · {typeLabel}</div>

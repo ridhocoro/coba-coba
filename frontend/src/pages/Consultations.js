@@ -508,8 +508,11 @@ const ConsultationCard = ({
             {/* Header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                        {cons.status === 'completed' ? '📝' : '👨‍⚕️'}
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, overflow: 'hidden', flexShrink: 0, border: '2px solid #e0eaff' }}>
+                        {cons.doctorId?.photo
+                            ? <img src={cons.doctorId.photo.startsWith('http') ? cons.doctorId.photo : `${API_URL}${cons.doctorId.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : (cons.status === 'completed' ? '📝' : '👨‍⚕️')
+                        }
                     </div>
                     <div>
                         <div style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>{fmtDoctorName(cons.doctorId) || '-'}</div>

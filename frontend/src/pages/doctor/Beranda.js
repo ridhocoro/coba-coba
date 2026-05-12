@@ -376,7 +376,7 @@ const SectionBeranda = () => {
     const METRIC_CARDS = [
         { 
             label: 'Janji Temu Hari Ini', 
-            val: stats?.patientsTodayCount || stats?.apptToday || 0, 
+            val: stats?.apptToday || 0, 
             icon: '👥', 
             color: '#7c3aed', 
             bg: '#f5f3ff',
