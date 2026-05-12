@@ -1550,4 +1550,3 @@ export default function VitalScanPage() {
         </div>
     );
 }
-export default VitalScanPage;
