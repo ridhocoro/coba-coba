@@ -354,7 +354,8 @@ router.post('/orders', auth, async (req, res) => {
         const isStudent = user.email?.toLowerCase().endsWith('@apps.ipb.ac.id');
         let quotaUsed = 0;
         const freeUsedThisMonth = isStudent ? await getStudentFreeUsage(req.userId) : 0;
-        let remainingQuota = isStudent ? Math.max(0, STUDENT_MAX_PCS - freeUsedThisMonth) : 0;
+        const quotaBonus = isStudent ? (user.quotaBonus || 0) : 0;
+        let remainingQuota = isStudent ? Math.max(0, (STUDENT_MAX_PCS + quotaBonus) - freeUsedThisMonth) : 0;
 
         let subtotalObat = 0;
         let requiresPrescription = false;
@@ -631,8 +632,10 @@ router.get('/student-quota', auth, async (req, res) => {
         const isStudent = user.email?.toLowerCase().endsWith('@apps.ipb.ac.id');
         if (!isStudent) return res.json({ isStudent: false, used: 0, remaining: 0, max: STUDENT_MAX_PCS });
         const used = await getStudentFreeUsage(req.userId);
-        const remaining = Math.max(0, STUDENT_MAX_PCS - used);
-        res.json({ isStudent: true, used, remaining, max: STUDENT_MAX_PCS });
+        const bonus = user.quotaBonus || 0;
+        const max = STUDENT_MAX_PCS + bonus;
+        const remaining = Math.max(0, max - used);
+        res.json({ isStudent: true, used, remaining, max });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
     }

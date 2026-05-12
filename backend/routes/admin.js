@@ -734,7 +734,7 @@ router.put('/users/:id/quota', guard, async (req, res) => {
             return res.status(400).json({ success: false, message: 'action harus add atau reset' });
         }
 
-        await User.update({ quotaBonus: newBonus }, { where: { id: req.params.id } });
+        await User.update({ quota_bonus: newBonus }, { where: { id: req.params.id } });
         res.json({ success: true, quotaBonus: newBonus });
     } catch (err) {
         console.error('[admin] PUT /users/:id/quota error:', err);
