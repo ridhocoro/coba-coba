@@ -689,7 +689,7 @@ router.get('/users/:id/quota', guard, async (req, res) => {
         });
 
         const used = orders.reduce((s, o) => s + (o.student_free_qty || 0), 0);
-        const manualExtra = user.quota_bonus || 0;
+        const manualExtra = user.quotaBonus || 0;
         const max = STUDENT_MAX_PCS + manualExtra;
 
         res.json({ success: true, used, max, remaining: Math.max(0, max - used), manualExtra, orders, month: startMonth });
