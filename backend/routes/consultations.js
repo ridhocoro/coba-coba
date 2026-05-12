@@ -310,7 +310,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         const slotEndHHMM = `${String(slotEndWIB.getUTCHours()).padStart(2, '0')}:${String(slotEndWIB.getUTCMinutes()).padStart(2, '0')}`;
         const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
         const SESSION_DURATION = 30;
-        const expectedEndMin = toMin(slotHHMM) + SESSION_DURATION % 1440;
+        const expectedEndMin = (toMin(slotHHMM) + SESSION_DURATION) % 1440;
         if (toMin(slotEndHHMM) !== expectedEndMin) {
             return res.status(400).json({ message: 'Waktu selesai slot tidak sesuai' });
         }
