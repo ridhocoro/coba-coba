@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Container, Row, Col } from 'react-bootstrap';
 import {
     FaMapMarkerAlt,
@@ -6,85 +6,10 @@ import {
     FaEnvelope,
     FaWhatsapp,
     FaInstagram,
-    FaYoutube,
-    FaClock
+    FaYoutube
 } from 'react-icons/fa';
 
 const Footer = () => {
-    const [currentStatus, setCurrentStatus] = useState({
-        isOpen: false,
-        currentDay: '',
-        currentTime: '',
-        statusText: '',
-        statusColor: ''
-    });
-
-    useEffect(() => {
-        const checkOperationalStatus = () => {
-            const now = new Date();
-            const day = now.getDay(); // 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
-            const hours = now.getHours();
-            const minutes = now.getMinutes();
-            const currentTimeFormatted = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-            
-            const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-            const currentDayName = days[day];
-            
-            let isOpen = false;
-            let statusText = '';
-            let statusColor = '';
-            
-            // Cek hari dan jam operasional
-            if (day >= 1 && day <= 5) { // Senin - Jumat
-                if (hours >= 8 && hours < 20) {
-                    isOpen = true;
-                    statusText = '🟢 Buka Sekarang';
-                    statusColor = '#28a745';
-                } else if (hours === 20 && minutes === 0) {
-                    isOpen = false;
-                    statusText = '🔴 Tutup';
-                    statusColor = '#dc3545';
-                } else {
-                    isOpen = false;
-                    statusText = '🔴 Tutup';
-                    statusColor = '#dc3545';
-                }
-            } else if (day === 6) { // Sabtu
-                if (hours >= 8 && hours < 18) {
-                    isOpen = true;
-                    statusText = '🟢 Buka Sekarang';
-                    statusColor = '#28a745';
-                } else if (hours === 18 && minutes === 0) {
-                    isOpen = false;
-                    statusText = '🔴 Tutup';
-                    statusColor = '#dc3545';
-                } else {
-                    isOpen = false;
-                    statusText = '🔴 Tutup';
-                    statusColor = '#dc3545';
-                }
-            } else { // Minggu
-                isOpen = false;
-                statusText = '🔴 Tutup';
-                statusColor = '#dc3545';
-            }
-            
-            setCurrentStatus({
-                isOpen,
-                currentDay: currentDayName,
-                currentTime: currentTimeFormatted,
-                statusText,
-                statusColor
-            });
-        };
-        
-        // Cek status setiap menit
-        checkOperationalStatus();
-        const interval = setInterval(checkOperationalStatus, 60000);
-        
-        return () => clearInterval(interval);
-    }, []);
-
     return (
         <footer className="bg-dark text-light pt-5 pb-5">
             <Container>
@@ -149,6 +74,8 @@ const Footer = () => {
                                 </a>
                             </div>
                         </div>
+                        
+                       
                         
                         {/* Google Maps Link */}
                         <div className="d-flex mt-4">
@@ -237,82 +164,13 @@ const Footer = () => {
                         </div>
                     </Col>
 
-                    {/* JAM OPERASIONAL DENGAN REAL-TIME STATUS */}
+                    {/* JAM OPERASIONAL (RINGKASAN) */}
                     <Col lg={3} md={12} className="mb-4">
                         <h5 className="text-white mb-4 fw-bold border-bottom border-primary pb-2">
                             Jam Pelayanan
                         </h5>
                         
-                        {/* Real-Time Status Badge */}
-                        <div className="mb-4">
-                            <div 
-                                className="p-3 rounded-4 text-center position-relative overflow-hidden"
-                                style={{
-                                    background: `linear-gradient(135deg, ${currentStatus.statusColor}20, ${currentStatus.statusColor}40)`,
-                                    border: `2px solid ${currentStatus.statusColor}`,
-                                    boxShadow: `0 0 20px ${currentStatus.statusColor}30`
-                                }}
-                            >
-                                {/* Pulse Animation untuk status buka */}
-                                {currentStatus.isOpen && (
-                                    <div 
-                                        className="position-absolute"
-                                        style={{
-                                            top: '10px',
-                                            right: '10px',
-                                            width: '12px',
-                                            height: '12px',
-                                            backgroundColor: currentStatus.statusColor,
-                                            borderRadius: '50%',
-                                            animation: 'pulse 2s infinite'
-                                        }}
-                                    />
-                                )}
-                                
-                                <div className="mb-2">
-                                    <FaClock 
-                                        size={32} 
-                                        style={{ color: currentStatus.statusColor }}
-                                    />
-                                </div>
-                                
-                                <div 
-                                    className="fw-bold mb-1"
-                                    style={{ 
-                                        fontSize: '1.1rem',
-                                        color: currentStatus.statusColor 
-                                    }}
-                                >
-                                    {currentStatus.statusText}
-                                </div>
-                                
-                                <div className="text-white-50 small mb-2">
-                                    {currentStatus.currentDay}, {currentStatus.currentTime} WIB
-                                </div>
-                                
-                                <div className="mt-3 pt-3 border-top" style={{ borderColor: `${currentStatus.statusColor}40 !important` }}>
-                                    <div className="d-flex justify-content-between align-items-center">
-                                        <span className="text-white-50 small">Status</span>
-                                        <span 
-                                            className="badge px-3 py-2"
-                                            style={{
-                                                backgroundColor: currentStatus.isOpen ? '#28a745' : '#dc3545',
-                                                fontSize: '0.8rem'
-                                            }}
-                                        >
-                                            {currentStatus.isOpen ? 'BUKA' : 'TUTUP'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        {/* Jam Operasional Detail */}
                         <div className="bg-secondary bg-opacity-10 p-4 rounded-4">
-                            <h6 className="text-white mb-3 small fw-semibold text-uppercase">
-                                📋 Jam Operasional
-                            </h6>
-                            
                             <div className="mb-3">
                                 <div className="d-flex justify-content-between align-items-center mb-2">
                                     <span className="text-white">Senin - Jumat</span>
@@ -333,10 +191,72 @@ const Footer = () => {
                                 </div>
                             </div>
                             
-                            <div className="mt-4 p-3 bg-dark bg-opacity-25 rounded-3">
-                                <small className="text-white-50 d-block text-center">
-                                    🕒 Hari Minggu & Libur Nasional: Tutup
-                                </small>
+                            {/* MODIFIKASI: Info Tutup lebih terang dan eye-catching */}
+                            <div 
+                                className="mt-4 p-4 rounded-3 text-center"
+                                style={{
+                                    background: 'linear-gradient(135deg, #ff6b6b15, #ff6b6b25)',
+                                    border: '2px solid #ff6b6b',
+                                    boxShadow: '0 0 20px rgba(255, 107, 107, 0.2)',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}
+                            >
+                                {/* Background decorative element */}
+                                <div 
+                                    style={{
+                                        position: 'absolute',
+                                        top: '-20px',
+                                        right: '-20px',
+                                        width: '80px',
+                                        height: '80px',
+                                        borderRadius: '50%',
+                                        background: 'rgba(255, 107, 107, 0.1)',
+                                        zIndex: 0
+                                    }}
+                                />
+                                
+                                {/* Icon */}
+                                <div className="mb-2" style={{ position: 'relative', zIndex: 1 }}>
+                                    <span style={{ fontSize: '2rem' }}>🔴</span>
+                                </div>
+                                
+                                {/* Text */}
+                                <div style={{ position: 'relative', zIndex: 1 }}>
+                                    <div 
+                                        className="fw-bold mb-1"
+                                        style={{
+                                            color: '#ff6b6b',
+                                            fontSize: '1rem',
+                                            letterSpacing: '0.5px'
+                                        }}
+                                    >
+                                        TUTUP
+                                    </div>
+                                    <small 
+                                        style={{
+                                            color: '#ffffff',
+                                            opacity: 0.9,
+                                            fontSize: '0.85rem',
+                                            fontWeight: '500'
+                                        }}
+                                    >
+                                        Hari Minggu & Libur Nasional
+                                    </small>
+                                </div>
+                                
+                                {/* Bottom indicator line */}
+                                <div 
+                                    className="mt-3 mx-auto"
+                                    style={{
+                                        width: '40px',
+                                        height: '3px',
+                                        background: '#ff6b6b',
+                                        borderRadius: '2px',
+                                        position: 'relative',
+                                        zIndex: 1
+                                    }}
+                                />
                             </div>
                         </div>
                         
@@ -377,18 +297,6 @@ const Footer = () => {
                 }
                 .progress {
                     background-color: rgba(255,255,255,0.1);
-                }
-                
-                @keyframes pulse {
-                    0% {
-                        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
-                    }
-                    70% {
-                        box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
-                    }
-                    100% {
-                        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
-                    }
                 }
             `}</style>
         </footer>
