@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Container, Row, Col } from 'react-bootstrap';
 import {
     FaMapMarkerAlt,
@@ -6,10 +6,85 @@ import {
     FaEnvelope,
     FaWhatsapp,
     FaInstagram,
-    FaYoutube
+    FaYoutube,
+    FaClock
 } from 'react-icons/fa';
 
 const Footer = () => {
+    const [currentStatus, setCurrentStatus] = useState({
+        isOpen: false,
+        currentDay: '',
+        currentTime: '',
+        statusText: '',
+        statusColor: ''
+    });
+
+    useEffect(() => {
+        const checkOperationalStatus = () => {
+            const now = new Date();
+            const day = now.getDay(); // 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
+            const hours = now.getHours();
+            const minutes = now.getMinutes();
+            const currentTimeFormatted = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            
+            const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+            const currentDayName = days[day];
+            
+            let isOpen = false;
+            let statusText = '';
+            let statusColor = '';
+            
+            // Cek hari dan jam operasional
+            if (day >= 1 && day <= 5) { // Senin - Jumat
+                if (hours >= 8 && hours < 20) {
+                    isOpen = true;
+                    statusText = '🟢 Buka Sekarang';
+                    statusColor = '#28a745';
+                } else if (hours === 20 && minutes === 0) {
+                    isOpen = false;
+                    statusText = '🔴 Tutup';
+                    statusColor = '#dc3545';
+                } else {
+                    isOpen = false;
+                    statusText = '🔴 Tutup';
+                    statusColor = '#dc3545';
+                }
+            } else if (day === 6) { // Sabtu
+                if (hours >= 8 && hours < 18) {
+                    isOpen = true;
+                    statusText = '🟢 Buka Sekarang';
+                    statusColor = '#28a745';
+                } else if (hours === 18 && minutes === 0) {
+                    isOpen = false;
+                    statusText = '🔴 Tutup';
+                    statusColor = '#dc3545';
+                } else {
+                    isOpen = false;
+                    statusText = '🔴 Tutup';
+                    statusColor = '#dc3545';
+                }
+            } else { // Minggu
+                isOpen = false;
+                statusText = '🔴 Tutup';
+                statusColor = '#dc3545';
+            }
+            
+            setCurrentStatus({
+                isOpen,
+                currentDay: currentDayName,
+                currentTime: currentTimeFormatted,
+                statusText,
+                statusColor
+            });
+        };
+        
+        // Cek status setiap menit
+        checkOperationalStatus();
+        const interval = setInterval(checkOperationalStatus, 60000);
+        
+        return () => clearInterval(interval);
+    }, []);
+
     return (
         <footer className="bg-dark text-light pt-5 pb-5">
             <Container>
@@ -74,8 +149,6 @@ const Footer = () => {
                                 </a>
                             </div>
                         </div>
-                        
-                       
                         
                         {/* Google Maps Link */}
                         <div className="d-flex mt-4">
@@ -164,13 +237,82 @@ const Footer = () => {
                         </div>
                     </Col>
 
-                    {/* JAM OPERASIONAL (RINGKASAN) */}
+                    {/* JAM OPERASIONAL DENGAN REAL-TIME STATUS */}
                     <Col lg={3} md={12} className="mb-4">
                         <h5 className="text-white mb-4 fw-bold border-bottom border-primary pb-2">
                             Jam Pelayanan
                         </h5>
                         
+                        {/* Real-Time Status Badge */}
+                        <div className="mb-4">
+                            <div 
+                                className="p-3 rounded-4 text-center position-relative overflow-hidden"
+                                style={{
+                                    background: `linear-gradient(135deg, ${currentStatus.statusColor}20, ${currentStatus.statusColor}40)`,
+                                    border: `2px solid ${currentStatus.statusColor}`,
+                                    boxShadow: `0 0 20px ${currentStatus.statusColor}30`
+                                }}
+                            >
+                                {/* Pulse Animation untuk status buka */}
+                                {currentStatus.isOpen && (
+                                    <div 
+                                        className="position-absolute"
+                                        style={{
+                                            top: '10px',
+                                            right: '10px',
+                                            width: '12px',
+                                            height: '12px',
+                                            backgroundColor: currentStatus.statusColor,
+                                            borderRadius: '50%',
+                                            animation: 'pulse 2s infinite'
+                                        }}
+                                    />
+                                )}
+                                
+                                <div className="mb-2">
+                                    <FaClock 
+                                        size={32} 
+                                        style={{ color: currentStatus.statusColor }}
+                                    />
+                                </div>
+                                
+                                <div 
+                                    className="fw-bold mb-1"
+                                    style={{ 
+                                        fontSize: '1.1rem',
+                                        color: currentStatus.statusColor 
+                                    }}
+                                >
+                                    {currentStatus.statusText}
+                                </div>
+                                
+                                <div className="text-white-50 small mb-2">
+                                    {currentStatus.currentDay}, {currentStatus.currentTime} WIB
+                                </div>
+                                
+                                <div className="mt-3 pt-3 border-top" style={{ borderColor: `${currentStatus.statusColor}40 !important` }}>
+                                    <div className="d-flex justify-content-between align-items-center">
+                                        <span className="text-white-50 small">Status</span>
+                                        <span 
+                                            className="badge px-3 py-2"
+                                            style={{
+                                                backgroundColor: currentStatus.isOpen ? '#28a745' : '#dc3545',
+                                                fontSize: '0.8rem'
+                                            }}
+                                        >
+                                            {currentStatus.isOpen ? 'BUKA' : 'TUTUP'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Jam Operasional Detail */}
                         <div className="bg-secondary bg-opacity-10 p-4 rounded-4">
+                            <h6 className="text-white mb-3 small fw-semibold text-uppercase">
+                                📋 Jam Operasional
+                            </h6>
+                            
                             <div className="mb-3">
                                 <div className="d-flex justify-content-between align-items-center mb-2">
                                     <span className="text-white">Senin - Jumat</span>
@@ -191,7 +333,7 @@ const Footer = () => {
                                 </div>
                             </div>
                             
-                            <div className="mt-4 p-3 bg-primary bg-opacity-25 rounded-3">
+                            <div className="mt-4 p-3 bg-dark bg-opacity-25 rounded-3">
                                 <small className="text-white-50 d-block text-center">
                                     🕒 Hari Minggu & Libur Nasional: Tutup
                                 </small>
@@ -222,7 +364,8 @@ const Footer = () => {
             <style jsx="true">{`
                 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
                 * { font-family: 'Poppins', sans-serif !important; }
-                                .hover-link {
+                
+                .hover-link {
                     transition: color 0.3s ease;
                 }
                 .hover-link:hover {
@@ -234,6 +377,18 @@ const Footer = () => {
                 }
                 .progress {
                     background-color: rgba(255,255,255,0.1);
+                }
+                
+                @keyframes pulse {
+                    0% {
+                        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+                    }
+                    70% {
+                        box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+                    }
+                    100% {
+                        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+                    }
                 }
             `}</style>
         </footer>

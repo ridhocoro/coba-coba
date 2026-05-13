@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { toast } from 'react-hot-toast';
 import {
-    FaSearch, FaShoppingCart, FaPlus, FaMinus, FaTrash,
+    FaPills, FaSearch, FaShoppingCart, FaPlus, FaMinus, FaTrash,
     FaBox, FaTruck, FaClock, FaCheckCircle,
     FaHistory, FaArrowRight, FaExclamationTriangle, FaChevronLeft,
     FaChevronRight, FaMapMarkerAlt, FaExternalLinkAlt,
@@ -696,7 +696,7 @@ const Pharmacy = () => {
                 {/* Styled Tabs */}
                 <div className="ph-tab-container">
                     <button className={`ph-tab ${activeTab==='shop'?'active':''}`} onClick={()=>setActiveTab('shop')}>
-                        <FaSearch size={14}/> Belanja Obat
+                        <FaPills size={14}/> Belanja Obat
                     </button>
                     {user && (
                         <button className={`ph-tab ${activeTab==='orders'?'active':''}`} onClick={()=> setActiveTab('orders')}>

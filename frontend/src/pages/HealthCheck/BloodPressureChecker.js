@@ -26,28 +26,31 @@ const BloodPressureChecker = () => {
 
     const getBPColor = (category) => {
         switch(category) {
+            case 'Hypotension':                     return '#0284c7';
             case 'Normal':                          return '#16a34a';
             case 'Elevated':                        return '#d97706';
             case 'High Blood Pressure (Stage 1)':   return '#ea580c';
             case 'High Blood Pressure (Stage 2)':   return '#dc2626';
-            case 'Hypertensive Crisis':             return '#991b1b';
+            case 'Hypertensive Crisis':             return '#7f1d1d';
             default:                                return '#6b7280';
         }
     };
 
     const getBPBg = (category) => {
         switch(category) {
+            case 'Hypotension':                     return '#e0f2fe';
             case 'Normal':                          return '#dcfce7';
             case 'Elevated':                        return '#fef9c3';
             case 'High Blood Pressure (Stage 1)':   return '#ffedd5';
             case 'High Blood Pressure (Stage 2)':   return '#fee2e2';
-            case 'Hypertensive Crisis':             return '#fee2e2';
+            case 'Hypertensive Crisis':             return '#fca5a5';
             default:                                return '#f3f4f6';
         }
     };
 
     const getBPIcon = (category) => {
         switch(category) {
+            case 'Hypotension':                     return '💧';
             case 'Normal':                          return '✅';
             case 'Elevated':                        return '⚠️';
             case 'High Blood Pressure (Stage 1)':   return '⚠️';
@@ -58,21 +61,23 @@ const BloodPressureChecker = () => {
     };
 
     const getBPProgress = (systolic) => {
+        if (systolic < 90)  return 5;
         if (systolic < 120) return 20;
         if (systolic <= 129) return 40;
         if (systolic <= 139) return 62;
-        if (systolic <= 179) return 82;
+        if (systolic <= 180) return 82;
         return 100;
     };
 
     const resetForm = () => { setSystolic(''); setDiastolic(''); setResult(null); };
 
     const BP_TABLE = [
+        { sys:'< 90',    dia:'< 60',  label:'Hipotensi',          desc:'Terlalu rendah',     color:'#0284c7', bg:'#e0f2fe', pct:5   },
         { sys:'< 120',   dia:'< 80',  label:'Normal',             desc:'Ideal',              color:'#16a34a', bg:'#dcfce7', pct:20  },
         { sys:'120–129', dia:'< 80',  label:'Elevated',           desc:'Waspada',            color:'#d97706', bg:'#fef9c3', pct:40  },
         { sys:'130–139', dia:'80–89', label:'Hipertensi Stage 1', desc:'Perlu perhatian',    color:'#ea580c', bg:'#ffedd5', pct:62  },
-        { sys:'≥ 140',   dia:'≥ 90',  label:'Hipertensi Stage 2', desc:'Berbahaya',          color:'#dc2626', bg:'#fee2e2', pct:82  },
-        { sys:'> 180',   dia:'> 120', label:'Krisis Hipertensi',  desc:'DARURAT!',           color:'#991b1b', bg:'#fee2e2', pct:100 },
+        { sys:'140–180', dia:'90–120',label:'Hipertensi Stage 2', desc:'Berbahaya',          color:'#dc2626', bg:'#fee2e2', pct:82  },
+        { sys:'> 180',   dia:'> 120', label:'Krisis Hipertensi',  desc:'🚨 DARURAT!',        color:'#7f1d1d', bg:'#fca5a5', pct:100 },
     ];
 
     const TIPS = ['🥗 Konsumsi makanan sehat, rendah garam','🏃‍♂️ Olahraga teratur minimal 30 menit/hari','⚖️ Jaga berat badan ideal','🚭 Hindari rokok dan alkohol','😴 Kelola stres dan cukup istirahat'];

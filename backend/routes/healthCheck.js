@@ -125,25 +125,40 @@ router.post('/check-blood-pressure', (req, res) => {
         let advice = '';
         let color = '';
 
-        if (systolic < 120 && diastolic < 80) {
-            category = 'Normal';
-            advice = 'Tekanan darah Anda normal. Pertahankan gaya hidup sehat.';
-            color = 'success';
-        } else if (systolic >= 120 && systolic <= 129 && diastolic < 80) {
-            category = 'Elevated';
-            advice = 'Tekanan darah Anda sedikit meningkat. Perhatikan pola makan dan olahraga.';
-            color = 'warning';
-        } else if ((systolic >= 130 && systolic <= 139) || (diastolic >= 80 && diastolic <= 89)) {
-            category = 'High Blood Pressure (Stage 1)';
-            advice = 'Anda memasuki tahap 1 hipertensi. Konsultasikan dengan dokter.';
-            color = 'warning';
-        } else if (systolic >= 140 || diastolic >= 90) {
-            category = 'High Blood Pressure (Stage 2)';
-            advice = 'Anda memasuki tahap 2 hipertensi. Segera konsultasi dengan dokter.';
-            color = 'danger';
-        } else if (systolic > 180 || diastolic > 120) {
+        // ── Hipotensi (periksa DULUAN sebelum normal) ────────────────────────────
+        if (systolic < 90 || diastolic < 60) {
+            category = 'Hypotension';
+            advice = 'Tekanan darah Anda terlalu rendah (hipotensi). Perbanyak minum air putih, hindari berdiri terlalu cepat, dan konsultasikan dengan dokter jika disertai pusing atau pingsan.';
+            color = 'info';
+        }
+        // ── Krisis Hipertensi (periksa SEBELUM Stage 2 agar tidak tertimpa) ────
+        else if (systolic > 180 || diastolic > 120) {
             category = 'Hypertensive Crisis';
-            advice = 'DARURAT! Segera cari pertolongan medis.';
+            advice = 'DARURAT! Tekanan darah Anda berada di level krisis hipertensi. Segera cari pertolongan medis atau hubungi 119 sekarang.';
+            color = 'crisis';
+        }
+        // ── Normal ────────────────────────────────────────────────────────────
+        else if (systolic < 120 && diastolic < 80) {
+            category = 'Normal';
+            advice = 'Tekanan darah Anda normal. Pertahankan gaya hidup sehat dengan pola makan bergizi dan olahraga teratur.';
+            color = 'success';
+        }
+        // ── Elevated ──────────────────────────────────────────────────────────
+        else if (systolic >= 120 && systolic <= 129 && diastolic < 80) {
+            category = 'Elevated';
+            advice = 'Tekanan darah Anda sedikit meningkat. Perhatikan pola makan, kurangi garam, dan perbanyak olahraga.';
+            color = 'warning';
+        }
+        // ── Hipertensi Stage 1 ────────────────────────────────────────────────
+        else if ((systolic >= 130 && systolic <= 139) || (diastolic >= 80 && diastolic <= 89)) {
+            category = 'High Blood Pressure (Stage 1)';
+            advice = 'Anda memasuki tahap 1 hipertensi. Ubah gaya hidup dan konsultasikan dengan dokter untuk pemantauan rutin.';
+            color = 'warning';
+        }
+        // ── Hipertensi Stage 2 ────────────────────────────────────────────────
+        else if (systolic >= 140 || diastolic >= 90) {
+            category = 'High Blood Pressure (Stage 2)';
+            advice = 'Anda memasuki tahap 2 hipertensi. Segera konsultasi dengan dokter untuk penanganan dan kemungkinan pemberian obat.';
             color = 'danger';
         }
 

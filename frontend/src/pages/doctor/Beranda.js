@@ -207,7 +207,7 @@ const SectionBeranda = () => {
     const fetchDiseaseTrend = useCallback(async () => {
         setDiseaseLoading(true);
         try {
-            const res = await api.get(`/api/doctors/my/disease-trend?period=${diseasePeriod}`);
+            const res = await api.get(`/api/admin/analytics/disease-trend?period=${diseasePeriod}`);
             setDiseaseData(res.data?.data || null);
         } catch (e) {
             console.error('[Beranda] disease-trend error:', e);
@@ -376,7 +376,7 @@ const SectionBeranda = () => {
     const METRIC_CARDS = [
         { 
             label: 'Janji Temu Hari Ini', 
-            val: stats?.patientsTodayCount || stats?.apptToday || 0, 
+            val: stats?.apptToday || 0, 
             icon: '👥', 
             color: '#7c3aed', 
             bg: '#f5f3ff',
@@ -596,45 +596,174 @@ const SectionBeranda = () => {
                                     }],
                                 };
 
+                                // ── Bar chart: total kasus per hari ──────────────────────────────
+                                // Kumpulkan semua tanggal unik, sort ascending
+                                const allDates = [...new Set(
+                                    Object.values(diseaseData).flat().map(r => r.tanggal)
+                                )].sort();
+
+                                // Ambil top 5 kategori untuk bar chart (agar tidak terlalu ramai)
+                                const top5 = topKategori.slice(0, 5);
+
+                                const barChartData = {
+                                    labels: allDates.map(d => {
+                                        const dt = new Date(d + 'T00:00:00+07:00');
+                                        return dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+                                    }),
+                                    datasets: top5.map(({ k }) => ({
+                                        label: k,
+                                        data: allDates.map(tgl => {
+                                            const entry = (diseaseData[k] || []).find(r => r.tanggal === tgl);
+                                            return entry ? entry.jumlah : 0;
+                                        }),
+                                        backgroundColor: (CATEGORY_COLORS[k] || '#94a3b8') + 'cc',
+                                        borderColor: CATEGORY_COLORS[k] || '#94a3b8',
+                                        borderWidth: 1.5,
+                                        borderRadius: 4,
+                                    })),
+                                };
+
+                                // ── Bar chart horizontal: total per kategori (semua kategori) ──
+                                const hBarChartData = {
+                                    labels: topKategori.map(x => x.k),
+                                    datasets: [{
+                                        label: 'Total Kasus',
+                                        data: topKategori.map(x => x.total),
+                                        backgroundColor: topKategori.map(x => (CATEGORY_COLORS[x.k] || '#94a3b8') + 'cc'),
+                                        borderColor: topKategori.map(x => CATEGORY_COLORS[x.k] || '#94a3b8'),
+                                        borderWidth: 1.5,
+                                        borderRadius: 4,
+                                    }],
+                                };
+
                                 return (
-                                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                                        {/* Donut chart */}
-                                        <div style={{ width: 180, height: 180, flexShrink: 0 }}>
-                                            <Doughnut
-                                                data={donutChartData}
-                                                options={{
-                                                    responsive: true,
-                                                    maintainAspectRatio: false,
-                                                    plugins: {
-                                                        legend: { display: false },
-                                                        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} kasus` } },
-                                                    },
-                                                }}
-                                            />
+                                    <div>
+                                        {/* ── Baris 1: Donut + Legend ── */}
+                                        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 28 }}>
+                                            {/* Donut chart */}
+                                            <div style={{ width: 180, height: 180, flexShrink: 0 }}>
+                                                <Doughnut
+                                                    data={donutChartData}
+                                                    options={{
+                                                        responsive: true,
+                                                        maintainAspectRatio: false,
+                                                        plugins: {
+                                                            legend: { display: false },
+                                                            tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} kasus` } },
+                                                        },
+                                                    }}
+                                                />
+                                            </div>
+
+                                            {/* Top kategori list */}
+                                            <div style={{ flex: 1, minWidth: 160 }}>
+                                                <div style={{ fontSize: 11, fontWeight: 700, color: colors.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                                    Distribusi Keluhan
+                                                </div>
+                                                {topKategori.slice(0, 6).map(({ k, total }, i) => (
+                                                    <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                        <span style={{ fontSize: 11, color: colors.subtle, width: 14 }}>{i + 1}.</span>
+                                                        <span style={{
+                                                            display: 'inline-block', width: 10, height: 10,
+                                                            borderRadius: '50%', background: CATEGORY_COLORS[k] || '#94a3b8', flexShrink: 0,
+                                                        }} />
+                                                        <span style={{ flex: 1, fontSize: 13, color: colors.text }}>{k}</span>
+                                                        <span style={{
+                                                            fontSize: 12, fontWeight: 700,
+                                                            background: '#f1f5f9', borderRadius: 10,
+                                                            padding: '2px 8px', color: colors.muted,
+                                                        }}>
+                                                            {total} kasus
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
 
-                                        {/* Top kategori list */}
-                                        <div style={{ flex: 1, minWidth: 160 }}>
-                                            <div style={{ fontSize: 11, fontWeight: 700, color: colors.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                                Distribusi Keluhan
-                                            </div>
-                                            {topKategori.slice(0, 6).map(({ k, total }, i) => (
-                                                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                    <span style={{ fontSize: 11, color: colors.subtle, width: 14 }}>{i + 1}.</span>
-                                                    <span style={{
-                                                        display: 'inline-block', width: 10, height: 10,
-                                                        borderRadius: '50%', background: CATEGORY_COLORS[k] || '#94a3b8', flexShrink: 0,
-                                                    }} />
-                                                    <span style={{ flex: 1, fontSize: 13, color: colors.text }}>{k}</span>
-                                                    <span style={{
-                                                        fontSize: 12, fontWeight: 700,
-                                                        background: '#f1f5f9', borderRadius: 10,
-                                                        padding: '2px 8px', color: colors.muted,
-                                                    }}>
-                                                        {total} kasus
-                                                    </span>
+                                        {/* ── Divider ── */}
+                                        <div style={{ borderTop: `1px solid ${colors.border}`, marginBottom: 24 }} />
+
+                                        {/* ── Baris 2: Dua bar chart side by side ── */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+
+                                            {/* Bar chart 1: Tren harian per kategori (stacked) */}
+                                            <div>
+                                                <div style={{ fontSize: 12, fontWeight: 700, color: colors.muted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                                    📈 Tren Harian (Top 5 Kategori)
                                                 </div>
-                                            ))}
+                                                <div style={{ height: 200 }}>
+                                                    <Bar
+                                                        data={barChartData}
+                                                        options={{
+                                                            responsive: true,
+                                                            maintainAspectRatio: false,
+                                                            interaction: { mode: 'index', intersect: false },
+                                                            plugins: {
+                                                                legend: {
+                                                                    display: true,
+                                                                    position: 'bottom',
+                                                                    labels: { boxWidth: 10, font: { size: 10 }, padding: 8 },
+                                                                },
+                                                                tooltip: {
+                                                                    callbacks: {
+                                                                        label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} kasus`,
+                                                                    },
+                                                                },
+                                                            },
+                                                            scales: {
+                                                                x: {
+                                                                    stacked: true,
+                                                                    grid: { display: false },
+                                                                    ticks: { font: { size: 10 }, maxRotation: 45 },
+                                                                },
+                                                                y: {
+                                                                    stacked: true,
+                                                                    beginAtZero: true,
+                                                                    ticks: { font: { size: 10 }, stepSize: 1 },
+                                                                    grid: { color: '#f1f5f9' },
+                                                                },
+                                                            },
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Bar chart 2: Horizontal total per kategori */}
+                                            <div>
+                                                <div style={{ fontSize: 12, fontWeight: 700, color: colors.muted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                                    📊 Total per Kategori
+                                                </div>
+                                                <div style={{ height: 200 }}>
+                                                    <Bar
+                                                        data={hBarChartData}
+                                                        options={{
+                                                            indexAxis: 'y',
+                                                            responsive: true,
+                                                            maintainAspectRatio: false,
+                                                            plugins: {
+                                                                legend: { display: false },
+                                                                tooltip: {
+                                                                    callbacks: {
+                                                                        label: ctx => ` ${ctx.parsed.x} kasus`,
+                                                                    },
+                                                                },
+                                                            },
+                                                            scales: {
+                                                                x: {
+                                                                    beginAtZero: true,
+                                                                    ticks: { font: { size: 10 }, stepSize: 1 },
+                                                                    grid: { color: '#f1f5f9' },
+                                                                },
+                                                                y: {
+                                                                    grid: { display: false },
+                                                                    ticks: { font: { size: 10 } },
+                                                                },
+                                                            },
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+
                                         </div>
                                     </div>
                                 );
