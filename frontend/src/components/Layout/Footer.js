@@ -191,72 +191,10 @@ const Footer = () => {
                                 </div>
                             </div>
                             
-                            {/* MODIFIKASI: Info Tutup lebih terang dan eye-catching */}
-                            <div 
-                                className="mt-4 p-4 rounded-3 text-center"
-                                style={{
-                                    background: 'linear-gradient(135deg, #ff6b6b15, #ff6b6b25)',
-                                    border: '2px solid #ff6b6b',
-                                    boxShadow: '0 0 20px rgba(255, 107, 107, 0.2)',
-                                    position: 'relative',
-                                    overflow: 'hidden'
-                                }}
-                            >
-                                {/* Background decorative element */}
-                                <div 
-                                    style={{
-                                        position: 'absolute',
-                                        top: '-20px',
-                                        right: '-20px',
-                                        width: '80px',
-                                        height: '80px',
-                                        borderRadius: '50%',
-                                        background: 'rgba(255, 107, 107, 0.1)',
-                                        zIndex: 0
-                                    }}
-                                />
-                                
-                                {/* Icon */}
-                                <div className="mb-2" style={{ position: 'relative', zIndex: 1 }}>
-                                    <span style={{ fontSize: '2rem' }}>🔴</span>
-                                </div>
-                                
-                                {/* Text */}
-                                <div style={{ position: 'relative', zIndex: 1 }}>
-                                    <div 
-                                        className="fw-bold mb-1"
-                                        style={{
-                                            color: '#ff6b6b',
-                                            fontSize: '1rem',
-                                            letterSpacing: '0.5px'
-                                        }}
-                                    >
-                                        TUTUP
-                                    </div>
-                                    <small 
-                                        style={{
-                                            color: '#ffffff',
-                                            opacity: 0.9,
-                                            fontSize: '0.85rem',
-                                            fontWeight: '500'
-                                        }}
-                                    >
-                                        Hari Minggu & Libur Nasional
-                                    </small>
-                                </div>
-                                
-                                {/* Bottom indicator line */}
-                                <div 
-                                    className="mt-3 mx-auto"
-                                    style={{
-                                        width: '40px',
-                                        height: '3px',
-                                        background: '#ff6b6b',
-                                        borderRadius: '2px',
-                                        position: 'relative',
-                                        zIndex: 1
-                                    }}
-                                />
+                            <div className="mt-4 p-3 bg-primary bg-opacity-25 rounded-3">
+                                <small className="text-white fw-semibold d-block text-center">
+                                    🕒 Hari Minggu & Libur Nasional: Tutup
+                                </small>
                             </div>
                         </div>
                         
@@ -284,8 +222,7 @@ const Footer = () => {
             <style jsx="true">{`
                 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
                 * { font-family: 'Poppins', sans-serif !important; }
-                
-                .hover-link {
+                                .hover-link {
                     transition: color 0.3s ease;
                 }
                 .hover-link:hover {
