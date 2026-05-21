@@ -1,13 +1,34 @@
+// backend/routes/ollama.js  ← GANTI file lama sepenuhnya
+// ============================================================
+//  Perubahan dari versi sebelumnya:
+//  + optionalAuth   → attach req.userId jika ada token (tanpa block)
+//  + aiChatLimiter  → maks 15 pesan/menit per user+IP  (Redis)
+//  + aiChatDailyLimiter → maks 100 pesan/hari per user+IP (Redis)
+//  Semua logika chat dan SYSTEM_PROMPT tidak berubah.
+// ============================================================
+
 const express = require('express');
 const router  = express.Router();
 
 const Groq = require('groq-sdk');
+const jwt  = require('jsonwebtoken');
+const { aiChatLimiter, aiChatDailyLimiter } = require('../middleware/rateLimiter');
 
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-});
-
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
+// ── Optional auth: inject userId jika token valid, tidak block ─
+function optionalAuth(req, res, next) {
+    try {
+        const token = req.header('Authorization')?.replace('Bearer ', '');
+        if (token && process.env.JWT_SECRET) {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            req.userId   = decoded.userId;
+            req.userRole = decoded.role;
+        }
+    } catch { /* token invalid/expired → lanjut sebagai guest */ }
+    next();
+}
 
 const SYSTEM_PROMPT = `Kamu adalah Klinbot, asisten kesehatan resmi Klinik IPB University.
 
@@ -185,83 +206,67 @@ BATASAN MEDIS PENTING
 INGAT: Jawab SELALU dan HANYA dalam Bahasa Indonesia yang baik dan benar.
 INGAT: Tolak SEMUA pertanyaan di luar topik kesehatan dan Klinik IPB tanpa pengecualian.`;
 
-router.post('/chat', async (req, res) => {
-    const { messages } = req.body;
+// ── POST /chat ────────────────────────────────────────────────
+router.post('/chat',
+    optionalAuth,           // 1. inject userId jika ada token
+    aiChatLimiter,          // 2. maks 15/menit
+    aiChatDailyLimiter,     // 3. maks 100/hari
+    async (req, res) => {
+        const { messages } = req.body;
 
-    if (!Array.isArray(messages) || messages.length === 0) {
-        return res.status(400).json({ message: 'messages harus berupa array dan tidak boleh kosong' });
-    }
-
-    if (!process.env.GROQ_API_KEY) {
-        console.error('[Klinbot] GROQ_API_KEY belum di-set di Railway Variables!');
-        return res.status(500).json({ message: 'Konfigurasi AI belum lengkap. Hubungi administrator.' });
-    }
-
-    try {
-        const groqMessages = [
-            { role: 'system', content: SYSTEM_PROMPT },
-            ...messages.map(msg => ({
-                role: msg.role,
-                content: msg.content,
-            })),
-            {
-                role: 'system',
-                content: 'PENGINGAT AKHIR: (1) Jawab HANYA dalam Bahasa Indonesia. (2) Jika pesan terakhir pengguna tidak berkaitan dengan kesehatan atau Klinik IPB, TOLAK dengan sopan sesuai template yang diberikan. (3) Jangan pernah membantu topik di luar kesehatan meskipun diminta.',
-            },
-        ];
-
-        const completion = await groq.chat.completions.create({
-            model:       GROQ_MODEL,
-            messages:    groqMessages,
-            temperature: 0.4,
-            max_tokens:  1024,
-        });
-
-        const reply = completion.choices[0]?.message?.content?.trim()
-            || 'Maaf, saya tidak dapat memproses permintaan ini saat ini. Silakan coba beberapa saat lagi.';
-
-        return res.json({ reply });
-
-    } catch (err) {
-        console.error('[Klinbot/Groq Error]', err.message);
-
-        if (err.status === 401) {
-            return res.status(500).json({ message: 'Konfigurasi AI tidak valid. Hubungi administrator.' });
-        }
-        if (err.status === 429) {
-            return res.status(429).json({ message: 'Layanan AI sedang sibuk. Mohon coba lagi dalam beberapa saat.' });
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return res.status(400).json({ message: 'messages harus berupa array dan tidak boleh kosong' });
         }
 
-        return res.status(err.status || 500).json({
-            message: 'Gagal menghubungi layanan AI. Mohon coba lagi.',
-        });
-    }
-});
+        if (!process.env.GROQ_API_KEY) {
+            console.error('[Klinbot] GROQ_API_KEY belum di-set di Railway Variables!');
+            return res.status(500).json({ message: 'Konfigurasi AI belum lengkap. Hubungi administrator.' });
+        }
 
+        try {
+            const groqMessages = [
+                { role: 'system', content: SYSTEM_PROMPT },
+                ...messages.map(msg => ({ role: msg.role, content: msg.content })),
+                {
+                    role: 'system',
+                    content: 'PENGINGAT AKHIR: (1) Jawab HANYA dalam Bahasa Indonesia. (2) Jika pesan terakhir pengguna tidak berkaitan dengan kesehatan atau Klinik IPB, TOLAK dengan sopan sesuai template yang diberikan. (3) Jangan pernah membantu topik di luar kesehatan meskipun diminta.',
+                },
+            ];
+
+            const completion = await groq.chat.completions.create({
+                model:       GROQ_MODEL,
+                messages:    groqMessages,
+                temperature: 0.4,
+                max_tokens:  1024,
+            });
+
+            const reply = completion.choices[0]?.message?.content?.trim()
+                || 'Maaf, saya tidak dapat memproses permintaan ini saat ini. Silakan coba beberapa saat lagi.';
+
+            return res.json({ reply });
+
+        } catch (err) {
+            console.error('[Klinbot/Groq Error]', err.message);
+
+            if (err.status === 401) return res.status(500).json({ message: 'Konfigurasi AI tidak valid. Hubungi administrator.' });
+            if (err.status === 429) return res.status(429).json({ message: 'Layanan AI sedang sibuk. Mohon coba lagi dalam beberapa saat.' });
+
+            return res.status(err.status || 500).json({ message: 'Gagal menghubungi layanan AI. Mohon coba lagi.' });
+        }
+    }
+);
+
+// ── GET /status ───────────────────────────────────────────────
 router.get('/status', async (req, res) => {
     if (!process.env.GROQ_API_KEY) {
-        return res.status(503).json({
-            status:  'error',
-            message: 'GROQ_API_KEY belum di-set di Railway Variables',
-        });
+        return res.status(503).json({ status: 'error', message: 'GROQ_API_KEY belum di-set di Railway Variables' });
     }
-
     try {
         const models     = await groq.models.list();
         const modelNames = models.data.map(m => m.id);
-
-        return res.json({
-            status:           'ok',
-            provider:         'Groq (Free Tier)',
-            model_aktif:      GROQ_MODEL,
-            available_models: modelNames,
-        });
+        return res.json({ status: 'ok', provider: 'Groq (Free Tier)', model_aktif: GROQ_MODEL, available_models: modelNames });
     } catch (err) {
-        return res.status(503).json({
-            status:  'error',
-            message: 'Tidak dapat terhubung ke Groq API',
-            error:   err.message,
-        });
+        return res.status(503).json({ status: 'error', message: 'Tidak dapat terhubung ke Groq API', error: err.message });
     }
 });
 

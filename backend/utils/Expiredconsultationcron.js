@@ -1,32 +1,26 @@
 /**
- * Expiredconsultationcron.js
+ * Expiredconsultationcron.js  ← FIX: Cast to ObjectId error
  *
- * Satu-satunya cron untuk konsultasi. Dijalankan setiap menit.
- * DoctorNoShowCron.js sudah dihapus — semua logikanya ada di sini.
+ * ROOT CAUSE:
+ *   Consultation.doctorId disimpan sebagai String UUID MySQL
+ *   (contoh: "bd87e961-747d-40b0-ac6d-db96f9f6caea")
  *
- * 1. EXPIRED PAYMENT
- *    pending_payment + paymentDeadline lewat → expired
+ *   Kode lama:
+ *     const doctor = await Doctor.findById(updated.doctorId)  ← MongoDB model
+ *     MongoDB mencoba cast UUID string → ObjectId → ERROR
  *
- * 2. AUTO IN_PROGRESS
- *    confirmed + scheduledAt tiba + scheduledEnd belum lewat → in_progress
- *    (atomic: findOneAndUpdate agar tidak double-process)
+ *   FIX:
+ *     Ganti Doctor (MongoDB) → DoctorMySQL (Sequelize) dengan findOne({ where: { id } })
+ *     DoctorMySQL.userId adalah UUID MySQL dari tabel users → bisa langsung
+ *     dipakai untuk createNotification dan socket emit.
  *
- * 3. DOCTOR NO SHOW
- *    confirmed + scheduledEnd + 15 menit grace lewat (dokter tidak pernah start)
- *    → doctor_no_show → refund_requested
- *    (atomic: dua findOneAndUpdate berurutan)
- *
- * 4. AUTO CLOSE (user no_show / completed)
- *    in_progress + scheduledEnd + 15 menit grace lewat (dokter tidak klik End)
- *    → no_show (user tidak pernah kirim pesan) atau completed
- *    (atomic: findOneAndUpdate)
- *
- * Semua timestamp dibandingkan UTC — WIB hanya untuk logging.
+ * Semua logika lain (expired payment, auto in_progress, doctor no show,
+ * auto close) tidak berubah sama sekali.
  */
 
 const Consultation       = require('../models/Consultation');
-const Doctor             = require('../models/Doctor');
-const User               = require('../models/User');
+// FIX: gunakan MySQL Doctor model, bukan MongoDB Doctor
+const { Doctor: DoctorMySQL } = require('../models/mysql');
 const { createNotification } = require('./notificationHelper');
 
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
@@ -105,22 +99,31 @@ const checkAutoInProgress = async () => {
             io      : _io,
         });
 
-        // Notif dokter — null-safe
+        // ── FIX: Notif dokter — pakai MySQL Doctor, bukan MongoDB Doctor ──────
+        // Consultation.doctorId = UUID dari tabel doctors (MySQL)
+        // DoctorMySQL.userId    = UUID dari tabel users   (MySQL)
         try {
-            const doctor = await Doctor.findById(updated.doctorId).select('userId');
-            if (doctor?.userId) {
-                await createNotification({
-                    userId  : doctor.userId,
-                    type    : 'consultation_started',
-                    title   : 'Sesi Konsultasi Dimulai 🩺',
-                    message : 'Waktu konsultasi dengan pasien telah tiba. Silakan mulai sesi.',
-                    data    : { consultationId: updated._id },
-                    io      : _io,
+            const doctorIdStr = updated.doctorId?.toString();
+            if (doctorIdStr) {
+                const doctor = await DoctorMySQL.findOne({
+                    where      : { id: doctorIdStr },
+                    attributes : ['id', 'userId'],
                 });
+                if (doctor?.userId) {
+                    await createNotification({
+                        userId  : doctor.userId,
+                        type    : 'consultation_started',
+                        title   : 'Sesi Konsultasi Dimulai 🩺',
+                        message : 'Waktu konsultasi dengan pasien telah tiba. Silakan mulai sesi.',
+                        data    : { consultationId: updated._id },
+                        io      : _io,
+                    });
+                }
             }
         } catch (e) {
             console.error(`[CRON] Gagal notif dokter konsultasi ${updated._id}:`, e.message);
         }
+        // ── END FIX ───────────────────────────────────────────────────────────
 
         if (_io) {
             _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
@@ -141,10 +144,9 @@ const checkDoctorNoShow = async () => {
     const candidates = await Consultation.find({
         status      : 'confirmed',
         scheduledEnd: { $lt: grace },
-    }).lean(); // doctorId tetap UUID string — tidak perlu populate ke MySQL Doctor
+    }).lean();
 
     for (const c of candidates) {
-        // Atomic → doctor_no_show
         const updated = await Consultation.findOneAndUpdate(
             { _id: c._id, status: 'confirmed' },
             { $set: {
@@ -158,23 +160,22 @@ const checkDoctorNoShow = async () => {
         );
         if (!updated) continue;
 
-        // Cek apakah jadwal tersedia minggu ini untuk reschedule
         let hasAvailableSlots = false;
         try {
             const DoctorAvailability = require('../models/DoctorAvailability');
-            const avail = await DoctorAvailability.findOne({ doctorId: updated.doctorId._id || updated.doctorId });
+            const avail = await DoctorAvailability.findOne({
+                doctorId: updated.doctorId?._id || updated.doctorId,
+            });
             hasAvailableSlots = !!(avail && avail.isWeekActive());
         } catch (e) { /* ignore */ }
 
-        // Coba refund otomatis via Xendit
         try {
             const { processRefundInternal } = require('../routes/consultations');
             await processRefundInternal(updated._id.toString(), {}, _io);
             console.log(`[CRON] ${updated._id} → doctor_no_show → refunded (auto)`);
         } catch (refundErr) {
             if (refundErr.message === 'NEED_BANK_INFO') {
-                // PaidAt > 7 hari — perlu info rekening, notif user untuk input
-                await Consultation.findByIdAndUpdate(updated._id, { status: 'doctor_no_show' }); // keep status
+                await Consultation.findByIdAndUpdate(updated._id, { status: 'doctor_no_show' });
                 await createNotification({
                     userId  : updated.userId,
                     type    : 'doctor_no_show',
@@ -199,9 +200,6 @@ const checkDoctorNoShow = async () => {
             }
         }
 
-        // BUG-17 fix: re-fetch final status after refund attempt — updated.status is always
-        // 'doctor_no_show' from findOneAndUpdate, but refund may have changed it to
-        // 'refunded' or 'refund_requested'
         if (_io) {
             try {
                 const finalDoc = await Consultation.findById(updated._id).select('status').lean();
@@ -211,7 +209,6 @@ const checkDoctorNoShow = async () => {
                     hasAvailableSlots,
                 });
             } catch {
-                // Fallback to updated.status if re-fetch fails
                 _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
                     consultationId: updated._id.toString(),
                     status        : updated.status,
@@ -222,7 +219,7 @@ const checkDoctorNoShow = async () => {
     }
 };
 
-// ── 4. Auto close: user no_show / completed ────────────────────────────────────
+// ── 4. Auto close: user no_show / completed ───────────────────────────────────
 const checkUserNoShow = async () => {
     const now   = new Date();
     const grace = new Date(now.getTime() - 15 * 60 * 1000);
@@ -238,8 +235,6 @@ const checkUserNoShow = async () => {
         );
         const finalStatus = userMessages.length === 0 ? 'no_show' : 'completed';
 
-        // Rekam medis placeholder — dokter tidak sempat mengisi secara manual.
-        // isCompleted: false agar dokter masih bisa melengkapi via PUT /:id/medical-record.
         const medicalRecordPlaceholder = finalStatus === 'completed' ? {
             objectiveFindings : '',
             assessment        : '',
@@ -249,13 +244,8 @@ const checkUserNoShow = async () => {
             completedAt       : null,
         } : undefined;
 
-        const updateFields = {
-            status  : finalStatus,
-            endTime : c.scheduledEnd,
-        };
-        if (medicalRecordPlaceholder) {
-            updateFields.medicalRecord = medicalRecordPlaceholder;
-        }
+        const updateFields = { status: finalStatus, endTime: c.scheduledEnd };
+        if (medicalRecordPlaceholder) updateFields.medicalRecord = medicalRecordPlaceholder;
 
         const updated = await Consultation.findOneAndUpdate(
             { _id: c._id, status: 'in_progress' },
@@ -275,23 +265,31 @@ const checkUserNoShow = async () => {
             io      : _io,
         });
 
-        // BUG-15 fix: notify doctor to complete medical record after auto-close
+        // ── FIX: Notif dokter lengkapi rekam medis — pakai MySQL Doctor ───────
         if (finalStatus === 'completed') {
             try {
-                const Doctor = require('../models/Doctor');
-                const doctorDoc = await Doctor.findById(updated.doctorId).select('userId').lean();
-                if (doctorDoc?.userId) {
-                    await createNotification({
-                        userId  : doctorDoc.userId,
-                        type    : 'consultation_ended',
-                        title   : '📋 Lengkapi Rekam Medis',
-                        message : 'Sesi konsultasi berakhir otomatis. Harap lengkapi rekam medis pasien segera.',
-                        data    : { consultationId: updated._id },
-                        io      : _io,
+                const doctorIdStr = updated.doctorId?.toString();
+                if (doctorIdStr) {
+                    const doctor = await DoctorMySQL.findOne({
+                        where      : { id: doctorIdStr },
+                        attributes : ['id', 'userId'],
                     });
+                    if (doctor?.userId) {
+                        await createNotification({
+                            userId  : doctor.userId,
+                            type    : 'consultation_ended',
+                            title   : '📋 Lengkapi Rekam Medis',
+                            message : 'Sesi konsultasi berakhir otomatis. Harap lengkapi rekam medis pasien segera.',
+                            data    : { consultationId: updated._id },
+                            io      : _io,
+                        });
+                    }
                 }
-            } catch { /* non-critical */ }
+            } catch (e) {
+                console.error(`[CRON] Gagal notif dokter rekam medis ${updated._id}:`, e.message);
+            }
         }
+        // ── END FIX ───────────────────────────────────────────────────────────
 
         if (_io) {
             _io.to(`user-${updated.userId}`).emit('consultation-status-update', {
@@ -319,7 +317,7 @@ const runAllChecks = async () => {
 
 const startCron = (socketIo) => {
     _io = socketIo;
-    if (_timer) return; // jangan double-start
+    if (_timer) return;
     _timer = setInterval(runAllChecks, 60 * 1000);
     runAllChecks().catch(e => console.error('[CRON] startup check error:', e.message));
     console.log('✅ Consultation cron started (expired / auto-start / doctor-no-show / auto-close)');

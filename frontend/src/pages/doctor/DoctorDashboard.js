@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
+import { fmtDoctorName } from '../../utils/format';
 
 import {
     API_URL, colors,
@@ -33,29 +34,36 @@ const NAV_ITEMS = [
     { key: 'chat',       icon: '💬', label: 'Chat Admin',  badge: true },
 ];
 
+// Normalisasi gelar depan: tambah titik di akhir jika belum ada.
+// Contoh: "dr" -> "dr.", "drg" -> "drg.", "Prof." -> "Prof." (tidak berubah)
+const normalizeTitlePrefix = (prefix) => {
+    if (!prefix) return '';
+    const t = prefix.trim();
+    return t.endsWith('.') ? t : t + '.';
+};
+
 // Helper function untuk format nama lengkap dengan gelar
 const formatFullDoctorName = (doctor) => {
     if (!doctor) return 'Dokter';
     
-    const titlePrefix = doctor.titlePrefix || '';
+    const titlePrefix = normalizeTitlePrefix(doctor.titlePrefix || '');
     const name = doctor.name || '';
     const titleSuffix = doctor.titleSuffix || '';
     
-    
-    // Format: dr. Reza Arap Sp.PD
+    // Format: dr. Reza Arap, Sp.PD
     let fullName = '';
     if (titlePrefix) fullName += `${titlePrefix} `;
     fullName += name;
-    if (titleSuffix) fullName += ` ${titleSuffix}`;
+    if (titleSuffix) fullName += `, ${titleSuffix}`;
     
-    return fullName;
+    return fullName.trim() || 'Dokter';
 };
 
 // Helper function untuk format nama pendek untuk di card
 const formatShortDoctorName = (doctor) => {
     if (!doctor) return 'Dokter';
     
-    const titlePrefix = doctor.titlePrefix || '';
+    const titlePrefix = normalizeTitlePrefix(doctor.titlePrefix || '');
     const name = doctor.name || '';
     
     // Format: dr. Reza
@@ -66,7 +74,7 @@ const formatShortDoctorName = (doctor) => {
     const firstName = name.split(' ')[0];
     shortName += firstName;
     
-    return shortName;
+    return shortName.trim() || 'Dokter';
 };
 
 const DoctorDashboard = () => {

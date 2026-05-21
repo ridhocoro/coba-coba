@@ -1,3 +1,15 @@
+// routes/auth.js  ← VERSI LENGKAP dengan Redis rate limiting
+//
+// Perubahan dari versi lama:
+//  + import loginLimiter, otpResendLimiter, otpVerifyLimiter dari rateLimiter.js
+//  + HAPUS: ipResendMap, otpVerifyMap, loginLimitMap (Map in-memory)
+//  + HAPUS: checkOtpVerifyLimit, resetOtpVerifyLimit, checkLoginLimit, resetLoginLimit, checkIpResend
+//  + POST /login       → middleware loginLimiter (Redis, survive restart)
+//  + POST /verify-otp  → middleware otpVerifyLimiter (Redis)
+//  + POST /resend-otp  → middleware otpResendLimiter (Redis)
+//    Logika resend cooldown di DB (user.otpResendCount) tetap dipertahankan
+//    sebagai lapisan kedua — Redis sebagai lapisan pertama yang lebih kuat.
+
 const express    = require('express');
 const router     = express.Router();
 const { body, validationResult } = require('express-validator');
@@ -8,6 +20,9 @@ const { User }   = require('../models/mysql');
 const { Op }     = require('sequelize');
 const auth       = require('../middleware/auth');
 const { sendWhatsApp } = require('../utils/fonnte');
+
+// ── Redis rate limiters ───────────────────────────────────────
+const { loginLimiter, otpResendLimiter, otpVerifyLimiter } = require('../middleware/rateLimiter');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const OTP_EXPIRES_MIN   = 5;
@@ -66,78 +81,12 @@ async function sendOtpEmail(email, name, otp) {
   <div class="footer">© ${new Date().getFullYear()} Klinik Pratama IPB — Email otomatis, jangan dibalas.</div>
 </div>
 </body></html>`
-
         });
         console.log(`[Brevo] OTP email terkirim ke ${email}`);
     } catch (error) {
         console.error('[Brevo] Error sending OTP email:', error?.response?.body || error.message);
         throw error;
     }
-}
-
-const ipResendMap   = new Map();
-const otpVerifyMap  = new Map();
-const OTP_VERIFY_MAX    = 5;
-const OTP_VERIFY_WINDOW = 15 * 60 * 1000;
-
-function checkOtpVerifyLimit(identifier) {
-    const now = Date.now();
-    const rec = otpVerifyMap.get(identifier) || { count: 0, windowStart: now };
-    if (now - rec.windowStart > OTP_VERIFY_WINDOW) {
-        otpVerifyMap.set(identifier, { count: 1, windowStart: now });
-        return { allowed: true, remaining: OTP_VERIFY_MAX - 1 };
-    }
-    if (rec.count >= OTP_VERIFY_MAX) {
-        const waitMin = Math.ceil((OTP_VERIFY_WINDOW - (now - rec.windowStart)) / 60000);
-        return { allowed: false, waitMin };
-    }
-    rec.count++;
-    otpVerifyMap.set(identifier, rec);
-    return { allowed: true, remaining: OTP_VERIFY_MAX - rec.count };
-}
-
-function resetOtpVerifyLimit(identifier) {
-    otpVerifyMap.delete(identifier);
-}
-
-const loginLimitMap = new Map();
-const LOGIN_MAX    = 10;
-const LOGIN_WINDOW = 15 * 60 * 1000;
-
-function checkLoginLimit(ip) {
-    const now = Date.now();
-    const rec = loginLimitMap.get(ip) || { count: 0, windowStart: now };
-    if (now - rec.windowStart > LOGIN_WINDOW) {
-        loginLimitMap.set(ip, { count: 1, windowStart: now });
-        return { allowed: true };
-    }
-    if (rec.count >= LOGIN_MAX) {
-        const waitMin = Math.ceil((LOGIN_WINDOW - (now - rec.windowStart)) / 60000);
-        return { allowed: false, waitMin };
-    }
-    rec.count++;
-    loginLimitMap.set(ip, rec);
-    return { allowed: true };
-}
-
-function resetLoginLimit(ip) {
-    loginLimitMap.delete(ip);
-}
-
-function checkIpResend(ip) {
-    const now = Date.now();
-    const rec = ipResendMap.get(ip) || { count: 0, windowStart: now, lastSent: 0 };
-    if (now - rec.windowStart > RESEND_WINDOW_MS) {
-        ipResendMap.set(ip, { count: 1, windowStart: now, lastSent: now });
-        return { allowed: true };
-    }
-    if (rec.count >= RESEND_MAX) {
-        return { allowed: false, reason: 'ip_limit' };
-    }
-    rec.count++;
-    rec.lastSent = now;
-    ipResendMap.set(ip, rec);
-    return { allowed: true };
 }
 
 // ─── POST /register ───────────────────────────────────────────────────────────
@@ -227,198 +176,183 @@ router.post('/register', [
     }
 });
 
-// ─── POST /verify-otp ─────────────────────────────────────────────────────────
-router.post('/verify-otp', [
-    body('email').isEmail().normalizeEmail(),
-    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP harus 6 digit'),
-], async (req, res) => {
-    try {
-        const errs = validationResult(req);
-        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
+// ─── POST /verify-otp  ← + otpVerifyLimiter (Redis) ──────────────────────────
+// Menggantikan checkOtpVerifyLimit / resetOtpVerifyLimit yang pakai Map in-memory.
+// Redis lebih kuat: limit tetap berlaku meski server restart atau multi-instance.
+router.post('/verify-otp',
+    otpVerifyLimiter,   // ← Redis: maks 5x / 15 menit per IP
+    [
+        body('email').isEmail().normalizeEmail(),
+        body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP harus 6 digit'),
+    ],
+    async (req, res) => {
+        try {
+            const errs = validationResult(req);
+            if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
 
-        const { email, otp } = req.body;
+            const { email, otp } = req.body;
 
-        const rl = checkOtpVerifyLimit(email);
-        if (!rl.allowed) {
-            return res.status(429).json({
-                message  : `Terlalu banyak percobaan. Coba lagi dalam ${rl.waitMin} menit.`,
-                rateLimit: true,
-            });
-        }
+            const user = await User.findOne({ where: { email } });
 
-        const user = await User.findOne({ where: { email } });
+            if (!user || user.isVerified)
+                return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
 
-        if (!user || user.isVerified)
-            return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
+            if (user.emailOtpInvalidated)
+                return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku. Gunakan kode terbaru dari email.' });
 
-        if (user.emailOtpInvalidated)
-            return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku. Gunakan kode terbaru dari email.' });
-
-        if (!user.emailOtpExpires || new Date() > user.emailOtpExpires) {
-            return res.status(400).json({ message: 'Kode OTP sudah kedaluwarsa.', expired: true });
-        }
-
-        if (user.emailOtp !== otp) {
-            const remaining = rl.remaining;
-            return res.status(400).json({
-                message: remaining > 0
-                    ? `Kode OTP salah. Sisa percobaan: ${remaining}`
-                    : 'Kode OTP salah.',
-            });
-        }
-
-        resetOtpVerifyLimit(email);
-        user.isVerified          = true;
-        user.emailOtp            = null;
-        user.emailOtpExpires     = null;
-        user.emailOtpInvalidated = false;
-        await user.save();
-
-        const token = jwt.sign(
-            { userId: user.id, role: user.role },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRE || '24h' }
-        );
-
-        res.json({
-            message : 'Verifikasi berhasil! Selamat datang.',
-            token,
-            user    : { id: user.id, name: user.name, email: user.email, role: user.role },
-        });
-    } catch (err) {
-        console.error('[auth] verify-otp:', err);
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// ─── POST /resend-otp ─────────────────────────────────────────────────────────
-router.post('/resend-otp', [
-    body('email').isEmail().normalizeEmail(),
-], async (req, res) => {
-    try {
-        const errs = validationResult(req);
-        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
-
-        const { email } = req.body;
-        const ip        = req.ip || req.connection?.remoteAddress || 'unknown';
-        const user      = await User.findOne({ where: { email } });
-
-        if (!user || user.isVerified)
-            return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
-
-        const now = Date.now();
-
-        if (user.emailOtpExpires) {
-            const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
-            const elapsed    = now - lastSentAt;
-            if (elapsed < RESEND_COOLDOWN_S * 1000) {
-                const remaining = Math.ceil((RESEND_COOLDOWN_S * 1000 - elapsed) / 1000);
-                return res.status(429).json({
-                    message         : `Tunggu ${remaining} detik sebelum kirim ulang.`,
-                    cooldownSeconds : remaining,
-                });
+            if (!user.emailOtpExpires || new Date() > user.emailOtpExpires) {
+                return res.status(400).json({ message: 'Kode OTP sudah kedaluwarsa.', expired: true });
             }
-        }
 
-        if (user.otpResendWindowStart && (now - user.otpResendWindowStart.getTime()) < RESEND_WINDOW_MS) {
-            if ((user.otpResendCount || 0) >= RESEND_MAX) {
-                return res.status(429).json({
-                    message   : 'Batas pengiriman OTP tercapai (3x per jam). Coba lagi nanti.',
-                    rateLimit : true,
-                });
+            if (user.emailOtp !== otp) {
+                return res.status(400).json({ message: 'Kode OTP salah.' });
             }
-        } else {
-            user.otpResendCount       = 0;
-            user.otpResendWindowStart = new Date();
-        }
 
-        const ipCheck = checkIpResend(ip);
-        if (!ipCheck.allowed) {
-            return res.status(429).json({
-                message   : 'Terlalu banyak permintaan dari perangkat ini. Coba lagi dalam 1 jam.',
-                rateLimit : true,
+            user.isVerified          = true;
+            user.emailOtp            = null;
+            user.emailOtpExpires     = null;
+            user.emailOtpInvalidated = false;
+            await user.save();
+
+            const token = jwt.sign(
+                { userId: user.id, role: user.role },
+                process.env.JWT_SECRET,
+                { expiresIn: process.env.JWT_EXPIRE || '24h' }
+            );
+
+            res.json({
+                message : 'Verifikasi berhasil! Selamat datang.',
+                token,
+                user    : { id: user.id, name: user.name, email: user.email, role: user.role },
             });
+        } catch (err) {
+            console.error('[auth] verify-otp:', err);
+            res.status(500).json({ message: 'Server error' });
         }
-
-        const newOtp = generateOtp();
-        user.emailOtp            = newOtp;
-        user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
-        user.emailOtpInvalidated = false;
-        user.otpResendCount      = (user.otpResendCount || 0) + 1;
-        await user.save();
-
-        await sendOtpEmail(email, user.name, newOtp);
-
-        res.json({
-            message         : 'Kode OTP baru telah dikirim ke email Anda.',
-            cooldownSeconds : RESEND_COOLDOWN_S,
-        });
-    } catch (err) {
-        console.error('[auth] resend-otp:', err);
-        res.status(500).json({ message: 'Server error' });
     }
-});
+);
 
-// ─── POST /login ──────────────────────────────────────────────────────────────
-router.post('/login', [
-    body('email')
-        .notEmpty().withMessage('Email harus diisi')
-        .isEmail().withMessage('Format email tidak valid')
-        .normalizeEmail(),
-    body('password')
-        .notEmpty().withMessage('Password harus diisi'),
-], async (req, res) => {
-    try {
-        const errs = validationResult(req);
-        if (!errs.isEmpty()) {
-            return res.status(400).json({ message: errs.array()[0].msg });
-        }
+// ─── POST /resend-otp  ← + otpResendLimiter (Redis) ──────────────────────────
+// Menggantikan checkIpResend yang pakai Map in-memory.
+// Logika cooldown per DB (user.otpResendCount) tetap dipertahankan
+// sebagai lapisan kedua untuk granularitas per-email.
+router.post('/resend-otp',
+    otpResendLimiter,   // ← Redis: maks 3x / jam per IP (lapisan pertama)
+    [
+        body('email').isEmail().normalizeEmail(),
+    ],
+    async (req, res) => {
+        try {
+            const errs = validationResult(req);
+            if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
 
-        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+            const { email } = req.body;
+            const user      = await User.findOne({ where: { email } });
 
-        const rl = checkLoginLimit(ip);
-        if (!rl.allowed) {
-            return res.status(429).json({
-                message  : `Terlalu banyak percobaan login. Coba lagi dalam ${rl.waitMin} menit.`,
-                rateLimit: true,
+            if (!user || user.isVerified)
+                return res.status(400).json({ message: 'Akun tidak ditemukan atau sudah terverifikasi' });
+
+            const now = Date.now();
+
+            // Cooldown per-OTP (60 detik setelah kirim terakhir) — cek di DB
+            if (user.emailOtpExpires) {
+                const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
+                const elapsed    = now - lastSentAt;
+                if (elapsed < RESEND_COOLDOWN_S * 1000) {
+                    const remaining = Math.ceil((RESEND_COOLDOWN_S * 1000 - elapsed) / 1000);
+                    return res.status(429).json({
+                        message         : `Tunggu ${remaining} detik sebelum kirim ulang.`,
+                        cooldownSeconds : remaining,
+                    });
+                }
+            }
+
+            // Batas per-email (3x per jam) — cek di DB sebagai lapisan kedua
+            if (user.otpResendWindowStart && (now - user.otpResendWindowStart.getTime()) < RESEND_WINDOW_MS) {
+                if ((user.otpResendCount || 0) >= RESEND_MAX) {
+                    return res.status(429).json({
+                        message   : 'Batas pengiriman OTP tercapai (3x per jam). Coba lagi nanti.',
+                        rateLimit : true,
+                    });
+                }
+            } else {
+                user.otpResendCount       = 0;
+                user.otpResendWindowStart = new Date();
+            }
+
+            const newOtp = generateOtp();
+            user.emailOtp            = newOtp;
+            user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
+            user.emailOtpInvalidated = false;
+            user.otpResendCount      = (user.otpResendCount || 0) + 1;
+            await user.save();
+
+            await sendOtpEmail(email, user.name, newOtp);
+
+            res.json({
+                message         : 'Kode OTP baru telah dikirim ke email Anda.',
+                cooldownSeconds : RESEND_COOLDOWN_S,
             });
+        } catch (err) {
+            console.error('[auth] resend-otp:', err);
+            res.status(500).json({ message: 'Server error' });
         }
-
-        const { email, password } = req.body;
-        const user = await User.findOne({ where: { email } });
-
-        if (!user) return res.status(400).json({ message: 'Email atau password salah' });
-
-        if (user.isVerified === false)
-            return res.status(403).json({
-                message: 'Akun belum diverifikasi. Cek email Anda.',
-                needsVerification: true,
-                email,
-            });
-
-        if (user.isActive === false)
-            return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
-
-        const isMatch = await user.comparePassword(password);
-        if (!isMatch) return res.status(400).json({ message: 'Email atau password salah' });
-
-        resetLoginLimit(ip);
-
-        const token = jwt.sign(
-            { userId: user.id, role: user.role },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRE || '24h' }
-        );
-
-        res.json({
-            token,
-            user: { id: user.id, name: user.name, email, role: user.role },
-        });
-    } catch (err) {
-        console.error('[auth] login:', err);
-        res.status(500).json({ message: 'Server error' });
     }
-});
+);
+
+// ─── POST /login  ← + loginLimiter (Redis) ────────────────────────────────────
+// Menggantikan checkLoginLimit / resetLoginLimit yang pakai Map in-memory.
+router.post('/login',
+    loginLimiter,   // ← Redis: maks 10x / 15 menit per IP
+    [
+        body('email')
+            .notEmpty().withMessage('Email harus diisi')
+            .isEmail().withMessage('Format email tidak valid')
+            .normalizeEmail(),
+        body('password')
+            .notEmpty().withMessage('Password harus diisi'),
+    ],
+    async (req, res) => {
+        try {
+            const errs = validationResult(req);
+            if (!errs.isEmpty()) {
+                return res.status(400).json({ message: errs.array()[0].msg });
+            }
+
+            const { email, password } = req.body;
+            const user = await User.findOne({ where: { email } });
+
+            if (!user) return res.status(400).json({ message: 'Email atau password salah' });
+
+            if (user.isVerified === false)
+                return res.status(403).json({
+                    message: 'Akun belum diverifikasi. Cek email Anda.',
+                    needsVerification: true,
+                    email,
+                });
+
+            if (user.isActive === false)
+                return res.status(403).json({ message: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
+
+            const isMatch = await user.comparePassword(password);
+            if (!isMatch) return res.status(400).json({ message: 'Email atau password salah' });
+
+            const token = jwt.sign(
+                { userId: user.id, role: user.role },
+                process.env.JWT_SECRET,
+                { expiresIn: process.env.JWT_EXPIRE || '24h' }
+            );
+
+            res.json({
+                token,
+                user: { id: user.id, name: user.name, email, role: user.role },
+            });
+        } catch (err) {
+            console.error('[auth] login:', err);
+            res.status(500).json({ message: 'Server error' });
+        }
+    }
+);
 
 // ─── GET /me ──────────────────────────────────────────────────────────────────
 router.get('/me', auth, async (req, res) => {
@@ -434,109 +368,115 @@ router.get('/me', auth, async (req, res) => {
 });
 
 // ─── POST /forgot-email ───────────────────────────────────────────────────────
-router.post('/forgot-email', [
-    body('phone').notEmpty().withMessage('Nomor HP harus diisi'),
-], async (req, res) => {
-    try {
-        const errs = validationResult(req);
-        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
+// Menggunakan otpResendLimiter sebagai perlindungan brute force
+router.post('/forgot-email',
+    otpResendLimiter,
+    [
+        body('phone').notEmpty().withMessage('Nomor HP harus diisi'),
+    ],
+    async (req, res) => {
+        try {
+            const errs = validationResult(req);
+            if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
 
-        let { phone } = req.body;
-        phone = normalisePhone(phone);
+            let { phone } = req.body;
+            phone = normalisePhone(phone);
 
-        const digits = phone.replace(/\D/g, '');
-        const altFormats = [phone, digits, '0' + digits.slice(2)];
-        const user = await User.findOne({
-            where: {
-                phone: { [Op.in]: altFormats },
-                isVerified: { [Op.ne]: false },
+            const digits = phone.replace(/\D/g, '');
+            const altFormats = [phone, digits, '0' + digits.slice(2)];
+            const user = await User.findOne({
+                where: {
+                    phone: { [Op.in]: altFormats },
+                    isVerified: { [Op.ne]: false },
+                }
+            });
+            if (!user)
+                return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
+
+            const now = Date.now();
+
+            if (user.emailOtpExpires) {
+                const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
+                const elapsed    = now - lastSentAt;
+                if (elapsed < RESEND_COOLDOWN_S * 1000) {
+                    const remaining = Math.ceil((RESEND_COOLDOWN_S * 1000 - elapsed) / 1000);
+                    return res.status(429).json({ message: `Tunggu ${remaining} detik.`, cooldownSeconds: remaining });
+                }
             }
-        });
-        if (!user)
-            return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
 
-        const ip  = req.ip || req.connection?.remoteAddress || 'unknown';
-        const now = Date.now();
+            const otp = generateOtp();
+            user.emailOtp            = otp;
+            user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
+            user.emailOtpInvalidated = false;
+            await user.save();
 
-        if (user.emailOtpExpires) {
-            const lastSentAt = user.emailOtpExpires.getTime() - OTP_EXPIRES_MIN * 60000;
-            const elapsed    = now - lastSentAt;
-            if (elapsed < RESEND_COOLDOWN_S * 1000) {
-                const remaining = Math.ceil((RESEND_COOLDOWN_S * 1000 - elapsed) / 1000);
-                return res.status(429).json({ message: `Tunggu ${remaining} detik.`, cooldownSeconds: remaining });
-            }
+            await sendWhatsApp(phone,
+                `*Klinik Pratama IPB*\nKode OTP untuk melihat email terdaftar:\n\n*${otp}*\n\nBerlaku 5 menit. Jangan bagikan kode ini kepada siapapun.`
+            );
+
+            res.json({ message: 'Kode OTP telah dikirim via WhatsApp.', cooldownSeconds: RESEND_COOLDOWN_S });
+        } catch (err) {
+            console.error('[auth] forgot-email:', err);
+            res.status(500).json({ message: 'Server error' });
         }
-
-        const ipCheck = checkIpResend(ip + ':forgot-email');
-        if (!ipCheck.allowed)
-            return res.status(429).json({ message: 'Terlalu banyak permintaan. Coba lagi nanti.' });
-
-        const otp = generateOtp();
-        user.emailOtp            = otp;
-        user.emailOtpExpires     = new Date(now + OTP_EXPIRES_MIN * 60000);
-        user.emailOtpInvalidated = false;
-        await user.save();
-
-        await sendWhatsApp(phone,
-            `*Klinik Pratama IPB*\nKode OTP untuk melihat email terdaftar:\n\n*${otp}*\n\nBerlaku 5 menit. Jangan bagikan kode ini kepada siapapun.`
-        );
-
-        res.json({ message: 'Kode OTP telah dikirim via WhatsApp.', cooldownSeconds: RESEND_COOLDOWN_S });
-    } catch (err) {
-        console.error('[auth] forgot-email:', err);
-        res.status(500).json({ message: 'Server error' });
     }
-});
+);
 
 // ─── POST /forgot-email/verify ────────────────────────────────────────────────
-router.post('/forgot-email/verify', [
-    body('phone').notEmpty(),
-    body('otp').isLength({ min: 6, max: 6 }),
-], async (req, res) => {
-    try {
-        const errs = validationResult(req);
-        if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
+router.post('/forgot-email/verify',
+    otpVerifyLimiter,
+    [
+        body('phone').notEmpty(),
+        body('otp').isLength({ min: 6, max: 6 }),
+    ],
+    async (req, res) => {
+        try {
+            const errs = validationResult(req);
+            if (!errs.isEmpty()) return res.status(400).json({ message: errs.array()[0].msg });
 
-        let { phone, otp } = req.body;
-        phone = normalisePhone(phone);
+            let { phone, otp } = req.body;
+            phone = normalisePhone(phone);
 
-        const digits2 = phone.replace(/\D/g, '');
-        const altFormats2 = [phone, digits2, '0' + digits2.slice(2)];
-        const user = await User.findOne({
-            where: {
-                phone: { [Op.in]: altFormats2 },
-                isVerified: { [Op.ne]: false },
-            }
-        });
-        if (!user)
-            return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
+            const digits2 = phone.replace(/\D/g, '');
+            const altFormats2 = [phone, digits2, '0' + digits2.slice(2)];
+            const user = await User.findOne({
+                where: {
+                    phone: { [Op.in]: altFormats2 },
+                    isVerified: { [Op.ne]: false },
+                }
+            });
+            if (!user)
+                return res.status(404).json({ message: 'Nomor HP tidak terdaftar' });
 
-        if (user.emailOtp && user.emailOtpInvalidated)
-            return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku.' });
-        if (!user.emailOtp || !user.emailOtpExpires || new Date() > user.emailOtpExpires)
-            return res.status(400).json({ message: 'Kode OTP sudah kedaluwarsa.', expired: true });
-        if (user.emailOtp !== otp)
-            return res.status(400).json({ message: 'Kode OTP salah, silakan coba lagi' });
+            if (user.emailOtp && user.emailOtpInvalidated)
+                return res.status(400).json({ message: 'Kode OTP sudah tidak berlaku.' });
+            if (!user.emailOtp || !user.emailOtpExpires || new Date() > user.emailOtpExpires)
+                return res.status(400).json({ message: 'Kode OTP sudah kedaluwarsa.', expired: true });
+            if (user.emailOtp !== otp)
+                return res.status(400).json({ message: 'Kode OTP salah, silakan coba lagi' });
 
-        user.emailOtp            = null;
-        user.emailOtpExpires     = null;
-        user.emailOtpInvalidated = false;
-        await user.save();
+            user.emailOtp            = null;
+            user.emailOtpExpires     = null;
+            user.emailOtpInvalidated = false;
+            await user.save();
 
-        const [localPart, domain] = user.email.split('@');
-        const masked = localPart.length <= 2
-            ? localPart[0] + '***'
-            : localPart[0] + '*'.repeat(Math.min(localPart.length - 2, 5)) + localPart.slice(-1);
-        const maskedEmail = `${masked}@${domain}`;
+            const [localPart, domain] = user.email.split('@');
+            const masked = localPart.length <= 2
+                ? localPart[0] + '***'
+                : localPart[0] + '*'.repeat(Math.min(localPart.length - 2, 5)) + localPart.slice(-1);
+            const maskedEmail = `${masked}@${domain}`;
 
-        res.json({ message: 'Verifikasi berhasil.', email: maskedEmail });
-    } catch (err) {
-        console.error('[auth] forgot-email/verify:', err);
-        res.status(500).json({ message: 'Server error' });
+            res.json({ message: 'Verifikasi berhasil.', email: maskedEmail });
+        } catch (err) {
+            console.error('[auth] forgot-email/verify:', err);
+            res.status(500).json({ message: 'Server error' });
+        }
     }
-});
+);
 
 // ─── Forgot Password & Reset ──────────────────────────────────────────────────
+// rateLimitStore ini tetap dipertahankan karena hanya untuk forgot-password
+// (bukan OTP/login yang kritis). Bisa dimigrasi ke Redis jika diperlukan.
 const rateLimitStore = new Map();
 const checkRateLimit = (key) => {
     const now = Date.now(), WINDOW = 15 * 60 * 1000, MAX = 3;

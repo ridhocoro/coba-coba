@@ -1,26 +1,19 @@
 const fmtDoctorName = require('../utils/fmtDoctorName');
 /**
- * routes/doctors.js
+ * routes/doctors.js  ← VERSI LENGKAP dengan Redis caching
  *
- * Endpoint dokter:
- * GET  /my/profile        → profil dokter yang login
- * PUT  /my/profile        → update profil sendiri
- * POST /my/photo          → upload foto profil
- * GET  /my/stats          → statistik dashboard
- * GET  /my/schedule-today → jadwal gabungan hari ini
- * PUT  /my/settings       → update pengaturan konsultasi (dokter)
- * POST /admin/link-user   → hubungkan dokter ke akun user (admin)
- * GET  /                  → semua dokter aktif (public)
- * GET  /:id/schedule      → jadwal dokter (public)
- * GET  /:id               → detail dokter (public)
- * POST /                  → tambah dokter (admin)
- * PUT  /:id               → update dokter (admin)
- * PUT  /:id/schedule      → update jadwal (admin)
- * PUT  /:id/settings      → update pengaturan konsultasi (admin)
- * PUT  /:id/online-status → toggle online/offline (admin)
- * DELETE /:id             → nonaktifkan dokter (admin)
- *
- * Dependency: npm install multer
+ * Perubahan dari versi lama:
+ *  + import getOrSet, invalidate, invalidateMany, invalidatePattern, CACHE_KEYS, TTL
+ *  + GET /            → dibungkus getOrSet (cache 5 menit)
+ *  + GET /:id/schedule → dibungkus getOrSet (cache 5 menit)
+ *  + GET /:id         → dibungkus getOrSet (cache 5 menit)
+ *  + POST /           → invalidate DOCTORS_ALL setelah create
+ *  + PUT /:id         → invalidate DOCTORS_ALL + DOCTOR_DETAIL + DOCTOR_SCHEDULE
+ *  + PUT /:id/schedule → invalidate DOCTORS_ALL + DOCTOR_SCHEDULE
+ *  + PUT /:id/settings → invalidate DOCTORS_ALL + DOCTOR_DETAIL
+ *  + PUT /:id/online-status → invalidate DOCTORS_ALL + DOCTOR_DETAIL
+ *  + DELETE /:id      → invalidate DOCTORS_ALL + DOCTOR_DETAIL
+ *  + PUT /my/profile  → invalidatePattern semua cache dokter
  */
 
 const express    = require('express');
@@ -35,11 +28,13 @@ const auth          = require('../middleware/auth');
 const doctorAuth    = require('../middleware/doctorAuth');
 const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary');
 
+// ── Redis cache helpers ───────────────────────────────────────
+const { getOrSet, invalidate, invalidateMany, invalidatePattern, CACHE_KEYS, TTL } = require('../utils/cache');
+
 // ══════════════════════════════════════════════════════════════════
 // KONFIGURASI MULTER
 // ══════════════════════════════════════════════════════════════════
 
-// Foto & tanda tangan dokter → Cloudinary
 const photoUpload = createCloudinaryUpload('klinik-ipb/doctors', ['jpg','jpeg','png','webp'], 5);
 
 // ══════════════════════════════════════════════════════════════════
@@ -54,7 +49,6 @@ function buildAvailableDays(schedules) {
     const grp = {};
     for (const s of schedules) {
         if (!grp[s.dayOfWeek]) grp[s.dayOfWeek] = { day: hariRevMap[s.dayOfWeek], slots: [] };
-        // Potong detik pada startTime, endTime format HH:mm:ss -> HH:mm
         const st = s.startTime?.slice(0, 5) || s.startTime;
         const et = s.endTime?.slice(0, 5) || s.endTime;
         grp[s.dayOfWeek].slots.push({ startTime: st, endTime: et, isAvailable: s.isAvailable });
@@ -66,10 +60,6 @@ function buildAvailableDays(schedules) {
 // ROUTE STATIS — HARUS di atas /:id agar tidak tertimpa
 // ══════════════════════════════════════════════════════════════════
 
-/**
- * GET /my/profile
- * Ambil profil dokter yang sedang login.
- */
 router.get('/my/profile', auth, doctorAuth, async (req, res) => {
     try {
         const docRecord = await Doctor.findOne({ 
@@ -128,15 +118,10 @@ router.get('/my/profile', auth, doctorAuth, async (req, res) => {
     }
 });
 
-/**
- * PUT /my/profile
- * Update profil dokter sendiri — consultationFee TIDAK bisa diubah dokter, hanya admin.
- */
 router.put('/my/profile', auth, doctorAuth, async (req, res) => {
     try {
         const { name, specialization, gender, bio, experience,
                 strNumber, alumnus, practiceLocation, titlePrefix, titleSuffix } = req.body;
-        // consultationFee sengaja tidak diambil dari req.body
 
         if (!name?.trim())           return res.status(400).json({ success: false, message: 'Nama wajib diisi' });
         if (!specialization?.trim()) return res.status(400).json({ success: false, message: 'Spesialisasi wajib diisi' });
@@ -160,6 +145,9 @@ router.put('/my/profile', auth, doctorAuth, async (req, res) => {
 
         if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
 
+        // Invalidasi semua cache dokter karena data berubah
+        await invalidatePattern('cache:doctors:*');
+
         res.json({ success: true, message: 'Profil berhasil diperbarui', doctor });
     } catch (error) {
         console.error('PUT /my/profile error:', error);
@@ -167,21 +155,11 @@ router.put('/my/profile', auth, doctorAuth, async (req, res) => {
     }
 });
 
-/**
- * POST /my/photo
- * Upload foto profil dokter (multipart/form-data, field: "photo").
- * Foto disimpan sebagai path relatif (/uploads/doctors/...) agar
- * tidak bergantung pada domain/port.
- */
 router.post('/my/photo', auth, doctorAuth, photoUpload.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'File foto tidak ditemukan' });
 
         const photoUrl = req.file.path || req.file.secure_url || req.file.url;
-
-        // Hapus foto lama jika file lokal
-        const existing = await Doctor.findOne({ where: { userId: req.userId }, attributes: ['photo'] });
-        // Cloudinary: tidak perlu hapus file lama secara manual
 
         await Doctor.update(
             { photo: photoUrl },
@@ -190,6 +168,9 @@ router.post('/my/photo', auth, doctorAuth, photoUpload.single('photo'), async (r
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
 
         if (!doctor) return res.status(404).json({ success: false, message: 'Profil dokter tidak ditemukan' });
+
+        // Invalidasi cache karena foto berubah
+        await invalidatePattern('cache:doctors:*');
 
         res.json({ success: true, message: 'Foto berhasil diupload', photoUrl, doctor });
     } catch (error) {
@@ -201,17 +182,10 @@ router.post('/my/photo', auth, doctorAuth, photoUpload.single('photo'), async (r
     }
 });
 
-/**
- * POST /my/signature
- * Upload tanda tangan dokter (dipakai di surat sakit PDF).
- * Field: "signature" (gambar JPG/PNG/WEBP, maks 5 MB).
- * Disarankan: gambar tanda tangan dengan background putih/transparan.
- */
 router.post('/my/signature', auth, doctorAuth, photoUpload.single('signature'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'File tanda tangan diperlukan' });
 
-        // Cloudinary sudah handle format otomatis
         const signatureUrl = req.file.path || req.file.secure_url || req.file.url;
 
         await Doctor.update({ signatureUrl }, { where: { userId: req.userId } });
@@ -227,7 +201,6 @@ router.post('/my/signature', auth, doctorAuth, photoUpload.single('signature'), 
         res.status(500).json({ success: false, message: error.message || 'Terjadi kesalahan server' });
     }
 });
-
 
 router.get('/my/stats', auth, doctorAuth, async (req, res) => {
     try {
@@ -282,28 +255,23 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
                 doctorId: doctor.id,
                 status:   { $in: ['cancelled_by_doctor', 'cancelled_by_user', 'expired'] },
             }),
-            // Pasien Hari Ini (unique patients dari appointments hari ini)
             Appointment.distinct('userId', {
                 doctorId:        doctor.id,
                 appointmentDate: { $gte: todayStart, $lte: todayEnd },
                 status:          { $in: ['scheduled', 'checked_in', 'completed'] },
             }),
-            // Janji Temu Selesai
             Appointment.countDocuments({
                 doctorId: doctor.id,
                 status:   'completed',
             }),
-            // Konsultasi Dibatalkan (unique untuk stats)
             Consultation.countDocuments({
                 doctorId: doctor.id,
                 status:   { $in: ['cancelled_by_doctor', 'cancelled_by_user', 'expired'] },
             }),
-            // Janji Temu Dibatalkan (unique untuk stats)
             Appointment.countDocuments({
                 doctorId: doctor.id,
                 status:   { $in: ['cancelled_by_user', 'cancelled_by_doctor', 'cancelled_by_admin'] },
             }),
-            // Total Konsultasi Selesai (alias)
             Consultation.countDocuments({ doctorId: doctor.id, status: 'completed' }),
         ]);
 
@@ -312,7 +280,6 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
             userId:   { $exists: true, $ne: null },
         });
 
-        // Hitung unique patients hari ini dari consultations juga
         const patientsConTodayIds = await Consultation.distinct('userId', {
             doctorId:    doctor.id,
             scheduledAt: { $gte: todayStart, $lte: todayEnd },
@@ -320,13 +287,11 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
             userId:      { $exists: true, $ne: null },
         });
         
-        // Gabung pasien hari ini dari appointments dan consultations
         const allPatientsToday = [...new Set([...apptTodayPatients, ...patientsConTodayIds])];
 
         res.json({
             success: true,
             stats: {
-                // ── Format nested ─────────────────────────────────────
                 appointments: {
                     today:      apptToday,
                     upcoming:   apptUpcoming,
@@ -344,8 +309,6 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
                     unique:     uniquePatients.length,
                     todayCount: allPatientsToday.length,
                 },
-
-                // ── Format flat — untuk Beranda.js ─────────
                 patientsTodayCount:    allPatientsToday.length,
                 apptToday:             apptToday,
                 apptUpcoming:          apptUpcoming,
@@ -365,10 +328,6 @@ router.get('/my/stats', auth, doctorAuth, async (req, res) => {
     }
 });
 
-/**
- * GET /my/schedule-today
- * Jadwal gabungan hari ini (konsultasi online + janji temu), diurutkan by jam.
- */
 router.get('/my/schedule-today', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -441,10 +400,6 @@ router.get('/my/schedule-today', auth, doctorAuth, async (req, res) => {
     }
 });
 
-/**
- * PUT /my/settings
- * Update pengaturan konsultasi dokter sendiri (allowChat, allowVideoCall).
- */
 router.put('/my/settings', auth, doctorAuth, async (req, res) => {
     try {
         const { allowChat, allowVideoCall } = req.body;
@@ -461,7 +416,7 @@ router.put('/my/settings', auth, doctorAuth, async (req, res) => {
             allowVideoCall: allowVideoCall !== undefined ? allowVideoCall : true,
         };
         await doctor.save();
-
+        await invalidatePattern('cache:doctors:*');
         res.json({ success: true, consultationSettings: { allowChat: doctor.allowChat, allowVideoCall: doctor.allowVideoCall } });
     } catch (err) {
         console.error('PUT /my/settings error:', err);
@@ -473,10 +428,6 @@ router.put('/my/settings', auth, doctorAuth, async (req, res) => {
 // ADMIN — STATIC ROUTES (sebelum /:id)
 // ══════════════════════════════════════════════════════════════════
 
-/**
- * POST /admin/link-user
- * Hubungkan profil dokter ke akun user (admin).
- */
 router.post('/admin/link-user', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') {
@@ -517,179 +468,170 @@ router.post('/admin/link-user', auth, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// ROUTE PUBLIK
+// ROUTE PUBLIK — dengan Redis caching
 // ══════════════════════════════════════════════════════════════════
 
 /**
  * GET /
- * Semua dokter aktif (public).
+ * Semua dokter aktif (public) — cache 5 menit.
+ * Query ini berat karena gabung MySQL + MongoDB, sangat benefit dari caching.
  */
 router.get('/', async (req, res) => {
     try {
-        const docsRecords = await Doctor.findAll({ 
-            where: { isActive: true },
-            attributes: ['id', 'name', 'specialization', 'consultationFee', 'rating', 'photo', 'bio', 'allowChat', 'allowVideoCall', 'isOnline', 'experience', 'strNumber', 'alumnus', 'practiceLocation', 'titlePrefix', 'titleSuffix'],
-            include: [
-                { model: User, as: 'user', attributes: ['name'] },
-                { model: DoctorSchedule, as: 'schedules' }
-            ]
-        });
+        const doctors = await getOrSet(CACHE_KEYS.DOCTORS_ALL, TTL.DOCTORS, async () => {
+            const docsRecords = await Doctor.findAll({ 
+                where: { isActive: true },
+                attributes: ['id', 'name', 'specialization', 'consultationFee', 'rating', 'photo', 'bio', 'allowChat', 'allowVideoCall', 'isOnline', 'experience', 'strNumber', 'alumnus', 'practiceLocation', 'titlePrefix', 'titleSuffix'],
+                include: [
+                    { model: User, as: 'user', attributes: ['name'] },
+                    { model: DoctorSchedule, as: 'schedules' }
+                ]
+            });
 
-        // Ambil data jadwal konsultasi online dari MongoDB
-        const DoctorAvailability = require('../models/DoctorAvailability');
-        const availList = await DoctorAvailability.find({ isActive: true });
-        const availMap = {};
-        
-        // Cek aman: pastikan doctorId ada
-        availList.forEach(a => { 
-            if (a && a.doctorId) {
-                availMap[a.doctorId.toString()] = a; 
-            }
-        });
-
-        // Ambil semua booking konsultasi aktif untuk cek slot penuh
-        const nowUTC = new Date();
-        const allConsBookings = await Consultation.find({
-            $or: [
-                { status: { $in: ['waiting_verification','confirmed','in_progress','completed','no_show'] } },
-                { status: 'pending_payment', paymentDeadline: { $gt: nowUTC } },
-            ],
-        }).select('doctorId scheduledAt').lean();
-
-        const consBookingsByDoctor = {};
-        for (const c of allConsBookings) {
-            const did = c.doctorId ? c.doctorId.toString() : null;
-            if (!did || !c.scheduledAt) continue;
-            const scheduledMs = new Date(c.scheduledAt).getTime();
-            if (isNaN(scheduledMs)) continue;
-            if (!consBookingsByDoctor[did]) consBookingsByDoctor[did] = new Set();
-            // Simpan sebagai "YYYY-MM-DD|HH:MM" dalam WIB
-            const wib = new Date(scheduledMs + 7 * 60 * 60 * 1000);
-            const dateKey = wib.toISOString().slice(0, 10);
-            const timeKey = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')}`;
-            consBookingsByDoctor[did].add(`${dateKey}|${timeKey}`);
-        }
-
-        const doctors = docsRecords.map(d => {
-            const doc = d.toJSON();
-            doc.userId = doc.user;
-            if (doc.userId) doc.userId.id = doc.user.id;
+            const DoctorAvailability = require('../models/DoctorAvailability');
+            const availList = await DoctorAvailability.find({ isActive: true });
+            const availMap = {};
             
-            if (typeof buildAvailableDays === 'function') {
-                doc.availableDays = buildAvailableDays(doc.schedules);
-            } else {
-                doc.availableDays = [];
-            }
-            
-            const docIdStr = doc.id ? doc.id.toString() : '';
-            const avail = availMap[docIdStr];
-            
-            // Dokter dianggap offline jika:
-            // 1. Jadwal belum dibuat/expired, ATAU
-            // 2. Semua slot yang ada sudah booked/lewat
-            let isOffline = true;
-            if (avail && typeof avail.isWeekActive === 'function' && avail.isWeekActive() && avail.weekStart && avail.weekEnd) {
-                const CUTOFF_MS = 20 * 60 * 1000;
-                const bookedSet = consBookingsByDoctor[docIdStr] || new Set();
-                let hasAnyAvailable = false;
-                const msPerDay = 24 * 60 * 60 * 1000;
-                const weekStartMs = new Date(avail.weekStart).getTime();
-                const weekEndMs   = new Date(avail.weekEnd).getTime();
-                if (isNaN(weekStartMs) || isNaN(weekEndMs)) {
-                    isOffline = true;
-                } else {
-                let cursor = new Date(weekStartMs);
-
-                while (cursor.getTime() <= weekEndMs && !hasAnyAvailable) {
-                    const cursorWIB = new Date(cursor.getTime() + 7 * 60 * 60 * 1000);
-                    const dow = cursorWIB.getUTCDay();
-                    if (dow !== 0) {
-                        const activeSlots = typeof avail.getSlotsForDay === 'function' ? avail.getSlotsForDay(dow) : [];
-                        const dateStr = cursorWIB.toISOString().slice(0, 10);
-                        for (const slot of activeSlots) {
-                            const [sh, sm] = slot.split(':').map(Number);
-                            const [y, mo, dy] = dateStr.split('-').map(Number);
-                            const slotUTC = new Date(Date.UTC(y, mo - 1, dy, sh, sm, 0) - 7 * 60 * 60 * 1000);
-                            const isPast = (slotUTC.getTime() - CUTOFF_MS) <= nowUTC.getTime();
-                            const isBooked = bookedSet.has(`${dateStr}|${slot}`);
-                            if (!isPast && !isBooked) { hasAnyAvailable = true; break; }
-                        }
-                    }
-                    cursor = new Date(cursor.getTime() + msPerDay);
+            availList.forEach(a => { 
+                if (a && a.doctorId) {
+                    availMap[a.doctorId.toString()] = a; 
                 }
-                isOffline = !hasAnyAvailable;
-                } // end else isNaN guard
+            });
+
+            const nowUTC = new Date();
+            const allConsBookings = await Consultation.find({
+                $or: [
+                    { status: { $in: ['waiting_verification','confirmed','in_progress','completed','no_show'] } },
+                    { status: 'pending_payment', paymentDeadline: { $gt: nowUTC } },
+                ],
+            }).select('doctorId scheduledAt').lean();
+
+            const consBookingsByDoctor = {};
+            for (const c of allConsBookings) {
+                const did = c.doctorId ? c.doctorId.toString() : null;
+                if (!did || !c.scheduledAt) continue;
+                const scheduledMs = new Date(c.scheduledAt).getTime();
+                if (isNaN(scheduledMs)) continue;
+                if (!consBookingsByDoctor[did]) consBookingsByDoctor[did] = new Set();
+                const wib = new Date(scheduledMs + 7 * 60 * 60 * 1000);
+                const dateKey = wib.toISOString().slice(0, 10);
+                const timeKey = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')}`;
+                consBookingsByDoctor[did].add(`${dateKey}|${timeKey}`);
             }
-            doc.isOffline = isOffline;
 
-            // Kirim jadwal konsultasi online per hari ke frontend
-            // Format: [{ day: 'Senin', dow: 1, slots: [{startTime, endTime, isAvailable}] }]
-            // Tambahan: nextAvailableSlot & isFullyBooked untuk badge frontend
-            if (avail && typeof avail.getSlotsForDay === 'function' && avail.isWeekActive()) {
-                const DAY_NAMES_WIB = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-                const CUTOFF_MS     = 20 * 60 * 1000;
-                const bookedSet     = consBookingsByDoctor[docIdStr] || new Set();
-                const msPerDay      = 24 * 60 * 60 * 1000;
-                const consAvailableDays = [];
-                let   nextAvailableSlot = null; // { date, dateLabel, startTime }
-                let   totalSlots        = 0;
-                let   availableSlots    = 0;
-
-                let cursor = new Date(avail.weekStart.getTime());
-                while (cursor.getTime() <= avail.weekEnd.getTime()) {
-                    const cursorWIB = new Date(cursor.getTime() + 7 * 60 * 60 * 1000);
-                    const dow       = cursorWIB.getUTCDay();
-                    if (dow === 0) { cursor = new Date(cursor.getTime() + msPerDay); continue; }
-
-                    const activeSlots = avail.getSlotsForDay(dow);
-                    const dateStr     = cursorWIB.toISOString().slice(0, 10);
-                    const [y, mo, dy] = dateStr.split('-').map(Number);
-
-                    const slotsForDay = activeSlots.map(s => {
-                        const [sh, sm] = s.split(':').map(Number);
-                        const slotUTC  = new Date(Date.UTC(y, mo - 1, dy, sh, sm, 0) - 7 * 60 * 60 * 1000);
-                        const isPast   = (slotUTC.getTime() - CUTOFF_MS) <= nowUTC.getTime();
-                        const isBooked = bookedSet.has(`${dateStr}|${s}`);
-                        const isAvail  = !isPast && !isBooked;
-                        totalSlots++;
-                        if (isAvail) {
-                            availableSlots++;
-                            // Catat slot tersedia pertama berikutnya
-                            if (!nextAvailableSlot) {
-                                const [dm, dd] = [mo, dy];
-                                const dayName  = DAY_NAMES_WIB[dow];
-                                const bulan    = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][mo - 1];
-                                nextAvailableSlot = {
-                                    date      : dateStr,
-                                    dateLabel : `${dayName}, ${dy} ${bulan}`,
-                                    startTime : s,
-                                };
+            return docsRecords.map(d => {
+                const doc = d.toJSON();
+                doc.userId = doc.user;
+                if (doc.userId) doc.userId.id = doc.user.id;
+                
+                if (typeof buildAvailableDays === 'function') {
+                    doc.availableDays = buildAvailableDays(doc.schedules);
+                } else {
+                    doc.availableDays = [];
+                }
+                
+                const docIdStr = doc.id ? doc.id.toString() : '';
+                const avail = availMap[docIdStr];
+                
+                let isOffline = true;
+                if (avail && typeof avail.isWeekActive === 'function' && avail.isWeekActive() && avail.weekStart && avail.weekEnd) {
+                    const CUTOFF_MS = 20 * 60 * 1000;
+                    const bookedSet = consBookingsByDoctor[docIdStr] || new Set();
+                    let hasAnyAvailable = false;
+                    const msPerDay = 24 * 60 * 60 * 1000;
+                    const weekStartMs = new Date(avail.weekStart).getTime();
+                    const weekEndMs   = new Date(avail.weekEnd).getTime();
+                    if (isNaN(weekStartMs) || isNaN(weekEndMs)) {
+                        isOffline = true;
+                    } else {
+                    let cursor = new Date(weekStartMs);
+                    while (cursor.getTime() <= weekEndMs && !hasAnyAvailable) {
+                        const cursorWIB = new Date(cursor.getTime() + 7 * 60 * 60 * 1000);
+                        const dow = cursorWIB.getUTCDay();
+                        if (dow !== 0) {
+                            const activeSlots = typeof avail.getSlotsForDay === 'function' ? avail.getSlotsForDay(dow) : [];
+                            const dateStr = cursorWIB.toISOString().slice(0, 10);
+                            for (const slot of activeSlots) {
+                                const [sh, sm] = slot.split(':').map(Number);
+                                const [y, mo, dy] = dateStr.split('-').map(Number);
+                                const slotUTC = new Date(Date.UTC(y, mo - 1, dy, sh, sm, 0) - 7 * 60 * 60 * 1000);
+                                const isPast = (slotUTC.getTime() - CUTOFF_MS) <= nowUTC.getTime();
+                                const isBooked = bookedSet.has(`${dateStr}|${slot}`);
+                                if (!isPast && !isBooked) { hasAnyAvailable = true; break; }
                             }
                         }
-                        return {
-                            startTime : s,
-                            endTime   : `${String(parseInt(s.split(':')[0]) + 1).padStart(2,'0')}:${s.split(':')[1]}`,
-                            isAvailable: isAvail,
-                        };
-                    });
-
-                    if (slotsForDay.length > 0) {
-                        consAvailableDays.push({ day: DAY_NAMES_WIB[dow], dow, slots: slotsForDay });
+                        cursor = new Date(cursor.getTime() + msPerDay);
                     }
-                    cursor = new Date(cursor.getTime() + msPerDay);
+                    isOffline = !hasAnyAvailable;
+                    }
+                }
+                doc.isOffline = isOffline;
+
+                if (avail && typeof avail.getSlotsForDay === 'function' && avail.isWeekActive()) {
+                    const DAY_NAMES_WIB = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+                    const CUTOFF_MS     = 20 * 60 * 1000;
+                    const bookedSet     = consBookingsByDoctor[docIdStr] || new Set();
+                    const msPerDay      = 24 * 60 * 60 * 1000;
+                    const consAvailableDays = [];
+                    let   nextAvailableSlot = null;
+                    let   totalSlots        = 0;
+                    let   availableSlots    = 0;
+
+                    let cursor = new Date(avail.weekStart.getTime());
+                    while (cursor.getTime() <= avail.weekEnd.getTime()) {
+                        const cursorWIB = new Date(cursor.getTime() + 7 * 60 * 60 * 1000);
+                        const dow       = cursorWIB.getUTCDay();
+                        if (dow === 0) { cursor = new Date(cursor.getTime() + msPerDay); continue; }
+
+                        const activeSlots = avail.getSlotsForDay(dow);
+                        const dateStr     = cursorWIB.toISOString().slice(0, 10);
+                        const [y, mo, dy] = dateStr.split('-').map(Number);
+
+                        const slotsForDay = activeSlots.map(s => {
+                            const [sh, sm] = s.split(':').map(Number);
+                            const slotUTC  = new Date(Date.UTC(y, mo - 1, dy, sh, sm, 0) - 7 * 60 * 60 * 1000);
+                            const isPast   = (slotUTC.getTime() - CUTOFF_MS) <= nowUTC.getTime();
+                            const isBooked = bookedSet.has(`${dateStr}|${s}`);
+                            const isAvail  = !isPast && !isBooked;
+                            totalSlots++;
+                            if (isAvail) {
+                                availableSlots++;
+                                if (!nextAvailableSlot) {
+                                    const dayName  = DAY_NAMES_WIB[dow];
+                                    const bulan    = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][mo - 1];
+                                    nextAvailableSlot = {
+                                        date      : dateStr,
+                                        dateLabel : `${dayName}, ${dy} ${bulan}`,
+                                        startTime : s,
+                                    };
+                                }
+                            }
+                            return {
+                                startTime : s,
+                                endTime   : `${String(parseInt(s.split(':')[0]) + 1).padStart(2,'0')}:${s.split(':')[1]}`,
+                                isAvailable: isAvail,
+                            };
+                        });
+
+                        if (slotsForDay.length > 0) {
+                            consAvailableDays.push({ day: DAY_NAMES_WIB[dow], dow, slots: slotsForDay });
+                        }
+                        cursor = new Date(cursor.getTime() + msPerDay);
+                    }
+
+                    doc.consAvailableDays   = consAvailableDays;
+                    doc.nextAvailableSlot   = nextAvailableSlot;
+                    doc.isFullyBooked       = totalSlots > 0 && availableSlots === 0;
+                } else {
+                    doc.consAvailableDays = [];
+                    doc.nextAvailableSlot = null;
+                    doc.isFullyBooked     = false;
                 }
 
-                doc.consAvailableDays   = consAvailableDays;
-                doc.nextAvailableSlot   = nextAvailableSlot;
-                doc.isFullyBooked       = totalSlots > 0 && availableSlots === 0;
-            } else {
-                doc.consAvailableDays = [];
-                doc.nextAvailableSlot = null;
-                doc.isFullyBooked     = false;
-            }
-
-            return doc;
+                return doc;
+            });
         });
+
         res.json(doctors);
     } catch (error) {
         console.error('GET /doctors error:', error);
@@ -698,17 +640,21 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * GET /:id/schedule
- * Jadwal dokter (public) — harus sebelum /:id.
+ * GET /:id/schedule — cache 5 menit
  */
 router.get('/:id/schedule', async (req, res) => {
     try {
-        const docRecord = await Doctor.findByPk(req.params.id, {
-            attributes: ['id', 'name', 'allowChat', 'allowVideoCall', 'isOnline'],
-            include: [{ model: DoctorSchedule, as: 'schedules' }]
+        const { id } = req.params;
+        const doctor = await getOrSet(CACHE_KEYS.DOCTOR_SCHEDULE(id), TTL.DOCTORS, async () => {
+            const docRecord = await Doctor.findByPk(id, {
+                attributes: ['id', 'name', 'allowChat', 'allowVideoCall', 'isOnline'],
+                include: [{ model: DoctorSchedule, as: 'schedules' }]
+            });
+            const doc = docRecord ? docRecord.toJSON() : null;
+            if (doc) doc.availableDays = buildAvailableDays(doc.schedules);
+            return doc;
         });
-        const doctor = docRecord ? docRecord.toJSON() : null;
-        if (doctor) doctor.availableDays = buildAvailableDays(doctor.schedules);
+
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json(doctor);
     } catch (error) {
@@ -718,23 +664,27 @@ router.get('/:id/schedule', async (req, res) => {
 });
 
 /**
- * GET /:id
- * Detail dokter (public).
+ * GET /:id — cache 5 menit
  */
 router.get('/:id', async (req, res) => {
     try {
-        const docRecord = await Doctor.findByPk(req.params.id, {
-            include: [
-                { model: User, as: 'user', attributes: ['name', 'email'] },
-                { model: DoctorSchedule, as: 'schedules' }
-            ]
+        const { id } = req.params;
+        const doctor = await getOrSet(CACHE_KEYS.DOCTOR_DETAIL(id), TTL.DOCTORS, async () => {
+            const docRecord = await Doctor.findByPk(id, {
+                include: [
+                    { model: User, as: 'user', attributes: ['name', 'email'] },
+                    { model: DoctorSchedule, as: 'schedules' }
+                ]
+            });
+            const doc = docRecord ? docRecord.toJSON() : null;
+            if (doc) {
+                doc.userId = doc.user;
+                doc.userId.id = doc.user.id;
+                doc.availableDays = buildAvailableDays(doc.schedules);
+            }
+            return doc;
         });
-        const doctor = docRecord ? docRecord.toJSON() : null;
-        if (doctor) {
-            doctor.userId = doctor.user;
-            doctor.userId.id = doctor.user.id;
-            doctor.availableDays = buildAvailableDays(doctor.schedules);
-        }
+
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
         res.json(doctor);
     } catch (error) {
@@ -744,17 +694,17 @@ router.get('/:id', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// ADMIN ROUTES — DYNAMIC
+// ADMIN ROUTES — dengan invalidasi cache
 // ══════════════════════════════════════════════════════════════════
 
-/**
- * POST /
- * Tambah dokter baru (admin).
- */
 router.post('/', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
         const doctor = await Doctor.create(req.body);
+
+        // Invalidasi list dokter
+        await invalidate(CACHE_KEYS.DOCTORS_ALL);
+
         res.status(201).json({ success: true, message: 'Dokter berhasil ditambahkan', doctor });
     } catch (error) {
         console.error('POST /doctors error:', error);
@@ -762,14 +712,9 @@ router.post('/', auth, async (req, res) => {
     }
 });
 
-/**
- * PUT /:id
- * Update dokter (admin).
- */
 router.put('/:id', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
-        // SEC-03 fix: whitelist updatable fields — prevent mass assignment of rating, userId, etc.
         const { name, specialization, gender, bio, experience, consultationFee, isActive } = req.body;
         const update = {};
         if (name            !== undefined) update.name             = name;
@@ -779,10 +724,18 @@ router.put('/:id', auth, async (req, res) => {
         if (experience      !== undefined) update.experience       = experience;
         if (consultationFee !== undefined) update.consultationFee  = consultationFee;
         if (isActive        !== undefined) update.isActive         = isActive;
-        // Explicitly excluded: rating, totalReviews, userId, photo, signature
+
         await Doctor.update(update, { where: { id: req.params.id } });
         const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+
+        // Invalidasi list, detail, dan jadwal dokter ini
+        await invalidateMany(
+            CACHE_KEYS.DOCTORS_ALL,
+            CACHE_KEYS.DOCTOR_DETAIL(req.params.id),
+            CACHE_KEYS.DOCTOR_SCHEDULE(req.params.id),
+        );
+
         res.json({ success: true, message: 'Dokter berhasil diperbarui', doctor });
     } catch (error) {
         console.error('PUT /doctors/:id error:', error);
@@ -790,10 +743,6 @@ router.put('/:id', auth, async (req, res) => {
     }
 });
 
-/**
- * PUT /:id/schedule
- * Update jadwal dokter (admin).
- */
 router.put('/:id/schedule', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
@@ -822,6 +771,13 @@ router.put('/:id/schedule', auth, async (req, res) => {
         if (newSchedules.length) {
             await DoctorSchedule.bulkCreate(newSchedules);
         }
+
+        // Invalidasi list dan jadwal dokter ini
+        await invalidateMany(
+            CACHE_KEYS.DOCTORS_ALL,
+            CACHE_KEYS.DOCTOR_SCHEDULE(req.params.id),
+        );
+
         res.json({ success: true, message: 'Jadwal berhasil diperbarui', schedule: buildAvailableDays(newSchedules) });
     } catch (error) {
         console.error('PUT /doctors/:id/schedule error:', error);
@@ -829,10 +785,6 @@ router.put('/:id/schedule', auth, async (req, res) => {
     }
 });
 
-/**
- * PUT /:id/settings
- * Update pengaturan konsultasi dokter tertentu (admin).
- */
 router.put('/:id/settings', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
@@ -848,6 +800,13 @@ router.put('/:id/settings', auth, async (req, res) => {
         );
         const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+
+        // Invalidasi list dan detail
+        await invalidateMany(
+            CACHE_KEYS.DOCTORS_ALL,
+            CACHE_KEYS.DOCTOR_DETAIL(req.params.id),
+        );
+
         res.json({ success: true, message: 'Pengaturan berhasil diperbarui', consultationSettings: { allowChat: doctor.allowChat, allowVideoCall: doctor.allowVideoCall } });
     } catch (error) {
         console.error('PUT /doctors/:id/settings error:', error);
@@ -855,10 +814,6 @@ router.put('/:id/settings', auth, async (req, res) => {
     }
 });
 
-/**
- * PUT /:id/online-status
- * Toggle status online/offline dokter (admin).
- */
 router.put('/:id/online-status', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
@@ -870,6 +825,12 @@ router.put('/:id/online-status', auth, async (req, res) => {
         await Doctor.update({ isOnline }, { where: { id: req.params.id } });
         doctor.isOnline = isOnline;
 
+        // Invalidasi list dan detail
+        await invalidateMany(
+            CACHE_KEYS.DOCTORS_ALL,
+            CACHE_KEYS.DOCTOR_DETAIL(req.params.id),
+        );
+
         res.json({ success: true, message: isOnline ? 'Dokter online' : 'Dokter offline', isOnline: doctor.isOnline, doctor });
     } catch (error) {
         console.error('PUT /doctors/:id/online-status error:', error);
@@ -877,16 +838,19 @@ router.put('/:id/online-status', auth, async (req, res) => {
     }
 });
 
-/**
- * DELETE /:id
- * Nonaktifkan dokter (admin).
- */
 router.delete('/:id', auth, async (req, res) => {
     try {
         if (req.userRole !== 'admin') return res.status(403).json({ message: 'Akses ditolak' });
         await Doctor.update({ isActive: false }, { where: { id: req.params.id } });
         const doctor = await Doctor.findByPk(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
+
+        // Invalidasi list dan detail
+        await invalidateMany(
+            CACHE_KEYS.DOCTORS_ALL,
+            CACHE_KEYS.DOCTOR_DETAIL(req.params.id),
+        );
+
         res.json({ success: true, message: 'Dokter berhasil dinonaktifkan', doctor });
     } catch (error) {
         console.error('DELETE /doctors/:id error:', error);
@@ -894,14 +858,12 @@ router.delete('/:id', auth, async (req, res) => {
     }
 });
 
-// ── Chat dokter ↔ admin (dokter bisa baca & balas) ────────────────────────────
+// ── Chat dokter ↔ admin ────────────────────────────────────────────────────────
 const AdminChat    = require('../models/AdminChat');
 const { createNotification } = require('../utils/notificationHelper');
 
-// File chat dokter-admin → Cloudinary
 const uploadChatFile = createCloudinaryUpload('klinik-ipb/admin-chat', ['jpg','jpeg','png','webp','pdf','doc','docx'], 10);
 
-// GET /api/doctors/my/chat — baca pesan dari admin
 router.get('/my/chat', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -913,12 +875,10 @@ router.get('/my/chat', auth, doctorAuth, async (req, res) => {
     }
 });
 
-// POST /api/doctors/my/chat — balas pesan ke admin
 router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (req, res) => {
     try {
         const { text } = req.body;
         
-        // Validation
         if (!text?.trim() && !req.file) {
             return res.status(400).json({
                 success: false,
@@ -926,7 +886,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             });
         }
  
-        // Get dokter info
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) {
             return res.status(404).json({
@@ -935,7 +894,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             });
         }
  
-        // Process file jika ada
         let fileUrl = null, fileName = null, fileType = null;
         if (req.file) {
             fileUrl  = req.file.path || req.file.secure_url || req.file.url;
@@ -943,7 +901,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
         }
  
-        // Create message object
         const msg = {
             senderId  : req.userId,
             senderRole: 'doctor',
@@ -953,7 +910,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             createdAt : new Date(),
         };
  
-        // Save ke database
         const thread = await AdminChat.findOneAndUpdate(
             { doctorId: doctor.id },
             {
@@ -968,7 +924,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             { upsert: true, new: true }
         );
  
-        // Format message dengan struktur lengkap untuk response
         const messageData = {
             _id: msg._id || new Date().getTime(),
             senderId: req.userId,
@@ -981,7 +936,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
             createdAt: msg.createdAt,
         };
  
-        // Notif & emit ke semua admin
         const admins = await User.findAll({ where: { role: 'admin' } });
         const io = req.app.get('io');
  
@@ -990,7 +944,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
  
         for (const admin of admins) {
             try {
-                // Kirim notifikasi
                 await createNotification({
                     userId : admin.id,
                     type   : 'new_message',
@@ -1000,7 +953,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
                     io,
                 });
  
-                // Emit socket ke admin dengan struktur lengkap
                 if (io) {
                     io.to(`user-${admin.id}`).emit('admin-chat-message', {
                         doctorId: doctorId,
@@ -1010,11 +962,9 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
                 }
             } catch (adminErr) {
                 console.warn(`[POST /doctors/my/chat] Error emit to admin ${admin.id}:`, adminErr.message);
-                // Continue ke admin berikutnya, jangan stop
             }
         }
  
-        // Response dengan format yang proper
         res.json({
             success: true,
             message: messageData
@@ -1035,7 +985,6 @@ router.post('/my/chat', auth, doctorAuth, uploadChatFile.single('file'), async (
     }
 });
  
-// PUT /api/doctors/my/chat/read — tandai sudah dibaca oleh dokter
 router.put('/my/chat/read', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -1071,23 +1020,7 @@ router.put('/my/chat/read', auth, doctorAuth, async (req, res) => {
     }
 });
 
-// PUT /api/doctors/my/chat/read — tandai sudah dibaca oleh dokter
-router.put('/my/chat/read', auth, doctorAuth, async (req, res) => {
-    try {
-        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
-        if (!doctor) return res.status(404).json({ message: 'Dokter tidak ditemukan' });
-        await AdminChat.findOneAndUpdate(
-            { doctorId: doctor.id },
-            { $set: { unreadDoctor: 0 } }
-        );
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-
-// ── Tren penyakit ML khusus dokter yang login ────────────────────────────────
+// ── Tren penyakit ML khusus dokter yang login ─────────────────────────────────
 router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
     try {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
@@ -1107,7 +1040,6 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
             start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
             end   = todayEnd;
         } else {
-            // default 30d
             start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0);
             end   = todayEnd;
         }
@@ -1165,7 +1097,6 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
             ])
         ]);
 
-        // Gabungkan konsultasi & janji temu, group by kategori
         const merged = {};
         [...consultResults, ...apptResults].forEach(r => {
             const { kategori, tanggal } = r._id;

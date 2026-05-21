@@ -1,4 +1,10 @@
-// routes/pharmacy.js
+// routes/pharmacy.js  ← VERSI FINAL
+//
+// Perbaikan dari versi sebelumnya:
+//  + GET /medicines       → dibungkus getOrSet menggunakan CACHE_KEYS.MEDICINES_PAGE
+//  + Import CACHE_KEYS    → ditambahkan agar key konsisten dengan cache.js
+//  + Cache key medicines  → menggunakan helper CACHE_KEYS.MEDICINES_PAGE (bukan string manual)
+
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -19,7 +25,10 @@ const {
     getAvailableBanks,
 } = require('../utils/cloudinary-xendit-helper');
 
-// Upload video refund via Cloudinary (max 50MB, video/image)
+// ── Redis cache helpers ───────────────────────────────────────
+// FIX: tambahkan CACHE_KEYS agar key konsisten dengan cache.js
+const { getOrSet, invalidatePattern, CACHE_KEYS, TTL } = require('../utils/cache');
+
 const uploadRefundVideo = createCloudinaryUpload(
     'klinik-refund-pharmacy',
     ['mp4', 'mov', 'avi', 'mkv', 'webm', 'jpg', 'jpeg', 'png'],
@@ -31,7 +40,7 @@ const KLINIK_LAT = -6.5530;
 const KLINIK_LNG = 106.7237;
 const STUDENT_MAX_PCS = 8;
 const PICKUP_READY_MIN = 30;
-const PAYMENT_LOCK_MIN = 1440; // 1 hari (24 jam)
+const PAYMENT_LOCK_MIN = 1440;
 const FREE_DELIVERY_KM = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -110,8 +119,6 @@ async function getStudentFreeUsage(userId) {
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-    // Model Order memakai underscored:true → kolom DB = created_at
-    // Gunakan sequelize.literal agar tidak error "Unknown column 'Order.createdAt'"
     const { sequelize } = require('../models/mysql');
     const orders = await Order.findAll({
         where: {
@@ -127,14 +134,12 @@ async function getStudentFreeUsage(userId) {
     return orders.reduce((s, o) => s + (o.studentFreeQty || 0), 0);
 }
 
-// ─── Multer: gambar obat → Cloudinary ────────────────────────────────────────
 const uploadMedImage = createCloudinaryUpload(
     'klinik-ipb/medicines',
     ['jpg', 'jpeg', 'png', 'webp'],
     3
 );
 
-// ─── Multer: foto resep → Cloudinary ─────────────────────────────────────────
 const uploadRx = createCloudinaryUpload(
     'klinik-ipb/prescriptions',
     ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
@@ -145,33 +150,42 @@ const uploadRx = createCloudinaryUpload(
 // PUBLIC — Daftar & detail obat
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// FIX: GET /medicines sekarang menggunakan getOrSet + CACHE_KEYS.MEDICINES_PAGE
+// agar invalidatePattern('cache:medicines:*') di write routes benar-benar efektif.
 router.get('/medicines', async (req, res) => {
     try {
         const { search, category, page = 1, limit = 12 } = req.query;
-        const where = {};
-        if (search) {
-            where[Op.or] = [
-                { name: { [Op.like]: `%${search}%` } },
-                { genericName: { [Op.like]: `%${search}%` } },
-            ];
-        }
-        if (category) where.category = category;
 
-        const offset = (Number(page) - 1) * Number(limit);
-        const { count, rows: meds } = await Medicine.findAndCountAll({
-            where,
-            limit: Number(limit),
-            offset,
-            order: [['created_at', 'DESC']],
+        // Gunakan CACHE_KEYS.MEDICINES_PAGE agar format key konsisten dengan cache.js
+        const cacheKey = CACHE_KEYS.MEDICINES_PAGE(search, category, page, limit);
+
+        const result = await getOrSet(cacheKey, TTL.MEDICINES, async () => {
+            const where = {};
+            if (search) {
+                where[Op.or] = [
+                    { name: { [Op.like]: `%${search}%` } },
+                    { genericName: { [Op.like]: `%${search}%` } },
+                ];
+            }
+            if (category) where.category = category;
+
+            const offset = (Number(page) - 1) * Number(limit);
+            const { count, rows: meds } = await Medicine.findAndCountAll({
+                where,
+                limit: Number(limit),
+                offset,
+                order: [['created_at', 'DESC']],
+            });
+
+            return {
+                medicines: meds,
+                total: count,
+                totalPages: Math.ceil(count / Number(limit)),
+                currentPage: Number(page),
+            };
         });
 
-        res.json({
-            success: true,
-            medicines: meds,
-            total: count,
-            totalPages: Math.ceil(count / Number(limit)),
-            currentPage: Number(page),
-        });
+        res.json({ success: true, ...result });
     } catch (err) {
         console.error('[pharmacy] GET /medicines error:', err.message);
         res.status(500).json({ message: 'Server error', detail: err.message });
@@ -205,32 +219,44 @@ router.get('/admin/medicines', auth, adminAuth, async (req, res) => {
     }
 });
 
+// POST /admin/medicines — invalidasi cache medicines setelah tambah obat
 router.post('/admin/medicines', auth, adminAuth, async (req, res) => {
     try {
         const med = await Medicine.create(req.body);
         const j = med.toJSON();
         j._id = j.id;
+
+        await invalidatePattern('cache:medicines:*');
+
         res.status(201).json({ success: true, message: 'Obat ditambahkan', medicine: j });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
+// PUT /admin/medicines/:id — invalidasi cache medicines setelah update obat
 router.put('/admin/medicines/:id', auth, adminAuth, async (req, res) => {
     try {
         await Medicine.update({ ...req.body, updatedAt: new Date() }, { where: { id: req.params.id } });
         const med = await Medicine.findByPk(req.params.id);
         const j = med.toJSON();
         j._id = j.id;
+
+        await invalidatePattern('cache:medicines:*');
+
         res.json({ success: true, message: 'Obat diperbarui', medicine: j });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
+// DELETE /admin/medicines/:id — invalidasi cache medicines setelah nonaktifkan obat
 router.delete('/admin/medicines/:id', auth, adminAuth, async (req, res) => {
     try {
         await Medicine.update({ isActive: false }, { where: { id: req.params.id } });
+
+        await invalidatePattern('cache:medicines:*');
+
         res.json({ success: true, message: 'Obat dinonaktifkan' });
     } catch {
         res.status(500).json({ message: 'Server error' });
@@ -249,13 +275,15 @@ router.post('/admin/medicines/:id/image', auth, adminAuth,
             if (!req.file) return res.status(400).json({ error: 'File gambar diperlukan' });
             const med = await Medicine.findByPk(req.params.id);
             if (!med) return res.status(404).json({ error: 'Obat tidak ditemukan' });
-            // Cloudinary: hapus gambar lama jika ada public_id
             if (med.imagePublicId) {
                 try { await cloudinary.uploader.destroy(med.imagePublicId); } catch (_) {}
             }
             med.image = req.file.path || req.file.secure_url || req.file.url;
             med.imagePublicId = req.file.filename || req.file.public_id || null;
             await med.save();
+
+            await invalidatePattern('cache:medicines:*');
+
             res.json({ success: true, image: med.image });
         } catch (err) {
             res.status(500).json({ error: err.message });
@@ -381,13 +409,11 @@ router.post('/orders', auth, async (req, res) => {
                 remainingQuota -= freeQtyForItem;
                 quotaUsed += freeQtyForItem;
                 isFreeForStudent = freeQtyForItem > 0;
-                // Jika semua qty gratis, finalPrice = 0; jika parsial, tetap catat harga asli per unit
                 finalPrice = freeQtyForItem >= item.quantity ? 0 : Number(med.price);
             }
 
-            // Hitung subtotal dengan benar: bagian gratis = 0, sisanya bayar penuh
             const paidQty = item.quantity - freeQtyForItem;
-            const subtotal = paidQty * Number(med.price); // bagian gratis tidak dikenakan biaya
+            const subtotal = paidQty * Number(med.price);
             subtotalObat += subtotal;
 
             orderItemsData.push({
@@ -395,7 +421,6 @@ router.post('/orders', auth, async (req, res) => {
                 medicineName: med.name,
                 price: Number(med.price),
                 finalPrice,
-                // freeQty tidak ada di model OrderItem — dihapus agar tidak error
                 quantity: item.quantity,
                 subtotal,
                 requiresPrescription: med.requiresPrescription || false,
@@ -406,7 +431,6 @@ router.post('/orders', auth, async (req, res) => {
         const totalAmount = subtotalObat;
         const isFreeOrder = totalAmount === 0 && !requiresPrescription;
 
-        // Pesanan gratis langsung diproses — tidak perlu tunggu pembayaran
         const initialStatus = requiresPrescription
             ? 'waiting_prescription'
             : isFreeOrder ? 'diproses' : 'pending';
@@ -436,7 +460,6 @@ router.post('/orders', auth, async (req, res) => {
             await OrderItem.create({ orderId: order.id, ...itemData });
         }
 
-        // Pesanan gratis: langsung kurangi stok tanpa menunggu konfirmasi frontend
         if (isFreeOrder) {
             for (const itemData of orderItemsData) {
                 await Medicine.increment({ stock: -itemData.quantity }, { where: { id: itemData.medicineId } });
@@ -586,24 +609,21 @@ router.put('/orders/:id/selesai', auth, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// USER — Daftar bank untuk refund
+// USER — Daftar bank untuk refund  ← dengan Redis cache 1 jam
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Endpoint ini PUBLIC (tanpa auth) karena bank list dibutuhkan di halaman
-// pharmacy & konsultasi bahkan sebelum user login (untuk tampilan UI refund).
-// Data ini tidak sensitif — hanya daftar nama bank.
 router.get('/refund-banks', async (req, res) => {
     try {
-        const banks = await getAvailableBanks();
-        // Normalise: Xendit mengembalikan { bank_code, name }, frontend butuh { code, name }
-        const normalized = banks.map(b => ({
-            code: b.bank_code || b.code,
-            name: b.name,
-        }));
-        res.json({ success: true, banks: normalized });
+        const banks = await getOrSet(CACHE_KEYS.REFUND_BANKS, TTL.REFUND_BANKS, async () => {
+            const raw = await getAvailableBanks();
+            return raw.map(b => ({
+                code: b.bank_code || b.code,
+                name: b.name,
+            }));
+        });
+        res.json({ success: true, banks });
     } catch (err) {
         console.error('[pharmacy] GET /refund-banks:', err.message);
-        // Fallback statis jika Xendit API gagal — hindari 500 ke client
         res.json({
             success: true,
             banks: [
@@ -666,7 +686,6 @@ router.get('/admin/orders', auth, adminAuth, async (req, res) => {
     }
 });
 
-// ── Admin: edit kuantitas item sebelum approve resep (FIXED) ─────────────────────────
 router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) => {
     try {
         const { items } = req.body;
@@ -677,7 +696,6 @@ router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) =
         if (order.status !== 'waiting_prescription')
             return res.status(400).json({ message: 'Hanya bisa edit item saat waiting_prescription' });
 
-        // Update quantity dan hitung ulang subtotal
         for (const adj of items) {
             const idx = order.items.findIndex(i => String(i.medicineId) === String(adj.medicineId));
             if (idx === -1) continue;
@@ -690,12 +708,10 @@ router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) =
             }
 
             order.items[idx].quantity = adj.quantity;
-            // Gunakan finalPrice atau price untuk perhitungan
             const pricePerUnit = order.items[idx].finalPrice || order.items[idx].price || 0;
             order.items[idx].subtotal = pricePerUnit * adj.quantity;
         }
 
-        // Hitung ulang total order
         order.subtotalObat = order.items.reduce((s, i) => s + (i.subtotal || 0), 0);
         order.totalAmount = order.subtotalObat + (order.shippingCost || 0);
         order.updatedAt = new Date();
@@ -718,7 +734,6 @@ router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) =
             });
         }
 
-        // Ambil order yang sudah diupdate untuk response
         const updatedOrder = await Order.findByPk(order.id, {
             include: [
                 { model: User, as: 'user', attributes: ['name', 'email', 'phone'] },
@@ -733,7 +748,6 @@ router.put('/admin/orders/:id/adjust-items', auth, adminAuth, async (req, res) =
     }
 });
 
-// ── Admin: verifikasi resep ───────────────────────────────────────────────────
 router.put('/admin/orders/:id/verify-prescription', auth, adminAuth, async (req, res) => {
     try {
         const { action, reason } = req.body;
@@ -812,7 +826,6 @@ router.put('/admin/orders/:id/verify-prescription', auth, adminAuth, async (req,
     }
 });
 
-// ── Admin: update status order ────────────────────────────────────────────────
 router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
     try {
         const { status } = req.body;
@@ -885,11 +898,6 @@ router.put('/admin/orders/:id/status', auth, adminAuth, async (req, res) => {
 // REFUND FARMASI
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── USER: Ajukan refund (dengan video bukti) ──────────────────────────────────
-// Flow sama seperti konsultasi:
-//   user isi bank + video saat submit → status refund_requested
-//   admin approve → langsung jalankan Xendit → status refunded
-//   admin reject  → status refund_rejected
 router.post('/orders/:id/refund-request',
     auth,
     (req, res, next) => {
@@ -907,23 +915,16 @@ router.post('/orders/:id/refund-request',
 
             const { reason, bankCode, accountNumber, accountName } = req.body;
 
-            // ─── BLOKIR refund untuk pesanan gratis mahasiswa ────────────────
-            // Pesanan yang dibayar dengan kuota gratis tidak bisa direfund
-            // karena tidak ada uang yang masuk
             if (order.isStudentDiscount && order.totalAmount === 0) {
                 return res.status(400).json({
                     message: 'Pesanan gratis mahasiswa tidak dapat direfund karena tidak ada pembayaran yang dilakukan.'
                 });
             }
-            // Pesanan parsial: jika ada bagian gratis, refund hanya untuk bagian berbayar
-            // totalAmount sudah benar (hanya bagian berbayar), jadi Xendit akan refund jumlah yang tepat
 
-            // Validasi bank info — wajib diisi di awal (sama seperti konsultasi)
             if (!bankCode?.trim())       return res.status(400).json({ message: 'Kode bank wajib diisi' });
             if (!accountNumber?.trim())  return res.status(400).json({ message: 'Nomor rekening wajib diisi' });
             if (!accountName?.trim())    return res.status(400).json({ message: 'Nama pemilik rekening wajib diisi' });
 
-            // ─── INSTANT REFUND (status=paid, dalam 1 jam) ───────────────────
             if (order.status === 'paid') {
                 const paidAt  = order.updatedAt || order.createdAt;
                 const elapsed = Date.now() - new Date(paidAt).getTime();
@@ -939,12 +940,10 @@ router.post('/orders/:id/refund-request',
                 };
                 const amount = order.totalAmount;
 
-                // Guard: jika totalAmount = 0, tidak ada yang perlu direfund ke Xendit
                 if (!amount || amount <= 0) {
                     return res.status(400).json({ message: 'Tidak ada pembayaran yang bisa direfund untuk pesanan ini.' });
                 }
 
-                // Coba Xendit Refund dulu (jika invoice masih ada & dalam 7 hari)
                 let refunded     = false;
                 let refundMethod = null;
                 let xenditInvoiceId = null;
@@ -975,7 +974,6 @@ router.post('/orders/:id/refund-request',
                     }
                 }
 
-                // Fallback: disbursement ke rekening bank user
                 if (!refunded) {
                     await axios.post('https://api.xendit.co/disbursements',
                         {
@@ -1013,7 +1011,6 @@ router.post('/orders/:id/refund-request',
                 return res.json({ success: true, message: `Refund berhasil diproses. Dana akan masuk dalam ${eta}.`, method: refundMethod, order });
             }
 
-            // ─── VIDEO REFUND (terkirim/selesai + video bukti) ───────────────
             if (!['terkirim', 'selesai'].includes(order.status)) {
                 return res.status(400).json({ message: `Refund dengan video hanya bisa untuk pesanan yang sudah diterima. Status saat ini: ${order.status}` });
             }
@@ -1025,7 +1022,6 @@ router.post('/orders/:id/refund-request',
             if (!req.file)        return res.status(400).json({ message: 'Video bukti wajib diunggah.' });
             if (!reason?.trim())  return res.status(400).json({ message: 'Alasan refund wajib diisi.' });
 
-            // Simpan semua info termasuk bank — admin tinggal approve, langsung transfer
             order.status              = 'refund_requested';
             order.refundVideoUrl      = req.file.path;
             order.refundVideoPublicId = req.file.filename;
@@ -1038,7 +1034,6 @@ router.post('/orders/:id/refund-request',
 
             const io = req.app.get('io');
 
-            // Notif user — tunggu review
             await createNotification({
                 userId : order.userId,
                 type   : 'refund_requested',
@@ -1048,7 +1043,6 @@ router.post('/orders/:id/refund-request',
                 io,
             });
 
-            // Notif admin
             const admins = await User.findAll({ where: { role: 'admin' } });
             for (const admin of admins) {
                 await createNotification({
@@ -1069,7 +1063,6 @@ router.post('/orders/:id/refund-request',
     }
 );
 
-// ── ADMIN: Lihat daftar refund ────────────────────────────────────────────────
 router.get('/admin/orders/refund-requests', auth, adminAuth, async (req, res) => {
     try {
         const { status = 'refund_requested', page = 1, limit = 20 } = req.query;
@@ -1109,7 +1102,6 @@ router.get('/admin/orders/refund-requests', auth, adminAuth, async (req, res) =>
     }
 });
 
-// ── ADMIN: Detail satu refund (untuk modal review — video + alasan + items) ───
 router.get('/admin/orders/:id/refund-detail', auth, adminAuth, async (req, res) => {
     try {
         const order = await Order.findByPk(req.params.id, {
@@ -1159,7 +1151,6 @@ router.get('/admin/orders/:id/refund-detail', auth, adminAuth, async (req, res) 
     }
 });
 
-// ── ADMIN: Approve → langsung Xendit | Reject → selesai ──────────────────────
 router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) => {
     try {
         const order = await Order.findByPk(req.params.id, {
@@ -1175,12 +1166,10 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
 
         const io = req.app.get('io');
 
-        // Hapus video dari Cloudinary (baik approve maupun reject)
         if (order.refundVideoPublicId) {
             await deleteFromCloudinary(order.refundVideoPublicId, 'video');
         }
 
-        // ── REJECT ──────────────────────────────────────────────────────────
         if (action === 'reject') {
             order.status            = 'refund_rejected';
             order.refundReviewedAt  = new Date();
@@ -1199,7 +1188,6 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
             return res.json({ success: true, message: 'Refund ditolak, video dihapus dari Cloudinary.', order });
         }
 
-        // ── APPROVE: langsung jalankan Xendit (sama seperti processRefundInternal konsultasi) ──
         const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY;
         const headers = {
             Authorization : 'Basic ' + Buffer.from(XENDIT_SECRET_KEY + ':').toString('base64'),
@@ -1215,22 +1203,17 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
             return res.status(400).json({ message: 'Data rekening bank belum lengkap.' });
         }
 
-        let refundMethod    = null;
         let refunded        = false;
         const REFUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
         const paidAt = order.paidAt ? new Date(order.paidAt) : null;
         const isWithin7d = order.xenditInvoiceId && (!paidAt || (Date.now() - paidAt.getTime()) < REFUND_WINDOW_MS);
 
-        // ─────────────────────────────────────────────────────────────────
-        // 1. COBA XENDIT REFUND (jika invoice dalam 7 hari)
-        // ─────────────────────────────────────────────────────────────────
         if (isWithin7d && order.xenditInvoiceId) {
             try {
-                const r = await axios.post('https://api.xendit.co/refunds',
+                await axios.post('https://api.xendit.co/refunds',
                     { invoice_id: order.xenditInvoiceId, reason: 'CANCELLATION', amount },
                     { headers: { ...headers, 'idempotency-key': `REFUND-ORDER-${order.id}-${Date.now()}` } }
                 );
-                // BERHASIL: Xendit Refund
                 order.status           = 'refunded';
                 order.refundMethod     = 'xendit_refund';
                 order.refundReviewedAt = new Date();
@@ -1256,24 +1239,18 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
                     order,
                 });
             } catch (xenditErr) {
-                // GAGAL: cek apakah karena channel tidak support refund
                 const errCode = xenditErr.response?.data?.error_code;
                 if (errCode === 'REFUND_NOT_SUPPORTED' || errCode === 'CHANNEL_NOT_SUPPORTED') {
                     console.warn(`[pharmacy] Xendit Refund tidak support channel ini, fallback ke Disbursement`);
-                    // Lanjut ke disbursement dibawah
                 } else {
-                    // Error lain — stop
                     console.error('[pharmacy refund-review] Xendit Refund error:', xenditErr.response?.data);
                     throw new Error(`Xendit Refund gagal: ${JSON.stringify(xenditErr.response?.data || xenditErr.message)}`);
                 }
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────
-        // 2. FALLBACK KE XENDIT DISBURSEMENT (invoice > 7 hari atau refund tidak support)
-        // ─────────────────────────────────────────────────────────────────
         if (!refunded) {
-            const r = await axios.post('https://api.xendit.co/disbursements',
+            await axios.post('https://api.xendit.co/disbursements',
                 {
                     external_id        : `DISB-ORDER-${order.id}-${Date.now()}`,
                     bank_code          : bankCode.toUpperCase(),
@@ -1284,7 +1261,6 @@ router.put('/admin/orders/:id/refund-review', auth, adminAuth, async (req, res) 
                 },
                 { headers: { ...headers, 'X-IDEMPOTENCY-KEY': `DISB-ORDER-${order.id}-${Date.now()}` } }
             );
-            refundMethod = 'xendit_disbursement';
 
             order.status           = 'refunded';
             order.refundMethod     = 'xendit_disbursement';
