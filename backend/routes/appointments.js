@@ -517,8 +517,10 @@ router.post('/book', auth, async (req, res) => {
         await appointment.save();
 
         // ── Klasifikasi penyakit ML (async, tidak blocking response) ──
-        if (complaint) {
-            classifyKeluhan(complaint)
+       if (complaint) {
+            const { User } = require('../models/mysql');
+            User.findOne({ where: { id: req.userId } })
+                .then(u => classifyKeluhan(complaint, u?.gender || null))
                 .then(async (result) => {
                     if (result) {
                         await Appointment.findByIdAndUpdate(appointment._id, {

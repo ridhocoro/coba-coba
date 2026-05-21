@@ -1039,6 +1039,12 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
         } else if (period === '7d') {
             start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
             end   = todayEnd;
+        } else if (period === '3m') {
+            start = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate(), 0, 0, 0, 0);
+            end   = todayEnd;
+        } else if (period === '6m') {
+            start = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate(), 0, 0, 0, 0);
+            end   = todayEnd;
         } else {
             start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0);
             end   = todayEnd;
@@ -1114,6 +1120,82 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
     } catch (err) {
         console.error('[doctors] GET /my/disease-trend error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+
+// ── Tren penyakit per Gender khusus dokter ───────────────────────────────────
+router.get('/my/disease-trend-gender', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
+        const { period } = req.query;
+        const gender = req.query.gender;
+        const now = new Date();
+        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        let start, end;
+        if (period === '7d') { start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0); end = todayEnd; }
+        else if (period === '3m') { start = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate(), 0, 0, 0, 0); end = todayEnd; }
+        else if (period === '6m') { start = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate(), 0, 0, 0, 0); end = todayEnd; }
+        else { start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0); end = todayEnd; }
+
+        const doctorIdStr = doctor.id.toString();
+        const buildPipeline = () => [
+            { $match: { doctorId: doctorIdStr, disease_category: { $ne: null }, scheduledAt: { $gte: start, $lte: end } } },
+            { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
+            { $unwind: { path: '$user', preserveNullAndEmpty: true } },
+            ...(gender ? [{ $match: { 'user.gender': gender === 'male' ? 'laki-laki' : 'perempuan' } }] : []),
+            { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: '$scheduledAt', timezone: '+07:00' } } }, jumlah: { $sum: 1 } } },
+        ];
+        const [consultResults, apptResults] = await Promise.all([
+            Consultation.aggregate(buildPipeline()),
+            Appointment.aggregate(buildPipeline()),
+        ]);
+        const merged = {};
+        [...consultResults, ...apptResults].forEach(r => {
+            const { kategori, tanggal } = r._id;
+            if (!merged[kategori]) merged[kategori] = [];
+            const existing = merged[kategori].find(x => x.tanggal === tanggal);
+            if (existing) existing.jumlah += r.jumlah;
+            else merged[kategori].push({ tanggal, jumlah: r.jumlah });
+        });
+        Object.keys(merged).forEach(k => merged[k].sort((a, b) => a.tanggal.localeCompare(b.tanggal)));
+        res.json({ success: true, data: merged, gender: gender || 'all' });
+    } catch (err) {
+        console.error('[doctors] GET /my/disease-trend-gender error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+// ── AI Insight khusus dokter (Groq) ─────────────────────────────────────────
+router.post('/my/ai-insight', auth, doctorAuth, async (req, res) => {
+    try {
+        if (!process.env.GROQ_API_KEY) {
+            return res.status(503).json({ success: false, message: 'GROQ_API_KEY belum di-set' });
+        }
+        const Groq = require('groq-sdk');
+        const groqDoc = new Groq({ apiKey: process.env.GROQ_API_KEY });
+        const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+        const { diseaseData, period, gender } = req.body;
+        if (!diseaseData || Object.keys(diseaseData).length === 0) {
+            return res.json({ success: true, insight: null });
+        }
+        const topKategori = Object.entries(diseaseData)
+            .map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }))
+            .sort((a, b) => b.total - a.total).slice(0, 8);
+        const totalKasus = topKategori.reduce((s, x) => s + x.total, 0);
+        const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
+        const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
+        const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
+        const prompt = `Kamu adalah analis kesehatan. Berikan insight singkat (3-4 kalimat) dalam Bahasa Indonesia untuk dokter berdasarkan data pasiennya:\n\nPeriode: ${periodLabel}\nFilter: ${genderLabel}\nTotal kasus: ${totalKasus}\n\nTop kategori penyakit:\n${summary}\n\nBerikan pola keluhan dan saran tindakan untuk dokter. Jawab langsung tanpa pembuka formal.`;
+        const completion = await groqDoc.chat.completions.create({
+            model: GROQ_MODEL, max_tokens: 300,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        res.json({ success: true, insight: completion.choices?.[0]?.message?.content?.trim() || null });
+    } catch (err) {
+        console.error('[doctors] POST /my/ai-insight error:', err);
+        res.status(500).json({ success: false, message: 'Gagal generate insight', error: err.message });
     }
 });
 

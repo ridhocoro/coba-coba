@@ -9,6 +9,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+// Groq untuk AI Analytics
+const Groq = require('groq-sdk');
+const _groqAdmin = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const GROQ_ADMIN_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const { createNotification } = require('../utils/notificationHelper');
@@ -1725,12 +1730,19 @@ function analyticsDateRange(query) {
         const end = new Date(y, m + 1, 0, 23, 59, 59, 999);
         return { start, end };
     }
-    
     if (period === '7d') {
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
         return { start, end: todayEnd };
     }
-    
+    if (period === '3m') {
+        const start = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate(), 0, 0, 0, 0);
+        return { start, end: todayEnd };
+    }
+    if (period === '6m') {
+        const start = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate(), 0, 0, 0, 0);
+        return { start, end: todayEnd };
+    }
+    // default 30d
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0);
     return { start, end: todayEnd };
 }
@@ -1924,6 +1936,68 @@ router.post('/analytics/disease-backfill', guard, async (req, res) => {
     } catch (err) {
         console.error('[admin] POST /analytics/disease-backfill error:', err);
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+
+// ── Analytics: Tren Penyakit per Gender ──────────────────────────────────────
+router.get('/analytics/disease-trend-gender', guard, async (req, res) => {
+    try {
+        const { start, end } = analyticsDateRange(req.query);
+        const gender = req.query.gender; // 'male' | 'female'
+        const buildPipeline = () => [
+            { $match: { disease_category: { $ne: null }, scheduledAt: { $gte: start, $lte: end } } },
+            { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
+            { $unwind: { path: '$user', preserveNullAndEmpty: true } },
+            ...(gender ? [{ $match: { 'user.gender': gender === 'male' ? 'laki-laki' : 'perempuan' } }] : []),
+            { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: '$scheduledAt', timezone: '+07:00' } } }, jumlah: { $sum: 1 } } },
+        ];
+        const [consultResults, apptResults] = await Promise.all([
+            Consultation.aggregate(buildPipeline()),
+            Appointment.aggregate(buildPipeline()),
+        ]);
+        const merged = {};
+        [...consultResults, ...apptResults].forEach(r => {
+            const { kategori, tanggal } = r._id;
+            if (!merged[kategori]) merged[kategori] = [];
+            const existing = merged[kategori].find(x => x.tanggal === tanggal);
+            if (existing) existing.jumlah += r.jumlah;
+            else merged[kategori].push({ tanggal, jumlah: r.jumlah });
+        });
+        Object.keys(merged).forEach(k => merged[k].sort((a, b) => a.tanggal.localeCompare(b.tanggal)));
+        res.json({ success: true, data: merged, gender: gender || 'all' });
+    } catch (err) {
+        console.error('[admin] GET /analytics/disease-trend-gender error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+// ── Analytics: AI Insight (Groq) ─────────────────────────────────────────────
+router.post('/analytics/ai-insight', guard, async (req, res) => {
+    try {
+        if (!process.env.GROQ_API_KEY) {
+            return res.status(503).json({ success: false, message: 'GROQ_API_KEY belum di-set' });
+        }
+        const { diseaseData, period, gender, role } = req.body;
+        if (!diseaseData || Object.keys(diseaseData).length === 0) {
+            return res.json({ success: true, insight: null });
+        }
+        const topKategori = Object.entries(diseaseData)
+            .map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }))
+            .sort((a, b) => b.total - a.total).slice(0, 8);
+        const totalKasus = topKategori.reduce((s, x) => s + x.total, 0);
+        const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
+        const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
+        const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
+        const prompt = `Kamu adalah analis kesehatan klinik. Berikan insight singkat (3-4 kalimat) dalam Bahasa Indonesia untuk admin klinik berdasarkan data berikut:\n\nPeriode: ${periodLabel}\nFilter: ${genderLabel}\nTotal kasus: ${totalKasus}\n\nTop kategori penyakit:\n${summary}\n\nBerikan pola yang terlihat dan rekomendasi praktis. Jawab langsung tanpa pembuka formal.`;
+        const completion = await _groqAdmin.chat.completions.create({
+            model: GROQ_ADMIN_MODEL, max_tokens: 300,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        res.json({ success: true, insight: completion.choices?.[0]?.message?.content?.trim() || null });
+    } catch (err) {
+        console.error('[admin] POST /analytics/ai-insight error:', err);
+        res.status(500).json({ success: false, message: 'Gagal generate insight', error: err.message });
     }
 });
 

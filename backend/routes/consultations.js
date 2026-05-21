@@ -333,8 +333,10 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
         await consultation.save();
 
         // ── Klasifikasi penyakit ML (async, tidak blocking response) ──
-        if (symptoms) {
-            classifyKeluhan(symptoms)
+       if (symptoms) {
+            const { User } = require('../models/mysql');
+            User.findOne({ where: { id: req.userId } })
+                .then(u => classifyKeluhan(symptoms, u?.gender || null))
                 .then(async (result) => {
                     if (result) {
                         await Consultation.findByIdAndUpdate(consultation._id, {
