@@ -397,7 +397,7 @@ function calcConfidence({ validFrames, totalFrames, rrCount, snr, lightingGood, 
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   SKIN DETECTION / FACE TILT / ROI — (logika tidak diubah)
+   SKIN DETECTION / FACE TILT / ROI
 ═══════════════════════════════════════════════════════════════ */
 function isSkinPixel(r, g, b) {
     const y  = 0.299 * r + 0.587 * g + 0.114 * b;
@@ -986,7 +986,7 @@ export default function VitalScanPage() {
 
     /* ─── Render ─────────────────────────────────────────────────── */
     return (
-        <div style={{ background: 'linear-gradient(160deg, #f0fdf4 0%, #f8fafc 50%, #f0fdf4 100%)', minHeight: '100vh', padding: '40px 0 80px' }}>
+        <div style={{ background: '#fafafa', minHeight: '100vh', padding: '40px 0 80px' }}>
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 
@@ -1024,8 +1024,8 @@ export default function VitalScanPage() {
                     to   { transform: rotate(360deg); }
                 }
                 @keyframes vsGlow {
-                    0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.25); }
-                    50%      { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+                    0%, 100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.25); }
+                    50%      { box-shadow: 0 0 0 8px rgba(124,58,237,0); }
                 }
                 @keyframes vsBarFill {
                     from { width: 0%; }
@@ -1041,7 +1041,7 @@ export default function VitalScanPage() {
                     margin: 0 auto;
                     padding: 0 24px;
                     font-family: 'Poppins', sans-serif;
-                    color: #1e293b;
+                    color: #0f172a;
                 }
 
                 /* Staggered enter */
@@ -1054,15 +1054,15 @@ export default function VitalScanPage() {
 
                 .vs-card {
                     background: #fff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 20px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 16px;
                     box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
                 }
 
                 .vs-metric {
                     background: #fff;
-                    border: 1.5px solid #e2e8f0;
-                    border-radius: 20px;
+                    border: 1.5px solid #e5e7eb;
+                    border-radius: 16px;
                     padding: 28px 20px 24px;
                     text-align: center;
                     transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
@@ -1075,44 +1075,39 @@ export default function VitalScanPage() {
                     position: absolute;
                     top: 0; left: 0; right: 0;
                     height: 3px;
-                    background: linear-gradient(90deg, #22c55e, #16a34a);
-                    border-radius: 20px 20px 0 0;
+                    background: linear-gradient(90deg, #7c3aed, #6d28d9);
+                    border-radius: 16px 16px 0 0;
                 }
                 .vs-metric:hover {
                     transform: translateY(-5px);
                     box-shadow: 0 12px 32px rgba(0,0,0,0.10);
-                    border-color: #86efac;
+                    border-color: #c4b5fd;
                 }
 
                 .vs-start-btn {
-                    background: linear-gradient(135deg, #22c55e, #16a34a);
+                    background: #0f172a;
                     color: #fff;
                     border: none;
-                    border-radius: 14px;
-                    padding: 14px 32px;
-                    font-size: 15px;
-                    font-weight: 700;
+                    border-radius: 10px;
+                    padding: 12px 32px;
+                    font-size: 14px;
+                    font-weight: 600;
                     font-family: 'Poppins', sans-serif;
                     cursor: pointer;
                     display: inline-flex;
                     align-items: center;
                     gap: 10px;
                     transition: all 0.2s ease;
-                    box-shadow: 0 4px 16px rgba(34,197,94,0.35);
-                    animation: vsGlow 2.5s ease-in-out infinite;
                 }
                 .vs-start-btn:hover:not(:disabled) {
-                    transform: translateY(-2px) scale(1.02);
-                    box-shadow: 0 8px 24px rgba(34,197,94,0.45);
+                    background: #1e293b;
                 }
                 .vs-start-btn:active:not(:disabled) {
-                    transform: translateY(0) scale(0.98);
+                    transform: scale(0.98);
                 }
                 .vs-start-btn:disabled {
                     opacity: 0.55;
                     cursor: not-allowed;
-                    animation: none;
-                    box-shadow: none;
                 }
 
                 .qbadge {
@@ -1187,12 +1182,12 @@ export default function VitalScanPage() {
                     align-items: center;
                     gap: 5px;
                     padding: 4px 12px;
-                    background: #f0fdf4;
-                    border: 1px solid #bbf7d0;
+                    background: #f5f3ff;
+                    border: 1px solid #ddd6fe;
                     border-radius: 20px;
                     font-size: 11px;
                     font-weight: 600;
-                    color: #15803d;
+                    color: #6d28d9;
                 }
 
                 .stat-card {
@@ -1204,8 +1199,8 @@ export default function VitalScanPage() {
                     transition: all 0.2s ease;
                 }
                 .stat-card:hover {
-                    background: #f0fdf4;
-                    border-color: #bbf7d0;
+                    background: #f5f3ff;
+                    border-color: #ddd6fe;
                 }
 
                 .live-hr-badge {
@@ -1225,23 +1220,19 @@ export default function VitalScanPage() {
             <div className="vs-wrap">
 
                 {/* ── Header ── */}
-                <div style={{ marginBottom: 32 }}>
-                    <Link to="/health-check"
-                        className="vs-enter-slide"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: '#64748b', textDecoration: 'none', fontSize: 13, marginBottom: 20, fontWeight: 500, padding: '6px 12px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', transition: 'all 0.2s' }}>
+                <div className="vs-enter-1" style={{ marginBottom: 32 }}>
+                    <Link to="/health-check" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#6b7280', textDecoration: 'none', marginBottom: 20 }}>
                         <FaArrowLeft size={11} /> Kembali
                     </Link>
 
-                    <div className="vs-enter-1">
-                        <h1 style={{ fontFamily: 'Poppins', fontSize: 34, margin: '0 0 4px', fontWeight: 800, color: '#15803d', letterSpacing: '-0.5px' }}>
-                            Vital Scan
-                        </h1>
-                        <p style={{ color: '#64748b', margin: 0, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                            <span>📡 FFT · Zero-phase IIR · IQR Outlier · SNR Confidence</span>
-                            <span style={{ background: '#f1f5f9', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
-                                {getBrowserIcon()}{browserInfo.browser}
-                            </span>
-                        </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 12, background: '#ede9fe', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+                            🎥
+                        </div>
+                        <div>
+                            <h1 style={{ fontFamily: 'Poppins', fontSize: 28, fontWeight: 400, color: '#0f172a', margin: 0 }}>Vital Scan</h1>
+                            <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Detak Jantung · Pernapasan · HRV</p>
+                        </div>
                     </div>
                 </div>
 
@@ -1283,8 +1274,8 @@ export default function VitalScanPage() {
 
                             {/* Live HR */}
                             {phase === 'scanning' && liveHR && (
-                                <div style={{ position: 'absolute', bottom: 16, right: 16, background: 'rgba(0,0,0,0.80)', backdropFilter: 'blur(8px)', borderRadius: 32, padding: '8px 18px', border: '1px solid rgba(34,197,94,0.3)' }}>
-                                    <span className="live-hr-badge" style={{ color: '#22c55e', fontSize: 22, fontWeight: 800 }}>♥</span>
+                                <div style={{ position: 'absolute', bottom: 16, right: 16, background: 'rgba(0,0,0,0.80)', backdropFilter: 'blur(8px)', borderRadius: 32, padding: '8px 18px', border: '1px solid rgba(124,58,237,0.3)' }}>
+                                    <span className="live-hr-badge" style={{ color: '#a78bfa', fontSize: 22, fontWeight: 800 }}>♥</span>
                                     <span style={{ color: '#f0fdf4', fontSize: 22, fontWeight: 800, marginLeft: 6 }}>{liveHR}</span>
                                     <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>bpm</span>
                                 </div>
@@ -1295,12 +1286,12 @@ export default function VitalScanPage() {
                                 <div style={{ position: 'absolute', bottom: 16, left: 16 }}>
                                     <svg width="64" height="64" viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.4))' }}>
                                         <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="4" />
-                                        <circle cx="32" cy="32" r="28" fill="none" stroke="#22c55e" strokeWidth="4"
+                                        <circle cx="32" cy="32" r="28" fill="none" stroke="#7c3aed" strokeWidth="4"
                                             strokeLinecap="round"
                                             strokeDasharray={`${2 * Math.PI * 28}`}
                                             strokeDashoffset={`${2 * Math.PI * 28 * (1 - progress / 100)}`}
                                             style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 0.3s ease' }} />
-                                        <text x="32" y="37" textAnchor="middle" fill="#22c55e" fontSize="13" fontWeight="bold" fontFamily="Poppins, sans-serif">{Math.round(progress)}</text>
+                                        <text x="32" y="37" textAnchor="middle" fill="#a78bfa" fontSize="13" fontWeight="bold" fontFamily="Poppins, sans-serif">{Math.round(progress)}</text>
                                     </svg>
                                 </div>
                             )}
@@ -1309,7 +1300,7 @@ export default function VitalScanPage() {
                             {phase === 'countdown' && (
                                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.70)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
                                     <span style={{ color: '#94a3b8', fontSize: 14, fontWeight: 500, letterSpacing: 2 }}>BERSIAP...</span>
-                                    <span key={countdown} className="countdown-num" style={{ fontSize: 96, fontWeight: 800, color: '#22c55e', lineHeight: 1, textShadow: '0 0 40px rgba(34,197,94,0.6)' }}>
+                                    <span key={countdown} className="countdown-num" style={{ fontSize: 96, fontWeight: 800, color: '#a78bfa', lineHeight: 1, textShadow: '0 0 40px rgba(124,58,237,0.6)' }}>
                                         {countdown}
                                     </span>
                                     <span style={{ color: '#64748b', fontSize: 13 }}>😌 Tetap diam & tatap kamera</span>
@@ -1359,10 +1350,10 @@ export default function VitalScanPage() {
                     <div className="vs-card vs-enter-1" style={{ textAlign: 'center', padding: '56px 32px', marginBottom: 20 }}>
                         <div style={{ fontSize: 48, marginBottom: 16 }}>🔬</div>
                         <div className="processing-icon" style={{ display: 'inline-block', marginBottom: 20 }}>
-                            <FaSpinner size={32} style={{ color: '#22c55e' }} />
+                            <FaSpinner size={32} style={{ color: '#7c3aed' }} />
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#15803d' }}>Menganalisis sinyal...</div>
-                        <div style={{ color: '#64748b', fontSize: 13, lineHeight: 1.8 }}>
+                        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8, color: '#0f172a' }}>Menganalisis sinyal...</div>
+                        <div style={{ color: '#6b7280', fontSize: 13, lineHeight: 1.8 }}>
                             <span style={{ display: 'block' }}>🧮 IQR Removal → FFT Cooley-Tukey</span>
                             <span style={{ display: 'block' }}>🌊 Zero-phase IIR → Peak Detection</span>
                             <span style={{ display: 'block' }}>📈 SNR-weighted Confidence Score</span>
@@ -1375,8 +1366,8 @@ export default function VitalScanPage() {
                     <div className="vs-card vs-enter-1" style={{ textAlign: 'center', padding: '44px 32px', marginBottom: 20, border: '1.5px solid #fca5a5' }}>
                         <div style={{ fontSize: 52, marginBottom: 12 }}>😵</div>
                         <div style={{ fontWeight: 700, marginBottom: 8, color: '#dc2626', fontSize: 18 }}>Oops, ada masalah!</div>
-                        <div style={{ color: '#64748b', marginBottom: 24, fontSize: 14, maxWidth: 360, margin: '0 auto 24px' }}>{errorMsg}</div>
-                        <button className="vs-start-btn" onClick={reset} style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 4px 16px rgba(239,68,68,0.35)', animation: 'none' }}>
+                        <div style={{ color: '#6b7280', marginBottom: 24, fontSize: 14, maxWidth: 360, margin: '0 auto 24px' }}>{errorMsg}</div>
+                        <button className="vs-start-btn" onClick={reset} style={{ background: '#dc2626' }}>
                             <FaRedo size={13} /> 🔄 Coba Lagi
                         </button>
                     </div>
@@ -1385,7 +1376,7 @@ export default function VitalScanPage() {
                 {/* ── IDLE ── */}
                 {phase === 'idle' && (
                     <div className="vs-card vs-enter-3" style={{ padding: '28px 28px 32px', marginBottom: 20 }}>
-                        <h3 style={{ margin: '0 0 20px', fontWeight: 700, fontSize: 17, color: '#15803d', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <h3 style={{ margin: '0 0 20px', fontWeight: 700, fontSize: 17, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
                             📋 Persiapan Scan
                         </h3>
 
@@ -1423,7 +1414,7 @@ export default function VitalScanPage() {
                         )}
 
                         <div style={{ textAlign: 'center', paddingTop: 4 }}>
-                            <button className="vs-start-btn" onClick={startScan} disabled={modelLoading}>
+                            <button className="vs-start-btn" onClick={startScan} disabled={modelLoading} style={{ width: '100%', justifyContent: 'center' }}>
                                 {modelLoading
                                     ? <><FaSpinner size={14} style={{ animation: 'vsSpin 1s linear infinite' }} /> ⏳ Memuat model AI...</>
                                     : <><FaCamera size={14} /> 🚀 Mulai Scan (60 detik)</>
@@ -1444,7 +1435,7 @@ export default function VitalScanPage() {
 
                         {/* Result header */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 10 }}>
-                            <h2 style={{ margin: 0, fontFamily: 'Poppins', fontSize: 28, fontWeight: 800, color: '#15803d' }}>
+                            <h2 style={{ margin: 0, fontFamily: 'Poppins', fontSize: 28, fontWeight: 700, color: '#0f172a' }}>
                                 🎉 Hasil Scan
                             </h2>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1464,7 +1455,6 @@ export default function VitalScanPage() {
                             {[
                                 {
                                     emoji: '❤️',
-                                    iconBg: '#dcfce7',
                                     label: 'HEART RATE',
                                     value: result.heartRate,
                                     unit: 'bpm',
@@ -1474,7 +1464,6 @@ export default function VitalScanPage() {
                                 },
                                 {
                                     emoji: '🧬',
-                                    iconBg: '#ede9fe',
                                     label: 'RMSSD (HRV)',
                                     value: result.rmssd,
                                     unit: 'ms',
@@ -1484,7 +1473,6 @@ export default function VitalScanPage() {
                                 },
                                 {
                                     emoji: '🫁',
-                                    iconBg: '#cffafe',
                                     label: 'RESPIRATORY RATE',
                                     value: result.respRate,
                                     unit: 'rpm',
@@ -1523,7 +1511,7 @@ export default function VitalScanPage() {
                             ].map(s => (
                                 <div key={s.label} className="stat-card">
                                     <div style={{ fontSize: 18, marginBottom: 4 }}>{s.emoji}</div>
-                                    <div style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', fontFamily: 'Poppins' }}>{s.value}</div>
+                                    <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', fontFamily: 'Poppins' }}>{s.value}</div>
                                     <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2, fontWeight: 500 }}>{s.label}</div>
                                 </div>
                             ))}

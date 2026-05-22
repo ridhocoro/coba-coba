@@ -1942,13 +1942,34 @@ router.get('/analytics/disease-trend-gender', guard, async (req, res) => {
     try {
         const { start, end } = analyticsDateRange(req.query);
         const gender = req.query.gender; // 'male' | 'female'
-        const buildPipeline = () => [
-            { $match: { disease_category: { $ne: null }, scheduledAt: { $gte: start, $lte: end } } },
-            { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
-            { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-            ...(gender ? [{ $match: { 'user.gender': gender === 'male' ? 'laki-laki' : 'perempuan' } }] : []),
-            { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } } } } }, jumlah: { $sum: 1 } } },
-        ];
+
+        // User ada di MySQL — ambil userId berdasarkan gender dari MySQL
+        let userIdFilter = null;
+        if (gender) {
+            const genderVal = gender === 'male' ? 'laki-laki' : 'perempuan';
+            const usersWithGender = await User.findAll({
+                where: { gender: genderVal },
+                attributes: ['id'],
+                raw: true,
+            });
+            userIdFilter = usersWithGender.map(u => String(u.id));
+            if (userIdFilter.length === 0) {
+                return res.json({ success: true, data: {}, gender });
+            }
+        }
+
+        const buildPipeline = () => {
+            const matchStage = {
+                disease_category: { $ne: null },
+                scheduledAt: { $gte: start, $lte: end },
+            };
+            if (userIdFilter) matchStage.userId = { $in: userIdFilter };
+            return [
+                { $match: matchStage },
+                { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } } } } }, jumlah: { $sum: 1 } } },
+            ];
+        };
+
         const [consultResults, apptResults] = await Promise.all([
             Consultation.aggregate(buildPipeline()),
             Appointment.aggregate(buildPipeline()),

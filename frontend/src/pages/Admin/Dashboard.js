@@ -445,21 +445,6 @@ const AdminDashboard = ({ onNavigate }) => {
   return (
     <div>
 
-      {/* ── Period selector ── */}
-      <div style={S.row}>
-        {PERIOD_OPTS.map(o => (
-          <button key={o.v} style={S.chip(period === o.v)} onClick={() => { setPeriod(o.v); if (o.v !== 'custom') { setFrom(''); setTo(''); } }}>{o.l}</button>
-        ))}
-        {period === 'custom' && (
-          <>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={S.dateInput} />
-            <span style={{ color: '#64748b', fontSize: 12 }}>s/d</span>
-            <input type="date" value={to}   onChange={e => setTo(e.target.value)}   style={S.dateInput} />
-          </>
-        )}
-        {loading && <span style={{ fontSize: 12, color: '#94a3b8' }}>⏳ Memuat...</span>}
-      </div>
-
       {/* ── BLOK 1: Operasional ── */}
       <div style={S.section}>
         <p style={S.sectionTitle}>⚙️ Operasional Hari Ini</p>
@@ -467,8 +452,8 @@ const AdminDashboard = ({ onNavigate }) => {
           <StatBox label="Resep Menunggu Verifikasi" value={fmtNum(ops?.pendingRx)}        icon="📋" color="#f59e0b" clickable onClick={() => onNavigate('pharmacy')}       loading={loading && !ops} />
           <StatBox label="Perlu Disiapkan"           value={fmtNum(ops?.needsPreparation)} icon="💊" color="#ef4444" clickable onClick={() => onNavigate('pharmacy')}       loading={loading && !ops} />
           <StatBox label="Siap Diambil"              value={fmtNum(ops?.pickupReady)}      icon="🏥" color="#8b5cf6" clickable onClick={() => onNavigate('pharmacy')}       loading={loading && !ops} />
-          <StatBox label="Janji Temu Hari Ini"       value={fmtNum(ops?.todayAppt)}        icon="📅" color="#0891b2" clickable onClick={() => onNavigate('appointments')}   loading={loading && !ops} />
-          <StatBox label="Konsultasi Hari Ini"       value={fmtNum(ops?.todayConsult)}     icon="💬" color="#2563eb" clickable onClick={() => onNavigate('consultations')}  loading={loading && !ops} />
+          <StatBox label="Janji Temu Terkonfirmasi"       value={fmtNum(ops?.todayAppt)}        icon="📅" color="#0891b2" clickable onClick={() => onNavigate('appointments')}   loading={loading && !ops} />
+          <StatBox label="Konsultasi Terkonfirmasi"       value={fmtNum(ops?.todayConsult)}     icon="💬" color="#2563eb" clickable onClick={() => onNavigate('consultations')}  loading={loading && !ops} />
         </div>
       </div>
 
@@ -497,6 +482,20 @@ const AdminDashboard = ({ onNavigate }) => {
       {/* ── BLOK 3: Growth ── */}
       <div style={S.section}>
         <p style={S.sectionTitle}>📈 Growth & Statistik</p>
+        {/* ── Period selector ── */}
+        <div style={S.row}>
+          {PERIOD_OPTS.map(o => (
+            <button key={o.v} style={S.chip(period === o.v)} onClick={() => { setPeriod(o.v); if (o.v !== 'custom') { setFrom(''); setTo(''); } }}>{o.l}</button>
+          ))}
+          {period === 'custom' && (
+            <>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={S.dateInput} />
+              <span style={{ color: '#64748b', fontSize: 12 }}>s/d</span>
+              <input type="date" value={to}   onChange={e => setTo(e.target.value)}   style={S.dateInput} />
+            </>
+          )}
+          {loading && <span style={{ fontSize: 12, color: '#94a3b8' }}>⏳ Memuat...</span>}
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
           <StatBox label={`Pasien Baru (${PERIOD_OPTS.find(o => o.v === period)?.l || period})`} value={fmtNum(growth?.newPatients)} icon="👤" color="#2563eb" clickable onClick={() => onNavigate('users')} loading={loading && !growth} />
           <StatBox label="Total Pasien"         value={fmtNum(growth?.totalPatients)} icon="👥" color="#0891b2" loading={loading && !growth} />
