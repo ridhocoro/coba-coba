@@ -198,7 +198,9 @@ const SectionPasien = () => {
                         </div>
                         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                             <Btn variant="ghost" onClick={() => setSelected(null)}>Tutup</Btn>
-                            {['ongoing','in_progress'].includes(c.status) && <Btn variant="primary" onClick={() => { navigate(`/consultations/${c._id}`); setSelected(null); }}>💬 Buka Chat</Btn>}
+                            {['confirmed','ongoing','in_progress','completed','no_show','doctor_no_show','cancelled_by_doctor','paid','scheduled'].includes(c.status) && (
+                                <Btn variant="primary" onClick={() => window.open(`/consultations/${c._id}`, '_blank')}>💬 Buka Chat</Btn>
+                            )}
                             {['completed','no_show'].includes(c.status) && !c.medicalRecord?.isCompleted && (
                                 <Btn variant="outline" onClick={() => { navigate(`/consultations/${c._id}`); setSelected(null); }}>📋 Lengkapi Rekam Medis</Btn>
                             )}

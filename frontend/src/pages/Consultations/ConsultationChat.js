@@ -1163,6 +1163,7 @@ const ConsultationChat = () => {
   const [showMedicalRecord,setShowMedicalRecord] = useState(false);
   const [incomingCall,     setIncomingCall]      = useState(null); // { offer }
   const [uploadingImg, setUploadingImg] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [ending,   setEnding]   = useState(false);
   const [starting, setStarting] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
@@ -1170,6 +1171,7 @@ const ConsultationChat = () => {
 
   const msgEndRef     = useRef(null);
   const fileInputRef  = useRef(null);
+  const pdfInputRef   = useRef(null);
   const typingTimerRef = useRef(null);
 
   const isDoctor = user?.role === 'doctor';
@@ -1350,8 +1352,9 @@ const ConsultationChat = () => {
     try {
       const res = await api.post(`/api/consultations/${id}/messages`, { message: text });
       const saved = res.data.message;
-      setMessages(prev => prev.map(m => m._localId === localId ? { ...saved, _pending: false } : m));
-      socket?.emit('send-message', { consultationId: id, _id: saved._id, senderId: myId, senderName: optimistic.senderName, senderRole: user.role, message: text, timestamp: saved.timestamp || new Date() });
+      // BUG-FIX: gunakan senderName dari server (bukan optimistic) agar konsisten
+      setMessages(prev => prev.map(m => m._localId === localId ? { ...saved, senderName: saved.senderName || optimistic.senderName, _pending: false } : m));
+      socket?.emit('send-message', { consultationId: id, _id: saved._id, senderId: myId, senderName: saved.senderName || optimistic.senderName, senderRole: user.role, message: text, timestamp: saved.timestamp || new Date() });
     } catch {
       setMessages(prev => prev.filter(m => m._localId !== localId));
       setNewMessage(text);
@@ -1372,6 +1375,22 @@ const ConsultationChat = () => {
       setMessages(prev => [...prev, r.data.message]);
     } catch { toast.error('Gagal upload gambar'); }
     finally { setUploadingImg(false); e.target.value = ''; }
+  };
+
+  // ── PDF / file upload ──────────────────────────────────────────
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') { toast.error('Hanya file PDF yang diizinkan'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast.error('Ukuran file maks 10MB'); return; }
+    setUploadingFile(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await api.post(`/api/consultations/${id}/messages/file`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setMessages(prev => [...prev, r.data.message]);
+    } catch { toast.error('Gagal upload file PDF'); }
+    finally { setUploadingFile(false); e.target.value = ''; }
   };
 
   // ── Typing ─────────────────────────────────────────────────────
@@ -1647,39 +1666,7 @@ const ConsultationChat = () => {
             </button>
           </div>
 
-          <div style={s.sideSection}>
-            <span style={s.label}>Dokter</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, overflow: 'hidden', flexShrink: 0, border: '2px solid #e5e7eb' }}>
-                {doc?.photo
-                  ? <img src={doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : '👨‍⚕️'}
-              </div>
-              <div>
-                <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
-                <div style={{ color: '#2563eb', fontSize: 12 }}>{doc?.specialization}</div>
-              </div>
-            </div>
-            <StatusBadge status={consultation.status} />
-          </div>
 
-          {/* Section Pasien — tampil untuk dokter */}
-          {isDoctor && (
-            <div style={s.sideSection}>
-              <span style={s.label}>Pasien</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
-                <div>
-                  <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>
-                    {consultation?.userId?.name || '-'}
-                  </div>
-                  {consultation?.userId?.email && (
-                    <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>{consultation.userId.email}</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           <div style={s.sideSection}>
             <span style={s.label}>Info Konsultasi</span>
@@ -1883,13 +1870,24 @@ const ConsultationChat = () => {
         <div style={s.chat}>
           <div style={s.header}>
             <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, overflow: 'hidden', flexShrink: 0, border: '2px solid #e5e7eb' }}>
-              {doc?.photo
-                ? <img src={doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : '👨‍⚕️'}
+              {isDoctor
+                ? '👤'
+                : doc?.photo
+                  ? <img src={doc.photo.startsWith('http') ? doc.photo : `${API_URL}${doc.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : '👨‍⚕️'}
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
-              <div style={{ color: '#6b7280', fontSize: 12 }}>{doc?.specialization} · {typeLabel}</div>
+              {isDoctor ? (
+                <>
+                  <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{consultation?.userId?.name || '-'}</div>
+                  <div style={{ color: '#6b7280', fontSize: 12 }}>{consultation?.userId?.email || ''} · {typeLabel}</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ color: '#111827', fontWeight: 600, fontSize: 14 }}>{fmtDoctorName(doc)}</div>
+                  <div style={{ color: '#6b7280', fontSize: 12 }}>{doc?.specialization} · {typeLabel}</div>
+                </>
+              )}
             </div>
             <StatusBadge status={consultation.status} />
           </div>
@@ -1942,6 +1940,9 @@ const ConsultationChat = () => {
 
             {messages.map((msg, i) => {
               const isMine = msg.senderId?.toString() === myId?.toString();
+              // BUG-FIX nama: label nama hanya tampil untuk pesan orang lain,
+              // dan untuk dokter yang melihat pesan pasien — tampilkan senderName dari server
+              const showName = !isMine;
               return (
                 <div key={msg._id || msg._localId || i} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
                   <div style={{
@@ -1953,8 +1954,51 @@ const ConsultationChat = () => {
                     boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
                     opacity: msg._pending ? 0.7 : 1,
                   }}>
-                    {!isMine && <div style={{ color: '#6b7280', fontSize: 11, marginBottom: 4, fontWeight: 600 }}>{msg.senderName}</div>}
-                    {msg.imageUrl ? (
+                    {showName && <div style={{ color: '#6b7280', fontSize: 11, marginBottom: 4, fontWeight: 600 }}>{msg.senderName}</div>}
+                    {msg.fileUrl ? (
+                      /* ── PDF bubble ── */
+                      <div>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          background: isMine ? 'rgba(255,255,255,0.15)' : '#f3f4f6',
+                          borderRadius: 10, padding: '10px 12px',
+                          marginBottom: msg.message ? 6 : 0,
+                        }}>
+                          <span style={{ fontSize: 28, lineHeight: 1 }}>📄</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontWeight: 600, fontSize: 13,
+                              color: isMine ? '#fff' : '#111827',
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {msg.fileName || 'dokumen.pdf'}
+                            </div>
+                            <div style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.7)' : '#6b7280', marginTop: 2 }}>PDF</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                            <a href={msg.fileUrl} target="_blank" rel="noreferrer"
+                              style={{
+                                padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                background: isMine ? 'rgba(255,255,255,0.25)' : '#e5e7eb',
+                                color: isMine ? '#fff' : '#374151',
+                                textDecoration: 'none', whiteSpace: 'nowrap',
+                              }}>
+                              👁 Lihat
+                            </a>
+                            <a href={msg.fileUrl} download={msg.fileName || 'dokumen.pdf'}
+                              style={{
+                                padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                background: isMine ? 'rgba(255,255,255,0.25)' : '#2563eb',
+                                color: '#fff',
+                                textDecoration: 'none', whiteSpace: 'nowrap',
+                              }}>
+                              ⬇ Unduh
+                            </a>
+                          </div>
+                        </div>
+                        {msg.message && <div style={{ lineHeight: 1.5 }}>{msg.message}</div>}
+                      </div>
+                    ) : msg.imageUrl ? (
                       <div>
                         <img src={msg.imageUrl.startsWith('http') ? msg.imageUrl : `${API_URL}${msg.imageUrl}`} alt="img" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: msg.message ? 6 : 0 }} />
                         {msg.message && <div>{msg.message}</div>}
@@ -2025,11 +2069,20 @@ const ConsultationChat = () => {
               <form onSubmit={canChat ? sendMessage : e => e.preventDefault()}
                 style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
+                <input type="file" ref={pdfInputRef} accept="application/pdf" style={{ display: 'none' }} onChange={handleFileUpload} />
                 <button type="button"
                   onClick={() => canChat && fileInputRef.current?.click()}
                   disabled={!canChat || uploadingImg}
+                  title="Kirim gambar"
                   style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', border: 'none', color: uploadingImg ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {uploadingImg ? '⏳' : '📎'}
+                </button>
+                <button type="button"
+                  onClick={() => canChat && pdfInputRef.current?.click()}
+                  disabled={!canChat || uploadingFile}
+                  title="Kirim file PDF"
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', border: 'none', color: uploadingFile ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {uploadingFile ? '⏳' : '📄'}
                 </button>
                 <input
                   value={canChat ? newMessage : ''}
