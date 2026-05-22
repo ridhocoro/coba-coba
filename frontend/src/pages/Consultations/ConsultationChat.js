@@ -546,6 +546,17 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
         const blob = new Blob(recordedChunksRef.current, { type: mimeType });
         setRecordedBlob(blob);
         setShowLogPanel(true);
+        // Simpan ke sessionStorage agar bisa diakses dari sidebar setelah VideoCall ditutup
+        try {
+          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const objUrl = URL.createObjectURL(blob);
+          sessionStorage.setItem(`vc_recording_${consultationId}`, JSON.stringify({
+            url: objUrl,
+            ext,
+            sizeMB: (blob.size / (1024 * 1024)).toFixed(1),
+            recordedAt: new Date().toISOString(),
+          }));
+        } catch {}
         toast.success('Rekaman selesai. Siap diunduh atau diupload.');
       };
 
@@ -677,12 +688,23 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       if (res.data.available) {
         setVideoLogInfo(res.data);
         setShowLogPanel(true);
+      } else {
+        // Jika sudah expired atau tidak tersedia, pastikan UI ikut update
+        setVideoLogInfo(prev => prev ? { ...prev, available: false, message: res.data.message } : null);
       }
     } catch { /* silent */ }
   }, [consultationId]);
 
   // Cek saat komponen mount
   useEffect(() => { fetchVideoLog(); }, [fetchVideoLog]);
+
+  // Re-check setiap 5 menit agar tombol download hilang otomatis saat expired
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchVideoLog();
+    }, 5 * 60 * 1000); // 5 menit
+    return () => clearInterval(interval);
+  }, [fetchVideoLog]);
 
   // ── Socket events ──────────────────────────────────────────────
   useEffect(() => {
@@ -823,13 +845,14 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
           {camOn ? '📹' : '📷'}
         </button>
 
-        {/* Tombol Rekam — tampil saat call aktif (calling/ringing/connected) */}
+        {/* Tombol Rekam */}
         {['calling', 'ringing', 'connected'].includes(callState) && (
           <button
             onClick={isRecording ? stopRecording : startRecording}
             title={isRecording ? 'Stop Rekam' : 'Mulai Rekam'}
-            style={{ width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', fontSize: 20, background: isRecording ? '#c0392b' : '#166534', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: isRecording ? '0 0 0 3px rgba(192,57,43,.5)' : 'none', animation: isRecording ? 'vcPulse 1.5s infinite' : 'none' }}>
-            {isRecording ? '⏹' : '⏺'}
+            style={{ width: 52, height: 52, borderRadius: '50%', border: isRecording ? '2px solid #f85149' : '2px solid #374151', cursor: 'pointer', background: '#21262d', color: isRecording ? '#f85149' : '#8b949e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
+            <div style={{ width: 12, height: 12, borderRadius: isRecording ? 2 : '50%', background: isRecording ? '#f85149' : '#8b949e' }} />
+            <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: 0.5 }}>{isRecording ? 'STOP' : 'REC'}</span>
           </button>
         )}
 
@@ -894,9 +917,13 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
             </div>
           )}
 
-          {/* Video log dari server yang sudah ada sebelumnya tapi tidak available */}
-          {!recordedBlob && videoLogInfo && !videoLogInfo.available && (
-            <div style={{ color: '#8b949e', fontSize: 13 }}>ℹ️ {videoLogInfo.message}</div>
+          {/* Video log expired — tampil eksplisit agar user tidak bingung */}
+          {videoLogInfo && videoLogInfo.available === false && !recordedBlob && (
+            <div style={{ background: '#1c1c1c', border: '1px solid #374151', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ color: '#9ca3af', fontSize: 13 }}>
+                🗑️ {videoLogInfo.message || 'Video log sudah kadaluarsa dan telah dihapus dari server.'}
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -1712,6 +1739,39 @@ const ConsultationChat = () => {
           {isDoctor && consultation.attachmentUrls?.length > 0 && (
             <AttachmentViewer attachmentUrls={consultation.attachmentUrls} />
           )}
+
+          {/* ── Download Rekaman Video — tampil jika ada rekaman di session ── */}
+          {(() => {
+            try {
+              const raw = sessionStorage.getItem(`vc_recording_${id}`);
+              if (!raw) return null;
+              const rec = JSON.parse(raw);
+              // Jika server sudah konfirmasi expired, hapus dari session juga
+              if (videoLogInfo && videoLogInfo.available === false) {
+                sessionStorage.removeItem(`vc_recording_${id}`);
+                return null;
+              }
+              return (
+                <div style={s.sideSection}>
+                  <span style={s.label}>Rekaman Video Call</span>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ color: '#15803d', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>🎥 Rekaman tersedia</div>
+                    <div style={{ color: '#6b7280', fontSize: 11, marginBottom: 10 }}>
+                      {rec.sizeMB} MB · {new Date(rec.recordedAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <a href={rec.url} download={`rekaman-konsultasi-${id}.${rec.ext}`}
+                      style={{ display: 'block', textAlign: 'center', padding: '8px', background: '#16a34a', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 12, fontWeight: 600 }}>
+                      ⬇ Download Rekaman
+                    </a>
+                    <button onClick={() => { sessionStorage.removeItem(`vc_recording_${id}`); window.location.reload(); }}
+                      style={{ display: 'block', width: '100%', marginTop: 6, padding: '5px', background: 'none', border: 'none', color: '#9ca3af', fontSize: 11, cursor: 'pointer', textAlign: 'center' }}>
+                      Hapus
+                    </button>
+                  </div>
+                </div>
+              );
+            } catch { return null; }
+          })()}
 
           {/* ── Dokter Actions ─────────────────────────────────── */}
           {isDoctor && (
