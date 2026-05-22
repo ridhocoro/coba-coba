@@ -1141,7 +1141,7 @@ router.get('/my/disease-trend-gender', auth, doctorAuth, async (req, res) => {
         const buildPipeline = () => [
             { $match: { doctorId: doctorIdStr, disease_category: { $ne: null }, scheduledAt: { $gte: start, $lte: end } } },
             { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
-            { $unwind: { path: '$user', preserveNullAndEmpty: true } },
+            { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
             ...(gender ? [{ $match: { 'user.gender': gender === 'male' ? 'laki-laki' : 'perempuan' } }] : []),
             { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } } } } }, jumlah: { $sum: 1 } } },
         ];
