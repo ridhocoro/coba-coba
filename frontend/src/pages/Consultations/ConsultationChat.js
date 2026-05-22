@@ -371,7 +371,7 @@ const ICE_SERVERS = {
   ],
 };
 
-const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
+const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onClose }) => {
   const localVideoRef  = useRef(null);
   const remoteVideoRef = useRef(null);
   const pcRef          = useRef(null);
@@ -740,12 +740,17 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
   // Dokter langsung start call saat komponen mount — useRef agar hanya sekali
   const hasCalledRef = useRef(false);
   useEffect(() => {
-    if (isDoctor && !hasCalledRef.current) {
-      hasCalledRef.current = true;
+    if (hasCalledRef.current) return;
+    hasCalledRef.current = true;
+    if (isDoctor) {
+      // Dokter: buat offer dan kirim ke pasien
       startCall();
+    } else if (initialOffer) {
+      // Pasien: langsung jawab offer yang sudah tersimpan (tidak perlu tunggu socket event lagi)
+      answerCall(initialOffer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDoctor, startCall, consultationId]);
+  }, []);
 
   // ── UI ──────────────────────────────────────────────────────────
   const stateLabel = {
@@ -818,8 +823,8 @@ const VideoCall = ({ consultationId, socket, isDoctor, onClose }) => {
           {camOn ? '📹' : '📷'}
         </button>
 
-        {/* Tombol Rekam — hanya saat call connected */}
-        {callState === 'connected' && (
+        {/* Tombol Rekam — tampil saat call aktif (calling/ringing/connected) */}
+        {['calling', 'ringing', 'connected'].includes(callState) && (
           <button
             onClick={isRecording ? stopRecording : startRecording}
             title={isRecording ? 'Stop Rekam' : 'Mulai Rekam'}
@@ -1626,17 +1631,25 @@ const ConsultationChat = () => {
 
   // ── Incoming call notification (user) ──────────────────────────
   const IncomingCallBanner = () => incomingCall && !showVideoCall ? (
-    <div style={{ position: 'fixed', top: 80, right: 20, background: '#161b22', border: '1px solid #1f6feb', borderRadius: 14, padding: '16px 20px', zIndex: 9000, boxShadow: '0 8px 30px rgba(0,0,0,.5)', minWidth: 260 }}>
-      <div style={{ color: '#e6edf3', fontWeight: 700, marginBottom: 4 }}>📹 Panggilan Video Masuk</div>
-      <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 12 }}>{fmtDoctorName(doc)} mengajak video call</div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => { setIncomingCall(null); }} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#f85149', cursor: 'pointer', fontWeight: 600 }}>
-          ❌ Tolak
-        </button>
-        <button onClick={() => { setShowVideoCall(true); setIncomingCall(null); }}
-          style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#1a7f37', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
-          ✅ Terima
-        </button>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#161b22', border: '1px solid #1f6feb', borderRadius: 20, padding: '32px 36px', boxShadow: '0 16px 48px rgba(0,0,0,.7)', minWidth: 300, textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>📹</div>
+        <div style={{ color: '#e6edf3', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Panggilan Video Masuk</div>
+        <div style={{ color: '#8b949e', fontSize: 13, marginBottom: 28 }}>{fmtDoctorName(doc)} mengajak video call</div>
+        <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+          <button onClick={() => { setIncomingCall(null); }}
+            style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', background: '#c0392b', color: '#fff', cursor: 'pointer', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(192,57,43,.5)' }}>
+            📵
+          </button>
+          <button onClick={() => { setShowVideoCall(true); setIncomingCall(null); }}
+            style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', background: '#1a7f37', color: '#fff', cursor: 'pointer', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(26,127,55,.5)' }}>
+            📞
+          </button>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 40, marginTop: 8 }}>
+          <span style={{ color: '#8b949e', fontSize: 11 }}>Tolak</span>
+          <span style={{ color: '#8b949e', fontSize: 11 }}>Terima</span>
+        </div>
       </div>
     </div>
   ) : null;
@@ -1651,6 +1664,7 @@ const ConsultationChat = () => {
           consultationId={id}
           socket={socket}
           isDoctor={isDoctor}
+          initialOffer={incomingCall?.offer || null}
           onClose={() => setShowVideoCall(false)}
         />
       )}
