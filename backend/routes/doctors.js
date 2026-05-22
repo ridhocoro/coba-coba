@@ -1068,8 +1068,7 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
                             tanggal: {
                                 $dateToString: {
                                     format: '%Y-%m-%d',
-                                    date: '$scheduledAt',
-                                    timezone: '+07:00',
+                                    date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } },
                                 }
                             }
                         },
@@ -1092,8 +1091,7 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
                             tanggal: {
                                 $dateToString: {
                                     format: '%Y-%m-%d',
-                                    date: '$scheduledAt',
-                                    timezone: '+07:00',
+                                    date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } },
                                 }
                             }
                         },
@@ -1145,7 +1143,7 @@ router.get('/my/disease-trend-gender', auth, doctorAuth, async (req, res) => {
             { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
             { $unwind: { path: '$user', preserveNullAndEmpty: true } },
             ...(gender ? [{ $match: { 'user.gender': gender === 'male' ? 'laki-laki' : 'perempuan' } }] : []),
-            { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: '$scheduledAt', timezone: '+07:00' } } }, jumlah: { $sum: 1 } } },
+            { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } } } } }, jumlah: { $sum: 1 } } },
         ];
         const [consultResults, apptResults] = await Promise.all([
             Consultation.aggregate(buildPipeline()),

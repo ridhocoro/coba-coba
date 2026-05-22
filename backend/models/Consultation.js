@@ -6,6 +6,8 @@ const messageSchema = new mongoose.Schema({
     senderRole: { type: String, enum: ['user', 'doctor'] },
     message:    String,
     imageUrl:   String,
+    fileUrl:    String,   // URL PDF di Cloudinary
+    fileName:   String,   // nama asli file untuk label download
     timestamp:  { type: Date, default: Date.now },
     isRead:     { type: Boolean, default: false }
 });

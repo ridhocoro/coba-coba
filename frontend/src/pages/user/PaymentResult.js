@@ -138,9 +138,6 @@ const PaymentResult = () => {
                             </button>
                         </>
                     )}
-                    <button style={S.btn(false)} onClick={() => navigate('/dashboard')}>
-                        Dashboard
-                    </button>
                 </div>
             </div>
         </div>

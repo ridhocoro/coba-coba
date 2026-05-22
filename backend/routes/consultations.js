@@ -89,6 +89,13 @@ const uploadChat = createCloudinaryUpload(
     5
 );
 
+// ── Multer untuk upload file PDF chat — disimpan ke Cloudinary ───────────────
+const uploadChatFile = createCloudinaryUpload(
+    'klinik-ipb/chat-files',
+    ['pdf'],
+    10
+);
+
 // ── Multer untuk upload lampiran keluhan — disimpan ke Cloudinary ────────────
 const uploadAttachment = createCloudinaryUpload(
     'klinik-ipb/attachments',
@@ -1185,6 +1192,57 @@ router.post('/:id/messages/image', auth, uploadChat.single('image'), async (req,
         res.json({ success: true, message: msg });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ── POST /:id/messages/file — upload PDF ke chat ──────────────────────────────
+router.post('/:id/messages/file', auth, uploadChatFile.single('file'), async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id);
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (!['confirmed', 'in_progress', 'paid', 'scheduled', 'ongoing'].includes(consultation.status)) {
+            return res.status(403).json({ message: 'Konsultasi tidak aktif.' });
+        }
+        if (!req.file) return res.status(400).json({ message: 'File tidak ditemukan' });
+
+        const patient  = await User.findByPk(consultation.userId);
+        const doctor   = await Doctor.findByPk(consultation.doctorId);
+        const isUser   = patient && patient.id.toString() === req.userId;
+        const isDrThis = doctor  && doctor.userId.toString() === req.userId;
+
+        if (!isUser && !isDrThis && req.userRole !== 'admin') {
+            return res.status(403).json({ message: 'Anda bukan peserta konsultasi ini' });
+        }
+
+        const senderName = isUser ? patient.name : `${fmtDoctorName(doctor)}`;
+        const fileUrl    = req.file.path;
+        const fileName   = req.file.originalname || 'dokumen.pdf';
+
+        const msg = {
+            senderId:   req.userId,
+            senderName,
+            senderRole: isUser ? 'user' : 'doctor',
+            message:    req.body.caption || '',
+            fileUrl,
+            fileName,
+            timestamp:  new Date(),
+        };
+
+        consultation.messages.push(msg);
+        await consultation.save();
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`consultation-${consultation.id}`).emit('receive-message', {
+                ...msg,
+                senderId: req.userId,
+            });
+        }
+
+        res.json({ success: true, message: msg });
+    } catch (err) {
+        console.error('[messages/file]', err.message);
+        res.status(500).json({ message: 'Gagal upload file' });
     }
 });
 
