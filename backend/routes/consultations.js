@@ -2163,8 +2163,8 @@ router.post('/:id/video-log', auth, uploadVideoLog.single('video'), async (req, 
         }
 
         // Cek akses: hanya dokter yang terlibat atau admin
-        const isAdmin  = req.user.role === 'admin';
-        const isDoctor = req.user.role === 'doctor';
+        const isAdmin  = req.userRole === 'admin';
+        const isDoctor = req.userRole === 'doctor';
 
         if (!isAdmin && !isDoctor) {
             return res.status(403).json({ message: 'Hanya dokter atau admin yang dapat mengupload video log' });
@@ -2172,7 +2172,7 @@ router.post('/:id/video-log', auth, uploadVideoLog.single('video'), async (req, 
 
         if (isDoctor) {
             const Doctor = require('../models/Doctor');
-            const doctorRecord = await Doctor.findOne({ userId: req.user.userId });
+            const doctorRecord = await Doctor.findOne({ userId: req.userId });
             if (!doctorRecord || doctorRecord.id.toString() !== consultation.doctorId.toString()) {
                 return res.status(403).json({ message: 'Anda bukan dokter pada konsultasi ini' });
             }
@@ -2206,7 +2206,7 @@ router.post('/:id/video-log', auth, uploadVideoLog.single('video'), async (req, 
             b2Key,                    // key permanen di B2 untuk delete & re-sign
             uploadedAt,
             expiresAt,
-            uploadedBy : req.user.userId,
+            uploadedBy : req.userId,
             fileSizeMB : parseFloat((req.file.size / (1024 * 1024)).toFixed(2)),
         };
 
@@ -2235,12 +2235,12 @@ router.get('/:id/video-log', auth, async (req, res) => {
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
         // Cek akses
-        const isAdmin   = req.user.role === 'admin';
-        const isPatient = consultation.userId?.toString() === req.user.userId;
+        const isAdmin   = req.userRole === 'admin';
+        const isPatient = consultation.userId?.toString() === req.userId;
         let   isDoctor  = false;
-        if (req.user.role === 'doctor') {
+        if (req.userRole === 'doctor') {
             const Doctor = require('../models/Doctor');
-            const doctorRecord = await Doctor.findOne({ userId: req.user.userId });
+            const doctorRecord = await Doctor.findOne({ userId: req.userId });
             isDoctor = doctorRecord && doctorRecord.id.toString() === consultation.doctorId?.toString();
         }
 
@@ -2299,8 +2299,8 @@ router.delete('/:id/video-log', auth, async (req, res) => {
             .lean();
         if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
 
-        const isAdmin  = req.user.role === 'admin';
-        const isDoctor = req.user.role === 'doctor';
+        const isAdmin  = req.userRole === 'admin';
+        const isDoctor = req.userRole === 'doctor';
 
         if (!isAdmin && !isDoctor) {
             return res.status(403).json({ message: 'Hanya dokter atau admin yang dapat menghapus video log' });

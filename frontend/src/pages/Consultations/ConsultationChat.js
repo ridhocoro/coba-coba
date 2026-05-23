@@ -480,9 +480,10 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
   // ── User: terima call (jawab offer) ──────────────────────────
   const answerCall = useCallback(async (offer) => {
+    if (pcRef.current) return; // sudah ada koneksi, hindari double-answer
     setCallState('ringing');
     const stream = await getLocalStream();
-    if (!stream) return;
+    if (!stream) { setCallState('idle'); return; }
 
     const pc = createPC();
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -491,7 +492,8 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socket.emit('vc-answer', { consultationId, answer });
-    setCallState('connected');
+    // Jangan set 'connected' di sini — tunggu ontrack dari remote stream
+    // setCallState('connected') dipanggil di pc.ontrack saat stream remote masuk
   }, [consultationId, socket, getLocalStream, createPC]);
 
   // ── Akhiri call ────────────────────────────────────────────────
@@ -719,8 +721,9 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     };
 
     // User terima offer dari dokter
+    // Guard: skip jika sudah dijawab via initialOffer (dari IncomingCallBanner)
     const onOffer = async ({ offer }) => {
-      if (!isDoctor) answerCall(offer);
+      if (!isDoctor && !pcRef.current) answerCall(offer);
     };
 
     const onIce = async ({ candidate }) => {
@@ -828,6 +831,13 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
         <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', background: '#161b2299', backdropFilter: 'blur(8px)', borderRadius: 20, padding: '6px 16px', fontSize: 13, color: '#e6edf3', fontWeight: 600, border: '1px solid #30363d' }}>
           {stateLabel}
         </div>
+        {/* REC badge — Zoom-style, no animation */}
+        {isRecording && (
+          <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', alignItems: 'center', gap: 6, background: '#1a0a0a', border: '1px solid #f85149', borderRadius: 6, padding: '4px 10px', userSelect: 'none' }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f85149', flexShrink: 0 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#f85149', letterSpacing: 1 }}>REC</span>
+          </div>
+        )}
       </div>
 
       {/* Controls bar */}
@@ -850,9 +860,9 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
           <button
             onClick={isRecording ? stopRecording : startRecording}
             title={isRecording ? 'Stop Rekam' : 'Mulai Rekam'}
-            style={{ width: 52, height: 52, borderRadius: '50%', border: isRecording ? '2px solid #f85149' : '2px solid #374151', cursor: 'pointer', background: '#21262d', color: isRecording ? '#f85149' : '#8b949e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
-            <div style={{ width: 12, height: 12, borderRadius: isRecording ? 2 : '50%', background: isRecording ? '#f85149' : '#8b949e' }} />
-            <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: 0.5 }}>{isRecording ? 'STOP' : 'REC'}</span>
+            style={{ width: 52, height: 52, borderRadius: '50%', border: isRecording ? '2px solid #f85149' : '2px solid #374151', cursor: 'pointer', background: isRecording ? '#2d1515' : '#21262d', color: isRecording ? '#f85149' : '#8b949e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2, transition: 'none' }}>
+            <div style={{ width: 12, height: 12, borderRadius: isRecording ? 2 : '50%', background: isRecording ? '#f85149' : '#8b949e', flexShrink: 0 }} />
+            <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: 0.5, lineHeight: 1 }}>{isRecording ? 'STOP' : 'REC'}</span>
           </button>
         )}
 
@@ -1668,7 +1678,7 @@ const ConsultationChat = () => {
             style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', background: '#c0392b', color: '#fff', cursor: 'pointer', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(192,57,43,.5)' }}>
             📵
           </button>
-          <button onClick={() => { setShowVideoCall(true); setIncomingCall(null); }}
+          <button onClick={() => { setShowVideoCall(true); }}
             style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', background: '#1a7f37', color: '#fff', cursor: 'pointer', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(26,127,55,.5)' }}>
             📞
           </button>
@@ -1692,7 +1702,7 @@ const ConsultationChat = () => {
           socket={socket}
           isDoctor={isDoctor}
           initialOffer={incomingCall?.offer || null}
-          onClose={() => setShowVideoCall(false)}
+          onClose={() => { setShowVideoCall(false); setIncomingCall(null); }}
         />
       )}
 
@@ -1741,13 +1751,13 @@ const ConsultationChat = () => {
           )}
 
           {/* ── Download Rekaman Video — tampil jika ada rekaman di session ── */}
-          {(() => {
+          {((logInfo) => {
             try {
               const raw = sessionStorage.getItem(`vc_recording_${id}`);
               if (!raw) return null;
               const rec = JSON.parse(raw);
               // Jika server sudah konfirmasi expired, hapus dari session juga
-              if (videoLogInfo && videoLogInfo.available === false) {
+              if (logInfo && logInfo.available === false) {
                 sessionStorage.removeItem(`vc_recording_${id}`);
                 return null;
               }
@@ -1771,7 +1781,7 @@ const ConsultationChat = () => {
                 </div>
               );
             } catch { return null; }
-          })()}
+          })(videoLogInfo)}
 
           {/* ── Dokter Actions ─────────────────────────────────── */}
           {isDoctor && (
