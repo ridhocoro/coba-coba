@@ -371,7 +371,7 @@ const ICE_SERVERS = {
   ],
 };
 
-const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onClose }) => {
+const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onClose, setVideoLogInfo: setParentVideoLogInfo }) => {
   const localVideoRef  = useRef(null);
   const remoteVideoRef = useRef(null);
   const pcRef          = useRef(null);
@@ -664,6 +664,11 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
         expiresAt: res.data.expiresAt,
         timeLeft : '24 jam',
       });
+      setParentVideoLogInfo?.({
+        url      : res.data.url,
+        expiresAt: res.data.expiresAt,
+        timeLeft : '24 jam',
+      });
       toast.success('Video log berhasil diupload ke Backblaze B2! Tersedia 24 jam.');
     } catch (err) {
       setUploadStatus('error');
@@ -689,13 +694,15 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       const res = await api.get(`/api/consultations/${consultationId}/video-log`);
       if (res.data.available) {
         setVideoLogInfo(res.data);
+        setParentVideoLogInfo?.(res.data);
         setShowLogPanel(true);
       } else {
         // Jika sudah expired atau tidak tersedia, pastikan UI ikut update
         setVideoLogInfo(prev => prev ? { ...prev, available: false, message: res.data.message } : null);
+        setParentVideoLogInfo?.(prev => prev ? { ...prev, available: false, message: res.data.message } : null);
       }
     } catch { /* silent */ }
-  }, [consultationId]);
+  }, [consultationId, setParentVideoLogInfo]);
 
   // Cek saat komponen mount
   useEffect(() => { fetchVideoLog(); }, [fetchVideoLog]);
@@ -1202,6 +1209,7 @@ const ConsultationChat = () => {
   const [showSickLetter,   setShowSickLetter]   = useState(false);
   const [showRating,       setShowRating]       = useState(false);
   const [showVideoCall,    setShowVideoCall]     = useState(false);
+  const [videoLogInfo,     setVideoLogInfo]      = useState(null);
   const [showMedicalRecord,setShowMedicalRecord] = useState(false);
   const [incomingCall,     setIncomingCall]      = useState(null); // { offer }
   const [uploadingImg, setUploadingImg] = useState(false);
@@ -1700,6 +1708,7 @@ const ConsultationChat = () => {
           isDoctor={isDoctor}
           initialOffer={incomingCall?.offer || null}
           onClose={() => { setShowVideoCall(false); setIncomingCall(null); }}
+          setVideoLogInfo={setVideoLogInfo}
         />
       )}
 
@@ -1748,13 +1757,13 @@ const ConsultationChat = () => {
           )}
 
           {/* ── Download Rekaman Video — tampil jika ada rekaman di session ── */}
-          {((logInfo) => {
+          {(() => {
             try {
               const raw = sessionStorage.getItem(`vc_recording_${id}`);
               if (!raw) return null;
               const rec = JSON.parse(raw);
               // Jika server sudah konfirmasi expired, hapus dari session juga
-              if (logInfo && logInfo.available === false) {
+              if (videoLogInfo && videoLogInfo.available === false) {
                 sessionStorage.removeItem(`vc_recording_${id}`);
                 return null;
               }
@@ -1778,7 +1787,7 @@ const ConsultationChat = () => {
                 </div>
               );
             } catch { return null; }
-          })(videoLogInfo)}
+          })()}
 
           {/* ── Dokter Actions ─────────────────────────────────── */}
           {isDoctor && (
