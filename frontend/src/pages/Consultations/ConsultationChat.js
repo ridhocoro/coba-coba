@@ -1213,7 +1213,6 @@ const ConsultationChat = () => {
 
   const msgEndRef     = useRef(null);
   const fileInputRef  = useRef(null);
-  const pdfInputRef   = useRef(null);
   const typingTimerRef = useRef(null);
 
   const isDoctor = user?.role === 'doctor';
@@ -1405,34 +1404,32 @@ const ConsultationChat = () => {
   };
 
   // ── Image upload ───────────────────────────────────────────────
-  const handleImageUpload = async (e) => {
+  // ── Combined upload: gambar atau PDF ─────────────────────────
+  const handleCombinedUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error('Maks 5MB'); return; }
-    setUploadingImg(true);
-    const fd = new FormData();
-    fd.append('image', file);
-    try {
-      const r = await api.post(`/api/consultations/${id}/messages/image`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setMessages(prev => [...prev, r.data.message]);
-    } catch { toast.error('Gagal upload gambar'); }
-    finally { setUploadingImg(false); e.target.value = ''; }
-  };
-
-  // ── PDF / file upload ──────────────────────────────────────────
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') { toast.error('Hanya file PDF yang diizinkan'); return; }
-    if (file.size > 10 * 1024 * 1024) { toast.error('Ukuran file maks 10MB'); return; }
-    setUploadingFile(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const r = await api.post(`/api/consultations/${id}/messages/file`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setMessages(prev => [...prev, r.data.message]);
-    } catch { toast.error('Gagal upload file PDF'); }
-    finally { setUploadingFile(false); e.target.value = ''; }
+    const isPdf = file.type === 'application/pdf';
+    if (isPdf) {
+      if (file.size > 10 * 1024 * 1024) { toast.error('Ukuran file maks 10MB'); e.target.value = ''; return; }
+      setUploadingFile(true);
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const r = await api.post(`/api/consultations/${id}/messages/file`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setMessages(prev => [...prev, r.data.message]);
+      } catch { toast.error('Gagal upload file PDF'); }
+      finally { setUploadingFile(false); e.target.value = ''; }
+    } else {
+      if (file.size > 5 * 1024 * 1024) { toast.error('Maks 5MB'); e.target.value = ''; return; }
+      setUploadingImg(true);
+      const fd = new FormData();
+      fd.append('image', file);
+      try {
+        const r = await api.post(`/api/consultations/${id}/messages/image`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setMessages(prev => [...prev, r.data.message]);
+      } catch { toast.error('Gagal upload gambar'); }
+      finally { setUploadingImg(false); e.target.value = ''; }
+    }
   };
 
   // ── Typing ─────────────────────────────────────────────────────
@@ -2152,21 +2149,13 @@ const ConsultationChat = () => {
             <div style={s.footer}>
               <form onSubmit={canChat ? sendMessage : e => e.preventDefault()}
                 style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
-                <input type="file" ref={pdfInputRef} accept="application/pdf" style={{ display: 'none' }} onChange={handleFileUpload} />
+                <input type="file" ref={fileInputRef} accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleCombinedUpload} />
                 <button type="button"
                   onClick={() => canChat && fileInputRef.current?.click()}
-                  disabled={!canChat || uploadingImg}
-                  title="Kirim gambar"
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', border: 'none', color: uploadingImg ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {uploadingImg ? '⏳' : '📎'}
-                </button>
-                <button type="button"
-                  onClick={() => canChat && pdfInputRef.current?.click()}
-                  disabled={!canChat || uploadingFile}
-                  title="Kirim file PDF"
-                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', border: 'none', color: uploadingFile ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {uploadingFile ? '⏳' : '📄'}
+                  disabled={!canChat || uploadingImg || uploadingFile}
+                  title="Kirim gambar atau PDF"
+                  style={{ width: 36, height: 36, borderRadius: '50%', background: '#f3f4f6', border: 'none', color: (uploadingImg || uploadingFile) ? '#3fb950' : '#8b949e', cursor: canChat ? 'pointer' : 'not-allowed', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {(uploadingImg || uploadingFile) ? '⏳' : '📎'}
                 </button>
                 <input
                   value={canChat ? newMessage : ''}
