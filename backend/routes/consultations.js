@@ -2171,8 +2171,7 @@ router.post('/:id/video-log', auth, uploadVideoLog.single('video'), async (req, 
         }
 
         if (isDoctor) {
-            const Doctor = require('../models/Doctor');
-            const doctorRecord = await Doctor.findOne({ userId: req.userId });
+            const doctorRecord = await Doctor.findOne({ where: { userId: req.userId } });
             if (!doctorRecord || doctorRecord.id.toString() !== consultation.doctorId.toString()) {
                 return res.status(403).json({ message: 'Anda bukan dokter pada konsultasi ini' });
             }
@@ -2239,8 +2238,7 @@ router.get('/:id/video-log', auth, async (req, res) => {
         const isPatient = consultation.userId?.toString() === req.userId;
         let   isDoctor  = false;
         if (req.userRole === 'doctor') {
-            const Doctor = require('../models/Doctor');
-            const doctorRecord = await Doctor.findOne({ userId: req.userId });
+            const doctorRecord = await Doctor.findOne({ where: { userId: req.userId } });
             isDoctor = doctorRecord && doctorRecord.id.toString() === consultation.doctorId?.toString();
         }
 

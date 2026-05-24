@@ -1597,22 +1597,6 @@ router.put('/chat/:doctorId/read', guard, async (req, res) => {
     }
 });
 
-router.put('/chat/:doctorId/read', guard, async (req, res) => {
-    try {
-        await AdminChat.findOneAndUpdate(
-            { doctorId: req.params.doctorId },
-            {
-                $set: { unreadAdmin: 0, 'messages.$[elem].isRead': true },
-            },
-            { arrayFilters: [{ 'elem.senderRole': 'doctor', 'elem.isRead': false }] }
-        );
-        res.json({ success: true });
-    } catch (err) {
-        console.error('[admin] PUT /chat/:doctorId/read error:', err);
-        res.status(500).json({ success: false, message: 'Server error', error: err.message });
-    }
-});
-
 // ════════════════════════════════════════════════════════════════════════════
 // SURAT SAKIT & RESEP — DOWNLOAD PDF (ADMIN)
 // ════════════════════════════════════════════════════════════════════════════

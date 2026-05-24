@@ -1,21 +1,24 @@
 /**
  * CleanupUnverifiedUsersCron.js
  * Hapus permanen user yang daftar tapi tidak verifikasi OTP lebih dari 24 jam.
- * Menggunakan setInterval (konsisten dengan cron lain di proyek ini).
+ * FIX: Ganti MongoDB User -> MySQL User (Sequelize)
  */
-const User = require('../models/User');
+const { User } = require('../models/mysql');
+const { Op }   = require('sequelize');
 
 let _timer = null;
 
 async function tick() {
     try {
-        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 jam lalu
-        const result = await User.deleteMany({
-            isVerified: false,
-            createdAt : { $lt: cutoff },
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const deleted = await User.destroy({
+            where: {
+                isVerified: false,
+                created_at: { [Op.lt]: cutoff },
+            },
         });
-        if (result.deletedCount > 0) {
-            console.log(`[CRON CleanupUsers] Hapus ${result.deletedCount} akun unverified > 24 jam`);
+        if (deleted > 0) {
+            console.log(`[CRON CleanupUsers] Hapus ${deleted} akun unverified > 24 jam`);
         }
     } catch (err) {
         console.error('[CRON CleanupUsers] Error:', err.message);
@@ -23,8 +26,8 @@ async function tick() {
 }
 
 function startCron() {
-    tick(); // jalankan sekali saat startup
-    _timer = setInterval(tick, 24 * 60 * 60 * 1000); // setiap 24 jam
+    tick();
+    _timer = setInterval(tick, 24 * 60 * 60 * 1000);
     console.log('✅ CRON CleanupUnverifiedUsers aktif (setiap 24 jam)');
 }
 
