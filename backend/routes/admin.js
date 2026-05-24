@@ -1896,7 +1896,8 @@ router.post('/analytics/disease-backfill', guard, async (req, res) => {
         // Proses konsultasi
         for (const c of consultsToFill) {
             try {
-                const result = await classifyKeluhan(c.symptoms);
+                const userRow = c.userId ? await User.findOne({ where: { id: c.userId }, attributes: ['gender'], raw: true }) : null;
+                const result = await classifyKeluhan(c.symptoms, userRow?.gender || null);
                 if (result) {
                     await Consultation.findByIdAndUpdate(c._id, {
                         disease_category:    result.kategori,
@@ -1911,7 +1912,8 @@ router.post('/analytics/disease-backfill', guard, async (req, res) => {
         // Proses janji temu
         for (const a of apptsToFill) {
             try {
-                const result = await classifyKeluhan(a.complaint);
+                const userRow = a.userId ? await User.findOne({ where: { id: a.userId }, attributes: ['gender'], raw: true }) : null;
+                const result = await classifyKeluhan(a.complaint, userRow?.gender || null);
                 if (result) {
                     await Appointment.findByIdAndUpdate(a._id, {
                         disease_category:    result.kategori,

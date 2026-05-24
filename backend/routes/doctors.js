@@ -1138,13 +1138,34 @@ router.get('/my/disease-trend-gender', auth, doctorAuth, async (req, res) => {
         else { start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0); end = todayEnd; }
 
         const doctorIdStr = doctor.id.toString();
-        const buildPipeline = () => [
-            { $match: { doctorId: doctorIdStr, disease_category: { $ne: null }, scheduledAt: { $gte: start, $lte: end } } },
-            { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
-            { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-            ...(gender ? [{ $match: { 'user.gender': gender === 'male' ? 'laki-laki' : 'perempuan' } }] : []),
-            { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } } } } }, jumlah: { $sum: 1 } } },
-        ];
+
+        // User ada di MySQL — ambil userId berdasarkan gender dari MySQL dulu
+        let userIdFilter = null;
+        if (gender) {
+            const genderVal = gender === 'male' ? 'laki-laki' : 'perempuan';
+            const usersWithGender = await User.findAll({
+                where: { gender: genderVal },
+                attributes: ['id'],
+                raw: true,
+            });
+            userIdFilter = usersWithGender.map(u => String(u.id));
+            if (userIdFilter.length === 0) {
+                return res.json({ success: true, data: {}, gender });
+            }
+        }
+
+        const buildPipeline = () => {
+            const matchStage = {
+                doctorId: doctorIdStr,
+                disease_category: { $ne: null },
+                scheduledAt: { $gte: start, $lte: end },
+            };
+            if (userIdFilter) matchStage.userId = { $in: userIdFilter };
+            return [
+                { $match: matchStage },
+                { $group: { _id: { kategori: '$disease_category', tanggal: { $dateToString: { format: '%Y-%m-%d', date: { $dateAdd: { startDate: '$scheduledAt', unit: 'hour', amount: 7 } } } } }, jumlah: { $sum: 1 } } },
+            ];
+        };
         const [consultResults, apptResults] = await Promise.all([
             Consultation.aggregate(buildPipeline()),
             Appointment.aggregate(buildPipeline()),
