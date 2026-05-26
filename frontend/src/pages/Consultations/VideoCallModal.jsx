@@ -1,27 +1,22 @@
 // frontend/src/pages/Consultations/VideoCallModal.jsx
-// Komponen video call WebRTC yang telah dioptimasi
-// Fitur:
-//   - Fullscreen remote video + PiP lokal
-//   - Toggle mic & kamera
-//   - Screen share
-//   - ICE restart otomatis saat disconnect
-//   - Incoming call UI untuk pasien
-//   - Connection quality indicator
-//   - Timer durasi panggilan
+// Fix:
+//   1. Remote video mobile: ontrack sebagai satu-satunya trigger setConnected
+//   2. Manual video.play() untuk bypass autoplay policy mobile
+//   3. Auto-end timeout 90 detik jika tidak dijawab (WhatsApp-style)
+//   4. vc-reject event + toast berbeda untuk dokter
+//   5. vc-end dengan reason payload
 
-import React, {
-    useState, useEffect, useRef, useCallback
-} from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import { fmtDoctorName } from '../../utils/format';
 
-// ── ICE Servers (baca dari env atau gunakan public STUN) ──────────────────────
+// ── ICE Servers ──────────────────────────────────────────────────────────────
 const buildIceServers = () => {
     const servers = [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
     ];
-    // Tambah TURN jika tersedia (diperlukan untuk production)
     if (process.env.REACT_APP_TURN_URLS) {
         servers.push({
             urls      : process.env.REACT_APP_TURN_URLS,
@@ -32,7 +27,6 @@ const buildIceServers = () => {
     return servers;
 };
 
-// ── Utilitas ────────────────────────────────────────────────────────────────
 const fmtDuration = (secs) => {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -41,7 +35,9 @@ const fmtDuration = (secs) => {
     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 };
 
-// ── Komponen Utama ────────────────────────────────────────────────────────────
+// Timeout sebelum auto-end jika tidak dijawab (ms)
+const UNANSWERED_TIMEOUT_MS = 90_000; // 90 detik
+
 export default function VideoCallModal({
     consultationId,
     socket,
@@ -51,34 +47,39 @@ export default function VideoCallModal({
     onClose,
     onCallEnded,
 }) {
-    const localVideoRef  = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const pcRef          = useRef(null);
-    const localStreamRef = useRef(null);
-    const screenStreamRef= useRef(null);
-    const hasInitRef     = useRef(false);
-    const timerRef       = useRef(null);
+    const localVideoRef   = useRef(null);
+    const remoteVideoRef  = useRef(null);
+    const pcRef           = useRef(null);
+    const localStreamRef  = useRef(null);
+    const screenStreamRef = useRef(null);
+    const hasInitRef      = useRef(false);
+    const timerRef        = useRef(null);
+    // Timeout auto-end jika tidak dijawab
+    const unansweredTimer = useRef(null);
 
-    const [callState,    setCallState]    = useState('idle');
+    const [callState,     setCallState]     = useState('idle');
     // idle | calling | ringing | connected | ended
-    const [micOn,        setMicOn]        = useState(true);
-    const [camOn,        setCamOn]        = useState(true);
-    const [screenSharing,setScreenSharing]= useState(false);
-    const [remoteJoined, setRemoteJoined] = useState(false);
-    const [error,        setError]        = useState(null);
-    const [duration,     setDuration]     = useState(0);
-    const [iceState,     setIceState]     = useState('');
-    const [incomingOffer,setIncomingOffer]= useState(null);
+    const [micOn,         setMicOn]         = useState(true);
+    const [camOn,         setCamOn]         = useState(true);
+    const [screenSharing, setScreenSharing] = useState(false);
+    const [remoteJoined,  setRemoteJoined]  = useState(false);
+    const [error,         setError]         = useState(null);
+    const [duration,      setDuration]      = useState(0);
+    const [iceState,      setIceState]      = useState('');
+    const [incomingOffer, setIncomingOffer] = useState(null);
+    // Pesan akhir panggilan untuk UI
+    const [endMessage,    setEndMessage]    = useState('');
 
     // ── Bersihkan semua resource ──────────────────────────────────────────
     const cleanup = useCallback(() => {
         clearInterval(timerRef.current);
+        clearTimeout(unansweredTimer.current);
         localStreamRef.current?.getTracks().forEach(t => t.stop());
         screenStreamRef.current?.getTracks().forEach(t => t.stop());
         pcRef.current?.close();
-        pcRef.current          = null;
-        localStreamRef.current = null;
-        screenStreamRef.current= null;
+        pcRef.current           = null;
+        localStreamRef.current  = null;
+        screenStreamRef.current = null;
     }, []);
 
     // ── Mulai timer durasi ────────────────────────────────────────────────
@@ -95,13 +96,24 @@ export default function VideoCallModal({
             if (candidate) socket.emit('vc-ice-candidate', { consultationId, candidate });
         };
 
+        // *** FIX UTAMA: satu-satunya tempat set connected + remoteJoined ***
         pc.ontrack = ({ streams }) => {
-            if (remoteVideoRef.current && streams[0]) {
-                remoteVideoRef.current.srcObject = streams[0];
-                setCallState('connected');
-                setRemoteJoined(true);
-                startTimer();
+            const stream = streams[0];
+            if (!stream) return;
+
+            if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = stream;
+                // Manual play — wajib di mobile (autoplay policy)
+                remoteVideoRef.current.play().catch(() => {
+                    // Sudah ada autoPlay attribute, ignore jika gagal — browser lain OK
+                });
             }
+            // Clear unanswered timeout — sudah terhubung
+            clearTimeout(unansweredTimer.current);
+
+            setCallState('connected');
+            setRemoteJoined(true);
+            startTimer();
         };
 
         pc.oniceconnectionstatechange = () => {
@@ -133,11 +145,17 @@ export default function VideoCallModal({
     const getLocalStream = useCallback(async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                video: {
+                    width: { ideal: 1280 }, height: { ideal: 720 },
+                    facingMode: 'user',
+                },
                 audio: { echoCancellation: true, noiseSuppression: true },
             });
             localStreamRef.current = stream;
-            if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+            if (localVideoRef.current) {
+                localVideoRef.current.srcObject = stream;
+                localVideoRef.current.play().catch(() => {});
+            }
             return stream;
         } catch (err) {
             const msg = err.name === 'NotAllowedError'
@@ -167,12 +185,27 @@ export default function VideoCallModal({
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit('vc-offer', { consultationId, offer });
-    }, [consultationId, socket, getLocalStream, createPC]);
+
+        // *** Auto-end jika tidak dijawab dalam UNANSWERED_TIMEOUT_MS ***
+        unansweredTimer.current = setTimeout(() => {
+            // Hanya trigger jika belum connected
+            if (pcRef.current && callState !== 'connected') {
+                socket.emit('vc-no-answer', { consultationId });
+                cleanup();
+                setEndMessage('Panggilan tidak dijawab');
+                setCallState('ended');
+                toast('📵 Panggilan tidak dijawab', { icon: '⏱️' });
+                if (onCallEnded) onCallEnded(0);
+                setTimeout(onClose, 2000);
+            }
+        }, UNANSWERED_TIMEOUT_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [consultationId, socket, getLocalStream, createPC, cleanup, onClose, onCallEnded]);
 
     // ── Pasien: terima panggilan ──────────────────────────────────────────
     const answerCall = useCallback(async (offer) => {
-        setCallState('ringing');
         setIncomingOffer(null);
+        // Jangan set connected di sini — tunggu ontrack
 
         const stream = await getLocalStream();
         if (!stream) return;
@@ -184,13 +217,14 @@ export default function VideoCallModal({
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('vc-answer', { consultationId, answer });
-        setCallState('connected');
-        startTimer();
-    }, [consultationId, socket, getLocalStream, createPC, startTimer]);
+        // State 'ringing' sementara sampai ontrack fire
+        setCallState('ringing');
+    }, [consultationId, socket, getLocalStream, createPC]);
 
-    // ── Tolak panggilan ───────────────────────────────────────────────────
+    // ── Pasien: tolak panggilan ───────────────────────────────────────────
     const declineCall = useCallback(() => {
-        socket.emit('vc-end', { consultationId });
+        // Emit vc-reject agar dokter dapat notif khusus
+        socket.emit('vc-reject', { consultationId });
         setIncomingOffer(null);
         setCallState('ended');
         onClose();
@@ -198,7 +232,7 @@ export default function VideoCallModal({
 
     // ── Akhiri panggilan ──────────────────────────────────────────────────
     const endCall = useCallback(() => {
-        socket.emit('vc-end', { consultationId });
+        socket.emit('vc-end', { consultationId, reason: 'ended' });
         cleanup();
         setCallState('ended');
         if (onCallEnded) onCallEnded(duration);
@@ -221,7 +255,6 @@ export default function VideoCallModal({
     const toggleScreenShare = async () => {
         if (!pcRef.current) return;
         if (screenSharing) {
-            // Kembali ke kamera
             screenStreamRef.current?.getTracks().forEach(t => t.stop());
             screenStreamRef.current = null;
             const camTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -237,7 +270,6 @@ export default function VideoCallModal({
                 const screenTrack = screenStream.getVideoTracks()[0];
                 const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
                 if (sender) await sender.replaceTrack(screenTrack);
-                // Auto-stop saat user hentikan screen share via browser UI
                 screenTrack.onended = () => toggleScreenShare();
                 setScreenSharing(true);
             } catch {
@@ -252,30 +284,49 @@ export default function VideoCallModal({
 
         const onAnswer = async ({ answer }) => {
             if (!pcRef.current) return;
-            await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-            setCallState('connected');
-            setRemoteJoined(true);
-            startTimer();
+            try {
+                await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+                // Jangan set connected di sini — tunggu ontrack untuk trigger setRemoteJoined
+            } catch (err) {
+                console.error('setRemoteDescription error:', err);
+            }
         };
 
         const onOffer = ({ offer }) => {
             if (!isDoctor) {
-                // Tampilkan UI incoming call untuk pasien
                 setIncomingOffer(offer);
                 setCallState('ringing');
             }
         };
 
         const onIce = async ({ candidate }) => {
-            try { await pcRef.current?.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+            try {
+                if (pcRef.current && candidate) {
+                    await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            } catch {}
         };
 
-        const onEnd = () => {
+        // *** FIX: handle reason dari vc-end ***
+        const onEnd = ({ reason } = {}) => {
             cleanup();
             setCallState('ended');
-            toast('Panggilan video diakhiri oleh pihak lain');
+
+            if (reason === 'rejected') {
+                // Dokter: pasien menolak panggilan
+                setEndMessage('Panggilan ditolak oleh pasien');
+                toast('📵 Pasien menolak panggilan', { icon: '❌', duration: 4000 });
+            } else if (reason === 'no-answer') {
+                // Pasien: dokter batalkan karena timeout
+                setEndMessage('Panggilan tidak dijawab');
+                toast('Panggilan berakhir');
+            } else {
+                setEndMessage('Panggilan diakhiri');
+                toast('Panggilan video diakhiri');
+            }
+
             if (onCallEnded) onCallEnded(duration);
-            setTimeout(onClose, 1500);
+            setTimeout(onClose, 2000);
         };
 
         const onIceRestart = async () => {
@@ -301,7 +352,7 @@ export default function VideoCallModal({
             socket.off('vc-end',           onEnd);
             socket.off('vc-ice-restart',   onIceRestart);
         };
-    }, [socket, isDoctor, consultationId, cleanup, onClose, onCallEnded, duration, startTimer, answerCall]);
+    }, [socket, isDoctor, consultationId, cleanup, onClose, onCallEnded, duration, startTimer]);
 
     // Dokter langsung mulai panggilan
     useEffect(() => {
@@ -310,16 +361,15 @@ export default function VideoCallModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Bersihkan timer saat unmount
     useEffect(() => () => clearInterval(timerRef.current), []);
 
     // ── Kualitas koneksi ──────────────────────────────────────────────────
     const iceQuality = {
-        'connected'    : { color: '#2ecc71', label: 'Baik'     },
-        'completed'    : { color: '#2ecc71', label: 'Stabil'   },
-        'checking'     : { color: '#f39c12', label: 'Mencoba..'},
-        'disconnected' : { color: '#e74c3c', label: 'Terputus' },
-        'failed'       : { color: '#c0392b', label: 'Gagal'    },
+        'connected'   : { color: '#2ecc71', label: 'Baik'      },
+        'completed'   : { color: '#2ecc71', label: 'Stabil'    },
+        'checking'    : { color: '#f39c12', label: 'Mencoba..' },
+        'disconnected': { color: '#e74c3c', label: 'Terputus'  },
+        'failed'      : { color: '#c0392b', label: 'Gagal'     },
     }[iceState] || { color: '#8b949e', label: '' };
 
     const fullDoctorName = doctor ? fmtDoctorName(doctor) : 'Dokter';
@@ -329,16 +379,32 @@ export default function VideoCallModal({
     if (incomingOffer && !isDoctor) {
         return (
             <div style={styles.overlay}>
+                <style>{`
+                    @keyframes vcRingPulse {
+                        0%   { transform: translate(-50%,-50%) scale(1);   opacity: 0.6; }
+                        100% { transform: translate(-50%,-50%) scale(2.2); opacity: 0; }
+                    }
+                `}</style>
                 <div style={styles.incomingCard}>
-                    <div style={styles.incomingAvatar}>👨‍⚕️</div>
+                    <div style={{ position: 'relative', width: 90, height: 90, marginBottom: 20 }}>
+                        <div style={styles.incomingAvatar}>👨‍⚕️</div>
+                        <div style={styles.ringPulse} />
+                        <div style={{ ...styles.ringPulse, animationDelay: '0.6s' }} />
+                    </div>
                     <p style={styles.incomingTitle}>Panggilan Masuk</p>
                     <p style={styles.incomingName}>{remoteName}</p>
-                    <p style={{ color: '#8b949e', fontSize: 13, marginBottom: 24 }}>
+                    <p style={{ color: '#8b949e', fontSize: 13, marginBottom: 28 }}>
                         mengajak video call konsultasi
                     </p>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                        <button onClick={declineCall} style={styles.btnDecline}>Tolak</button>
-                        <button onClick={() => answerCall(incomingOffer)} style={styles.btnAccept}>Terima</button>
+                    <div style={{ display: 'flex', gap: 20 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                            <button onClick={declineCall} style={styles.btnDecline}>📵</button>
+                            <span style={{ color: '#8b949e', fontSize: 12 }}>Tolak</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                            <button onClick={() => answerCall(incomingOffer)} style={styles.btnAccept}>📞</button>
+                            <span style={{ color: '#8b949e', fontSize: 12 }}>Terima</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -347,26 +413,29 @@ export default function VideoCallModal({
 
     return (
         <div style={styles.overlay}>
-            {/* Keyframes */}
             <style>{`
                 @keyframes vcPulse {
                     0%   { transform: scale(1);   opacity: 0.6; }
                     100% { transform: scale(1.8); opacity: 0; }
                 }
-                @keyframes vcSpin {
-                    to { transform: rotate(360deg); }
-                }
             `}</style>
 
-            {/* Remote video — full screen */}
+            {/* Remote video — selalu render, visibility diatur lewat opacity/zIndex */}
             <div style={styles.remoteArea}>
+                {/* *** FIX: remote video selalu ada di DOM, visibility via CSS *** */}
                 <video
                     ref={remoteVideoRef}
-                    autoPlay playsInline
-                    style={{ ...styles.remoteVideo, display: remoteJoined ? 'block' : 'none' }}
+                    autoPlay
+                    playsInline
+                    style={{
+                        ...styles.remoteVideo,
+                        // Tampilkan segera setelah srcObject di-set (remoteJoined)
+                        opacity  : remoteJoined ? 1 : 0,
+                        zIndex   : remoteJoined ? 1 : 0,
+                    }}
                 />
 
-                {/* Waiting / error state */}
+                {/* Waiting / error overlay — di atas video saat belum join */}
                 {!remoteJoined && (
                     <div style={styles.waitingState}>
                         {error ? (
@@ -375,9 +444,15 @@ export default function VideoCallModal({
                                 <p style={{ color: '#e74c3c', fontWeight: 600, textAlign: 'center', maxWidth: 320 }}>{error}</p>
                                 <button onClick={onClose} style={styles.btnClose}>Tutup</button>
                             </>
+                        ) : callState === 'ended' ? (
+                            <>
+                                <div style={{ fontSize: 48, marginBottom: 12 }}>📵</div>
+                                <p style={{ color: '#e6edf3', fontWeight: 600, fontSize: 16 }}>
+                                    {endMessage || 'Panggilan diakhiri'}
+                                </p>
+                            </>
                         ) : (
                             <>
-                                {/* Avatar + pulse ring */}
                                 <div style={{ position: 'relative', marginBottom: 20 }}>
                                     <div style={styles.avatarCircle}>{isDoctor ? '👤' : '👨‍⚕️'}</div>
                                     <div style={styles.pulseRing} />
@@ -388,6 +463,11 @@ export default function VideoCallModal({
                                      callState === 'ringing'  ? 'Menyambungkan...' : 'Mempersiapkan...'}
                                 </p>
                                 <p style={{ color: '#8b949e', fontSize: 13 }}>{remoteName}</p>
+                                {isDoctor && callState === 'calling' && (
+                                    <p style={{ color: '#555', fontSize: 11, marginTop: 12 }}>
+                                        Otomatis berakhir dalam {Math.ceil(UNANSWERED_TIMEOUT_MS / 1000)}s jika tidak dijawab
+                                    </p>
+                                )}
                             </>
                         )}
                     </div>
@@ -395,7 +475,9 @@ export default function VideoCallModal({
 
                 {/* Local video PiP */}
                 <div style={styles.localPip}>
-                    <video ref={localVideoRef} autoPlay playsInline muted
+                    <video
+                        ref={localVideoRef}
+                        autoPlay playsInline muted
                         style={{ ...styles.localVideo, display: camOn && !screenSharing ? 'block' : 'none' }}
                     />
                     {(!camOn || screenSharing) && (
@@ -403,7 +485,7 @@ export default function VideoCallModal({
                     )}
                 </div>
 
-                {/* Status badge + durasi */}
+                {/* Status badge */}
                 <div style={styles.topBadge}>
                     {callState === 'connected' && (
                         <>
@@ -418,7 +500,7 @@ export default function VideoCallModal({
                     )}
                     {callState === 'calling'  && '📞 Menghubungi...'}
                     {callState === 'ringing'  && '📲 Menyambungkan...'}
-                    {callState === 'ended'    && '❌ Panggilan berakhir'}
+                    {callState === 'ended'    && `❌ ${endMessage || 'Panggilan berakhir'}`}
                 </div>
 
                 {/* Remote name overlay */}
@@ -429,25 +511,21 @@ export default function VideoCallModal({
 
             {/* Control bar */}
             <div style={styles.controls}>
-                {/* Mic */}
                 <button onClick={toggleMic} title={micOn ? 'Matikan Mic' : 'Nyalakan Mic'}
                     style={{ ...styles.ctrlBtn, background: micOn ? '#2c313a' : '#c0392b' }}>
                     {micOn ? '🎙️' : '🔇'}
                 </button>
 
-                {/* Kamera */}
                 <button onClick={toggleCam} title={camOn ? 'Matikan Kamera' : 'Nyalakan Kamera'}
                     style={{ ...styles.ctrlBtn, background: camOn ? '#2c313a' : '#c0392b' }}>
                     {camOn ? '📹' : '🚫'}
                 </button>
 
-                {/* Screen share */}
                 <button onClick={toggleScreenShare} title={screenSharing ? 'Stop Screen Share' : 'Bagikan Layar'}
                     style={{ ...styles.ctrlBtn, background: screenSharing ? '#2980b9' : '#2c313a' }}>
                     🖥
                 </button>
 
-                {/* End call */}
                 <button onClick={endCall} title="Akhiri Panggilan"
                     style={{ ...styles.ctrlBtn, ...styles.endBtn }}>
                     📵
@@ -474,14 +552,18 @@ const styles = {
         overflow: 'hidden',
     },
     remoteVideo: {
+        position: 'absolute',
+        inset: 0,
         width: '100%', height: '100%',
         objectFit: 'cover',
+        transition: 'opacity 0.3s ease',
     },
     waitingState: {
         position: 'absolute', inset: 0,
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         color: '#e6edf3',
+        zIndex: 2,
     },
     avatarCircle: {
         width: 100, height: 100,
@@ -509,6 +591,7 @@ const styles = {
         border: '2px solid #2c313a',
         background: '#1e2530',
         boxShadow: '0 4px 20px rgba(0,0,0,.6)',
+        zIndex: 3,
     },
     localVideo: {
         width: '100%', height: '100%',
@@ -533,6 +616,7 @@ const styles = {
         border: '1px solid rgba(255,255,255,0.1)',
         display: 'flex', alignItems: 'center', gap: 6,
         whiteSpace: 'nowrap',
+        zIndex: 4,
     },
     dot: {
         display: 'inline-block',
@@ -548,6 +632,7 @@ const styles = {
         padding: '4px 12px',
         fontSize: 13,
         color: '#e6edf3',
+        zIndex: 3,
     },
     controls: {
         background: '#161b22',
@@ -598,7 +683,17 @@ const styles = {
         borderRadius: '50%',
         background: '#1e2530',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 40, marginBottom: 16,
+        fontSize: 40,
+        position: 'relative',
+        zIndex: 1,
+    },
+    ringPulse: {
+        position: 'absolute',
+        top: '50%', left: '50%',
+        width: 90, height: 90,
+        borderRadius: '50%',
+        border: '2px solid #2ecc71',
+        animation: 'vcRingPulse 1.8s ease-out infinite',
     },
     incomingTitle: {
         color: '#8b949e', fontSize: 13, margin: 0,
@@ -607,21 +702,25 @@ const styles = {
         color: '#e6edf3', fontSize: 20, fontWeight: 700, margin: '6px 0',
     },
     btnDecline: {
-        padding: '12px 28px',
+        width: 64, height: 64,
+        borderRadius: '50%',
         background: '#c0392b',
         color: '#fff',
         border: 'none',
-        borderRadius: 50,
         cursor: 'pointer',
-        fontWeight: 600, fontSize: 14,
+        fontSize: 26,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 16px rgba(192,57,43,.4)',
     },
     btnAccept: {
-        padding: '12px 28px',
+        width: 64, height: 64,
+        borderRadius: '50%',
         background: '#2ecc71',
         color: '#fff',
         border: 'none',
-        borderRadius: 50,
         cursor: 'pointer',
-        fontWeight: 600, fontSize: 14,
+        fontSize: 26,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 16px rgba(46,204,113,.4)',
     },
 };

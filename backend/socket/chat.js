@@ -177,8 +177,18 @@ module.exports = (io) => {
             socket.to(`consultation-${consultationId}`).emit('vc-ice-candidate', { candidate });
         });
 
-        socket.on('vc-end', ({ consultationId }) => {
-            socket.to(`consultation-${consultationId}`).emit('vc-end');
+        socket.on('vc-end', ({ consultationId, reason }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-end', { reason: reason || 'ended' });
+        });
+
+        // Pasien menolak panggilan → beri tahu dokter dengan reason khusus
+        socket.on('vc-reject', ({ consultationId }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-end', { reason: 'rejected' });
+        });
+
+        // Dokter batal karena timeout unanswered
+        socket.on('vc-no-answer', ({ consultationId }) => {
+            socket.to(`consultation-${consultationId}`).emit('vc-end', { reason: 'no-answer' });
         });
 
         // WebRTC ICE restart request (reconnect)
