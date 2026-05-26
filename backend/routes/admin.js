@@ -14,6 +14,9 @@ const Groq = require('groq-sdk');
 const _groqAdmin = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const GROQ_ADMIN_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
+// Redis cache helpers
+const { safeGet, safeSet } = require('../config/redis');
+
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const { createNotification } = require('../utils/notificationHelper');
@@ -1783,6 +1786,14 @@ router.get('/analytics/consultations/frequency', guard, async (req, res) => {
 router.get('/analytics/disease-trend', guard, async (req, res) => {
     try {
         const { start, end } = analyticsDateRange(req.query);
+        const period = req.query.period || '30d';
+
+        // ── Redis cache: 30 menit (data agregat tidak perlu real-time) ──
+        const cacheKey = `cache:disease-trend:${period}`;
+        const cached = await safeGet(cacheKey);
+        if (cached) {
+            return res.json({ success: true, data: JSON.parse(cached), fromCache: true });
+        }
 
         const [consultResults, apptResults] = await Promise.all([
             Consultation.aggregate([
@@ -1848,6 +1859,9 @@ router.get('/analytics/disease-trend', guard, async (req, res) => {
         Object.keys(merged).forEach(k => {
             merged[k].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
         });
+
+        // Simpan ke cache 30 menit
+        safeSet(cacheKey, JSON.stringify(merged), 1800).catch(() => {});
 
         res.json({ success: true, data: merged });
     } catch (err) {
@@ -1928,6 +1942,14 @@ router.get('/analytics/disease-trend-gender', guard, async (req, res) => {
     try {
         const { start, end } = analyticsDateRange(req.query);
         const gender = req.query.gender; // 'male' | 'female'
+        const period = req.query.period || '30d';
+
+        // ── Redis cache: 30 menit ──
+        const cacheKey = `cache:disease-trend-gender:${period}:${gender || 'all'}`;
+        const cached = await safeGet(cacheKey);
+        if (cached) {
+            return res.json({ success: true, data: JSON.parse(cached), gender: gender || 'all', fromCache: true });
+        }
 
         // User ada di MySQL — ambil userId berdasarkan gender dari MySQL
         let userIdFilter = null;
@@ -1969,6 +1991,10 @@ router.get('/analytics/disease-trend-gender', guard, async (req, res) => {
             else merged[kategori].push({ tanggal, jumlah: r.jumlah });
         });
         Object.keys(merged).forEach(k => merged[k].sort((a, b) => a.tanggal.localeCompare(b.tanggal)));
+
+        // Simpan ke cache 30 menit
+        safeSet(cacheKey, JSON.stringify(merged), 1800).catch(() => {});
+
         res.json({ success: true, data: merged, gender: gender || 'all' });
     } catch (err) {
         console.error('[admin] GET /analytics/disease-trend-gender error:', err);
@@ -1990,6 +2016,15 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
             .map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }))
             .sort((a, b) => b.total - a.total).slice(0, 8);
         const totalKasus = topKategori.reduce((s, x) => s + x.total, 0);
+
+        // ── Redis cache: buat key dari kombinasi period + gender + top kategori ──
+        const kategoriFP = topKategori.map(x => `${x.k}:${x.total}`).join('|');
+        const cacheKey = `cache:ai-insight:admin:${period || '30d'}:${gender || 'all'}:${Buffer.from(kategoriFP).toString('base64').slice(0, 40)}`;
+        const cached = await safeGet(cacheKey);
+        if (cached) {
+            return res.json({ success: true, insight: cached, fromCache: true });
+        }
+
         const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
         const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
         const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
@@ -1998,7 +2033,12 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
             model: GROQ_ADMIN_MODEL, max_tokens: 300,
             messages: [{ role: 'user', content: prompt }],
         });
-        res.json({ success: true, insight: completion.choices?.[0]?.message?.content?.trim() || null });
+        const insight = completion.choices?.[0]?.message?.content?.trim() || null;
+
+        // Simpan ke cache 6 jam — insight tidak perlu berubah sering
+        if (insight) safeSet(cacheKey, insight, 21600).catch(() => {});
+
+        res.json({ success: true, insight });
     } catch (err) {
         console.error('[admin] POST /analytics/ai-insight error:', err);
         res.status(500).json({ success: false, message: 'Gagal generate insight', error: err.message });

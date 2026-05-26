@@ -15,6 +15,7 @@ const auth                    = require('../middleware/auth');
 const doctorAuth              = require('../middleware/doctorAuth');
 const { createNotification }  = require('../utils/notificationHelper');
 const { populateFromMySQL }   = require('../utils/hybridJoin');
+const { safeGet, safeSet }    = require('../config/redis');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
@@ -217,6 +218,13 @@ router.put('/doctor/availability', auth, doctorAuth, async (req, res) => {
 
 router.get('/doctors-with-slots', async (req, res) => {
     try {
+        // ── Redis cache: 5 menit ──
+        const CACHE_KEY = 'cache:doctors-with-slots';
+        const cached = await safeGet(CACHE_KEY);
+        if (cached) {
+            return res.json({ success: true, doctors: JSON.parse(cached), fromCache: true });
+        }
+
         // 1. Ambil SEMUA dokter yang aktif dari MySQL
         const activeDoctors = await Doctor.findAll({
             where: { isActive: true },
@@ -313,6 +321,9 @@ router.get('/doctors-with-slots', async (req, res) => {
                 isOffline // ← Flag yang digunakan oleh Frontend
             };
         });
+
+        // Simpan ke Redis 5 menit
+        safeSet('cache:doctors-with-slots', JSON.stringify(doctors), 300).catch(() => {});
 
         res.json({ success: true, doctors });
     } catch (err) {
@@ -558,6 +569,9 @@ router.post('/book', auth, async (req, res) => {
         const apptObj = appointment.toObject();
         const populated = await populateFromMySQL(apptObj, 'doctorId', 'Doctor', 'name specialization photo userId');
         const populated2 = await populateFromMySQL(populated, 'userId', 'User', 'name email phone');
+
+        // Invalidasi cache slot dokter setelah booking baru ─ supaya slot terpesan langsung terupdate
+        safeSet('cache:doctors-with-slots', '', 1).catch(() => {});
 
         res.json({ success: true, appointment: populated2 });
     } catch (err) {

@@ -510,9 +510,19 @@ const Appointments = () => {
 
     const [activeTab, setActiveTab] = useState('aktif');
 
-    const [doctors, setDoctors]           = useState([]);
+    // Preload dari sessionStorage agar list dokter langsung muncul tanpa loading
+    const [doctors, setDoctors]           = useState(() => {
+        try {
+            const c = sessionStorage.getItem('cache:doctors-with-slots');
+            return c ? JSON.parse(c) : [];
+        } catch { return []; }
+    });
     const [appointments, setAppointments] = useState([]);
-    const [loading, setLoading]           = useState(true);
+    // Loading false jika sudah ada cache, true jika belum
+    const [loading, setLoading]           = useState(() => {
+        try { return !sessionStorage.getItem('cache:doctors-with-slots'); }
+        catch { return true; }
+    });
 
     // Modal states
     const [modalLogin, setModalLogin]   = useState(false);
@@ -546,18 +556,22 @@ const Appointments = () => {
 
 
     // ── loadData ──────────────────────────────────────────────────────────────
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    const loadData = useCallback(async (background = false) => {
+        // Jika background refresh, tidak tampilkan loading spinner
+        if (!background) setLoading(true);
         try {
             const docRes = await api.get('/api/appointments/doctors-with-slots');
-            setDoctors(docRes.data.doctors || []);
+            const docs = docRes.data.doctors || [];
+            setDoctors(docs);
+            // Simpan ke sessionStorage agar next visit langsung tampil
+            try { sessionStorage.setItem('cache:doctors-with-slots', JSON.stringify(docs)); } catch (_) {}
 
             if (user) {
                 const apptRes = await api.get('/api/appointments/my');
                 setAppointments(apptRes.data.appointments || []);
             }
         } catch {
-            toast.error('Gagal memuat data');
+            if (!background) toast.error('Gagal memuat data');
         } finally {
             setLoading(false);
         }
@@ -566,7 +580,9 @@ const Appointments = () => {
     useEffect(() => {
         if (!user) setActiveTab('buat_janji');
         else setActiveTab('aktif');
-        loadData();
+        // Jika sudah ada cache (loading=false), lakukan background refresh
+        const hasCache = (() => { try { return !!sessionStorage.getItem('cache:doctors-with-slots'); } catch { return false; } })();
+        loadData(hasCache);
     }, [user, loadData]);
 
     // Auto-refresh 10 detik saat ada appointment scheduled

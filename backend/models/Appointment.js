@@ -104,5 +104,7 @@ const appointmentSchema = new mongoose.Schema({
 appointmentSchema.index({ doctorId: 1, scheduledAt: 1, status: 1 });
 appointmentSchema.index({ userId: 1, createdAt: -1 });
 appointmentSchema.index({ scheduledAt: 1, status: 1 });  // untuk cron
+// Index untuk aggregation analytics disease-trend
+appointmentSchema.index({ disease_category: 1, scheduledAt: 1 });
 
 module.exports = mongoose.model('Appointment', appointmentSchema);

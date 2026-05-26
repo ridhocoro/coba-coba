@@ -735,8 +735,17 @@ const Consultations = () => {
 
     const [activeTab, setActiveTab] = useState('aktif');
     const [consultations, setConsultations] = useState([]);
-    const [doctors, setDoctors] = useState([]);
-    const [loading, setLoading] = useState(true);
+    // Preload dari sessionStorage agar list dokter langsung muncul
+    const [doctors, setDoctors] = useState(() => {
+        try {
+            const c = sessionStorage.getItem('cache:doctors-list');
+            return c ? JSON.parse(c) : [];
+        } catch { return []; }
+    });
+    const [loading, setLoading] = useState(() => {
+        try { return !sessionStorage.getItem('cache:doctors-list'); }
+        catch { return true; }
+    });
 
     const [modalLogin, setModalLogin] = useState(false);
     const [doctorProfileModal, setDoctorProfileModal] = useState(null); // doc yang diklik
@@ -779,23 +788,27 @@ const Consultations = () => {
         api.get('/api/xendit/banks').then(r => setBankList(r.data.banks || [])).catch(() => { });
     }, []);
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    const loadData = useCallback(async (background = false) => {
+        if (!background) setLoading(true);
         try {
             const docRes = await api.get('/api/doctors');
-            setDoctors(docRes.data || []);
+            const docs = docRes.data || [];
+            setDoctors(docs);
+            // Simpan ke sessionStorage agar next visit langsung tampil
+            try { sessionStorage.setItem('cache:doctors-list', JSON.stringify(docs)); } catch (_) {}
             if (user) {
                 const r = await api.get('/api/consultations/my-consultations');
                 setConsultations(r.data || []);
             }
-        } catch { toast.error('Gagal memuat data'); }
+        } catch { if (!background) toast.error('Gagal memuat data'); }
         finally { setLoading(false); }
     }, [user]);
 
     useEffect(() => {
         if (!user) setActiveTab('buat_janji');
         else setActiveTab('aktif');
-        loadData();
+        const hasCache = (() => { try { return !!sessionStorage.getItem('cache:doctors-list'); } catch { return false; } })();
+        loadData(hasCache);
     }, [user, loadData]);
 
     useEffect(() => {

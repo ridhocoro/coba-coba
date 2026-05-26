@@ -1,5 +1,5 @@
 // Admin/Dashboard.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, BarElement, LineElement,
@@ -183,10 +183,13 @@ const AdminDashboard = ({ onNavigate }) => {
   /* ── AI Insight ── */
   const [aiInsight,        setAiInsight]        = useState(null);
   const [aiInsightLoading, setAiInsightLoading] = useState(false);
+  const lastInsightKeyRef = useRef(null); // guard: hindari re-fetch data identik
 
   /* ════════ Fetch disease trend ════════ */
   const fetchDiseaseTrend = useCallback(async () => {
     setDiseaseLoading(true);
+    // Reset fingerprint agar AI insight ikut refresh saat period/gender berubah
+    lastInsightKeyRef.current = null;
     setAiInsight(null);
     try {
       const genderParam = diseaseGender !== 'all' ? `&gender=${diseaseGender}` : '';
@@ -208,6 +211,28 @@ const AdminDashboard = ({ onNavigate }) => {
   /* ════════ Fetch AI insight ════════ */
   const fetchAiInsight = useCallback(async (data) => {
     if (!data || Object.keys(data).length === 0) return;
+
+    // Buat fingerprint: kombinasi period + gender + nama kategori + total
+    const topKeys = Object.entries(data)
+      .map(([k, arr]) => `${k}:${arr.reduce((s, r) => s + r.jumlah, 0)}`)
+      .sort().join('|');
+    const fingerprint = `admin:${diseasePeriod}:${diseaseGender}:${topKeys}`;
+
+    // Jika data identik dengan fetch terakhir — skip (cegah re-call saat re-render)
+    if (lastInsightKeyRef.current === fingerprint && aiInsight) return;
+
+    // Cek sessionStorage (cache sisi klien, hilang saat tab ditutup)
+    const sessionKey = `ai-insight:${fingerprint}`;
+    try {
+      const stored = sessionStorage.getItem(sessionKey);
+      if (stored) {
+        setAiInsight(stored);
+        lastInsightKeyRef.current = fingerprint;
+        return;
+      }
+    } catch (_) { /* sessionStorage blocked */ }
+
+    lastInsightKeyRef.current = fingerprint;
     setAiInsightLoading(true);
     try {
       const res = await api.post('/api/admin/analytics/ai-insight', {
@@ -216,13 +241,18 @@ const AdminDashboard = ({ onNavigate }) => {
         gender: diseaseGender === 'all' ? null : diseaseGender,
         role: 'admin',
       });
-      setAiInsight(res.data?.insight || null);
+      const insight = res.data?.insight || null;
+      setAiInsight(insight);
+      // Simpan ke sessionStorage agar tidak re-call selama tab masih buka
+      if (insight) {
+        try { sessionStorage.setItem(sessionKey, insight); } catch (_) {}
+      }
     } catch (e) {
       setAiInsight(null);
     } finally {
       setAiInsightLoading(false);
     }
-  }, [diseasePeriod, diseaseGender]);
+  }, [diseasePeriod, diseaseGender, aiInsight]);
 
   useEffect(() => {
     if (diseaseData) fetchAiInsight(diseaseData);

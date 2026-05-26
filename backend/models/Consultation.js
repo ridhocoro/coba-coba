@@ -178,5 +178,7 @@ consultationSchema.index({ userId: 1, createdAt: -1 });
 consultationSchema.index({ doctorId: 1, status: 1 });
 consultationSchema.index({ status: 1, paymentDeadline: 1 });
 consultationSchema.index({ doctorId: 1, scheduledAt: 1, status: 1 });
+// Index untuk aggregation analytics disease-trend
+consultationSchema.index({ disease_category: 1, scheduledAt: 1 });
 
 module.exports = mongoose.model('Consultation', consultationSchema);

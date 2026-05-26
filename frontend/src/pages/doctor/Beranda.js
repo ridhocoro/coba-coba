@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
@@ -122,6 +122,7 @@ const SectionBeranda = () => {
     // AI Insight state
     const [aiInsight,        setAiInsight]        = useState(null);
     const [aiInsightLoading, setAiInsightLoading] = useState(false);
+    const lastInsightKeyRef = useRef(null); // guard: hindari re-fetch data identik
 
     // Jam berjalan
     useEffect(() => {
@@ -186,6 +187,8 @@ const SectionBeranda = () => {
     // ── Fetch tren penyakit ──────────────────────────────────────────────────
     const fetchDiseaseTrend = useCallback(async () => {
         setDiseaseLoading(true);
+        // Reset fingerprint agar AI insight ikut refresh saat filter berubah
+        lastInsightKeyRef.current = null;
         setAiInsight(null);
         try {
             const genderParam = diseaseGender !== 'all' ? `&gender=${diseaseGender}` : '';
@@ -206,6 +209,28 @@ const SectionBeranda = () => {
     // ── Fetch AI Insight ─────────────────────────────────────────────────────
     const fetchAiInsight = useCallback(async (data) => {
         if (!data || Object.keys(data).length === 0) return;
+
+        // Buat fingerprint dari data aktual
+        const topKeys = Object.entries(data)
+            .map(([k, arr]) => `${k}:${arr.reduce((s, r) => s + r.jumlah, 0)}`)
+            .sort().join('|');
+        const fingerprint = `doctor:${diseasePeriod}:${diseaseGender}:${topKeys}`;
+
+        // Skip jika data identik dengan fetch terakhir
+        if (lastInsightKeyRef.current === fingerprint && aiInsight) return;
+
+        // Cek sessionStorage
+        const sessionKey = `ai-insight:${fingerprint}`;
+        try {
+            const stored = sessionStorage.getItem(sessionKey);
+            if (stored) {
+                setAiInsight(stored);
+                lastInsightKeyRef.current = fingerprint;
+                return;
+            }
+        } catch (_) {}
+
+        lastInsightKeyRef.current = fingerprint;
         setAiInsightLoading(true);
         try {
             const res = await api.post('/api/doctors/my/ai-insight', {
@@ -214,13 +239,17 @@ const SectionBeranda = () => {
                 gender: diseaseGender === 'all' ? null : diseaseGender,
                 role: 'doctor',
             });
-            setAiInsight(res.data?.insight || null);
+            const insight = res.data?.insight || null;
+            setAiInsight(insight);
+            if (insight) {
+                try { sessionStorage.setItem(sessionKey, insight); } catch (_) {}
+            }
         } catch (e) {
             setAiInsight(null);
         } finally {
             setAiInsightLoading(false);
         }
-    }, [diseasePeriod, diseaseGender]);
+    }, [diseasePeriod, diseaseGender, aiInsight]);
 
     useEffect(() => {
         if (diseaseData) fetchAiInsight(diseaseData);

@@ -208,8 +208,17 @@ const Pharmacy = () => {
     const navigate     = useNavigate();
     const { cart, addToCart, removeFromCart, updateQuantity, clearCart, getCartTotal } = useCart();
 
-    const [medicines,   setMedicines]   = useState([]);
-    const [loading,     setLoading]     = useState(true);
+    // Preload dari sessionStorage agar list obat langsung muncul (page 1 tanpa filter)
+    const [medicines,   setMedicines]   = useState(() => {
+        try {
+            const c = sessionStorage.getItem('cache:pharmacy:medicines:p1');
+            return c ? JSON.parse(c) : [];
+        } catch { return []; }
+    });
+    const [loading,     setLoading]     = useState(() => {
+        try { return !sessionStorage.getItem('cache:pharmacy:medicines:p1'); }
+        catch { return true; }
+    });
     const [searchTerm,  setSearchTerm]  = useState('');
     
     // Custom Dropdown State
@@ -217,7 +226,12 @@ const Pharmacy = () => {
     const [catOpen,     setCatOpen]     = useState(false);
 
     const [currentPage, setCurrentPage] = useState(1);
-    const [totalPages,  setTotalPages]  = useState(1);
+    const [totalPages,  setTotalPages]  = useState(() => {
+        try {
+            const c = sessionStorage.getItem('cache:pharmacy:medicines:p1:meta');
+            return c ? JSON.parse(c).totalPages : 1;
+        } catch { return 1; }
+    });
 
     const [quota, setQuota] = useState({ isStudent:false, used:0, remaining:0, max:8 });
 
@@ -264,14 +278,19 @@ const Pharmacy = () => {
     };
 
     useEffect(() => {
-        if (!user) { 
-            fetchMedicines(); 
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll otomatis ke atas
-            return; 
-        } 
-        fetchMedicines();
+        // Jika page 1 tanpa filter & ada cache → background refresh (tidak tampilkan loading)
+        const isDefault = currentPage === 1 && !searchTerm && !selectedCat;
+        const hasCache = isDefault && (() => {
+            try { return !!sessionStorage.getItem('cache:pharmacy:medicines:p1'); } catch { return false; }
+        })();
+        if (!user) {
+            fetchMedicines(hasCache);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+        fetchMedicines(hasCache);
         if (isStudent) fetchQuota();
-        window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll otomatis ke atas
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [currentPage, searchTerm, selectedCat]); // eslint-disable-line
 
     useEffect(() => {
@@ -300,16 +319,26 @@ const Pharmacy = () => {
         return () => sock.close();
     }, [user]); // eslint-disable-line
 
-    const fetchMedicines = async () => {
-        setLoading(true);
+    const fetchMedicines = async (background = false) => {
+        // Jika background refresh, tidak tampilkan loading spinner
+        if (!background) setLoading(true);
         try {
             const p = new URLSearchParams({ page: currentPage, limit: 16 });
             if (searchTerm) p.append('search', searchTerm);
             if (selectedCat) p.append('category', selectedCat);
             const res = await api.get(`/api/pharmacy/medicines?${p}`);
-            setMedicines(res.data.medicines || []);
-            setTotalPages(res.data.totalPages || 1);
-        } catch { toast.error('Gagal memuat data obat'); }
+            const meds = res.data.medicines || [];
+            const pages = res.data.totalPages || 1;
+            setMedicines(meds);
+            setTotalPages(pages);
+            // Simpan ke sessionStorage hanya untuk page 1 tanpa filter (halaman default)
+            if (currentPage === 1 && !searchTerm && !selectedCat) {
+                try {
+                    sessionStorage.setItem('cache:pharmacy:medicines:p1', JSON.stringify(meds));
+                    sessionStorage.setItem('cache:pharmacy:medicines:p1:meta', JSON.stringify({ totalPages: pages }));
+                } catch (_) {}
+            }
+        } catch { if (!background) toast.error('Gagal memuat data obat'); }
         finally  { setLoading(false); }
     };
 
