@@ -411,10 +411,10 @@ router.put('/my/settings', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
 
-        doctor.consultationSettings = {
-            allowChat:      allowChat      !== undefined ? allowChat      : true,
-            allowVideoCall: allowVideoCall !== undefined ? allowVideoCall : true,
-        };
+        // FIX: set kolom Sequelize langsung (allowChat/allowVideoCall = kolom MySQL allow_chat/allow_video_call)
+        // jangan gunakan doctor.consultationSettings — itu bukan kolom Sequelize
+        doctor.allowChat      = allowChat      !== undefined ? Boolean(allowChat)      : true;
+        doctor.allowVideoCall = allowVideoCall !== undefined ? Boolean(allowVideoCall) : true;
         await doctor.save();
         await invalidatePattern('cache:doctors:*');
         res.json({ success: true, consultationSettings: { allowChat: doctor.allowChat, allowVideoCall: doctor.allowVideoCall } });
