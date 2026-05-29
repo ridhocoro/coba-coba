@@ -72,25 +72,39 @@
 ## ✨ Fitur-fitur
 
 ### 1. Halaman Utama (Landing Page)
-> Screenshot
+<img width="1905" height="913" alt="image" src="https://github.com/user-attachments/assets/900ac73d-87b0-4220-a6c9-146e0cc13456" />
+
 
 ### 2. Autentikasi (Register & Login)
-> Screenshot
+<img width="1904" height="911" alt="image" src="https://github.com/user-attachments/assets/3ea11488-33ea-409a-89a1-39ea200ee98e" /> 
+<img width="1910" height="909" alt="image" src="https://github.com/user-attachments/assets/ca383b99-5fbf-4b7c-97f8-8a1dc03a5960" />
+
 
 ### 3. Konsultasi Online (Chat + Video Call)
-> Screenshot
+<img width="1905" height="914" alt="image" src="https://github.com/user-attachments/assets/501b37bb-faf1-497a-94a2-9abf5e6901c8" />
+
 
 ### 4. Janji Temu Dokter (Booking Slot)
-> Screenshot
+<img width="1905" height="910" alt="image" src="https://github.com/user-attachments/assets/43f497ca-029a-4c9a-a360-aa49bc9ef4b7" />
+
 
 ### 5. Apotek Online
-> Screenshot
+<img width="1908" height="917" alt="image" src="https://github.com/user-attachments/assets/ba829366-7540-4e99-94c8-c45a8ecec982" />
+
 
 ### 6. Pembayaran (Xendit)
-> Screenshot
+<img width="1919" height="913" alt="image" src="https://github.com/user-attachments/assets/e5a47fa6-3ee4-49a1-8699-8ba476522a30" />
+<img width="1909" height="913" alt="image" src="https://github.com/user-attachments/assets/10fa5c18-e3a3-4ed8-8fca-17b721cb7df9" />
+
+
 
 ### 7. Health Check
-> Screenshot
+<img width="1914" height="910" alt="image" src="https://github.com/user-attachments/assets/abbdce29-687c-43ed-a1bd-bc8184d9e6c6" />
+<img width="1908" height="914" alt="image" src="https://github.com/user-attachments/assets/34f21b5b-2cba-40ad-9a16-1ecb43716605" />
+<img width="1905" height="908" alt="image" src="https://github.com/user-attachments/assets/64d90947-89be-4843-846a-7e6fd5149fcf" />
+<img width="1910" height="906" alt="image" src="https://github.com/user-attachments/assets/676e7b28-19fa-4ddf-bd64-8fd7d0e668ac" />
+<img width="1909" height="910" alt="image" src="https://github.com/user-attachments/assets/2f7d9a0d-c6ca-4744-b5cf-30d35a465e4c" />
+
 
 - **BMI Calculator** — kalkulasi indeks massa tubuh
 - **Calorie Calculator** — estimasi kebutuhan kalori harian
@@ -98,13 +112,23 @@
 - **VitalScan (rPPG)** — pengukuran detak jantung via kamera menggunakan MediaPipe & algoritma rPPG dengan filter ektopik dan deteksi kemiringan kepala
 
 ### 8. AI Chatbot
-> Screenshot
+<img width="467" height="694" alt="image" src="https://github.com/user-attachments/assets/7d857032-5ae5-4b8b-8d97-9bdc1ad7e079" />
+
 
 ### 9. Riwayat Pembayaran
-> Screenshot
+<img width="1906" height="916" alt="image" src="https://github.com/user-attachments/assets/85113517-4f84-4068-a887-1c811e638917" />
+
 
 ### 10. Dashboard Dokter
-> Screenshot
+<img width="1914" height="918" alt="image" src="https://github.com/user-attachments/assets/f1c58c3e-a8b5-4007-8279-4e935f39d211" />
+<img width="1625" height="913" alt="image" src="https://github.com/user-attachments/assets/1128e95c-0047-4724-afa9-a4aa3f6d38c9" />
+<img width="1624" height="907" alt="image" src="https://github.com/user-attachments/assets/0dd1b604-f639-43f2-83df-226c9baed9ed" />
+<img width="1626" height="914" alt="image" src="https://github.com/user-attachments/assets/1d6e5904-2de7-44ac-82aa-fdcbca43c72a" />
+<img width="1625" height="917" alt="image" src="https://github.com/user-attachments/assets/e0a26855-55cb-49b5-bd95-178f431312e5" />
+<img width="1627" height="913" alt="image" src="https://github.com/user-attachments/assets/823e5fec-ac63-4cc8-a1dd-ab72a825b4c0" />
+<img width="1625" height="913" alt="image" src="https://github.com/user-attachments/assets/be9a02aa-608c-47e3-81ad-1597ade8205e" />
+<img width="1625" height="915" alt="image" src="https://github.com/user-attachments/assets/59fe1f0e-a62e-48c0-8ff4-116fc6a4e037" />
+
 
 - Beranda & statistik pasien
 - Manajemen jadwal (atur ketersediaan)
@@ -113,7 +137,17 @@
 - Riwayat pasien
 
 ### 11. Dashboard Admin
-> Screenshot
+<img width="1626" height="913" alt="image" src="https://github.com/user-attachments/assets/27ba3d7b-8792-49a2-8e86-8cdb7282d7fa" />
+<img width="1624" height="913" alt="image" src="https://github.com/user-attachments/assets/f8111508-505e-4210-a28e-6092fe098dae" />
+<img width="1624" height="915" alt="image" src="https://github.com/user-attachments/assets/04b23a33-80fa-4ae4-83b0-a8582f900196" />
+<img width="1627" height="914" alt="image" src="https://github.com/user-attachments/assets/3258accc-2ed9-4232-84d4-b367642257c0" />
+<img width="1624" height="917" alt="image" src="https://github.com/user-attachments/assets/9ac73d7e-f9b9-4a7d-94ce-bf8f97a35211" />
+<img width="1623" height="907" alt="image" src="https://github.com/user-attachments/assets/b0347663-9462-42bc-aa07-a05765738cb4" />
+<img width="1624" height="912" alt="image" src="https://github.com/user-attachments/assets/72366bea-7d1b-4abf-8f16-41bdca3354b6" />
+<img width="1626" height="908" alt="image" src="https://github.com/user-attachments/assets/22f3dfb3-cd64-4386-bf5f-f8db0142b015" />
+<img width="1629" height="912" alt="image" src="https://github.com/user-attachments/assets/f03c1501-59ab-46b0-b8cc-e09fd489c72d" />
+<img width="1624" height="918" alt="image" src="https://github.com/user-attachments/assets/ee358113-2d8d-4c43-9a7e-64eb9a98c197" />
+
 
 - Statistik & grafik frekuensi (Chart.js)
 - Kelola dokter, user, apotek
