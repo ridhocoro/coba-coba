@@ -869,7 +869,7 @@ router.put('/doctor/:id/checkin', auth, doctorAuth, async (req, res) => {
             userId  : appointment.userId.toString(),
             type    : 'appointment_reminder',
             title   : '✅ Check-in Berhasil',
-            message : `Anda telah check-in untuk janji temu pukul ${appointment.appointmentTime} WIB. Silakan tunggu giliran Anda.`,
+            message : `Dokter anda telah tiba untuk janji temu pukul ${appointment.appointmentTime} WIB. Silakan tunggu giliran Anda.`,
             data    : { appointmentId: appointment._id },
             io      : req.app.get('io'),
         });

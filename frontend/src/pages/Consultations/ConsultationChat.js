@@ -376,6 +376,9 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   const remoteVideoRef = useRef(null);
   const pcRef          = useRef(null);
   const localStreamRef = useRef(null);
+  // FIX: Track apakah remote stream sudah diterima & apakah sedang dalam proses end
+  const remoteStreamReceivedRef = useRef(false);
+  const isEndingRef             = useRef(false);
 
   const [callState, setCallState]   = useState('idle'); // idle | calling | ringing | connected | ended
   const [micOn,  setMicOn]          = useState(true);
@@ -397,9 +400,23 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   const cleanup = useCallback(() => {
     localStreamRef.current?.getTracks().forEach(t => t.stop());
     pcRef.current?.close();
-    pcRef.current       = null;
-    localStreamRef.current = null;
+    pcRef.current                   = null;
+    localStreamRef.current          = null;
+    remoteStreamReceivedRef.current = false;
   }, []);
+
+  // ── Akhiri call ────────────────────────────────────────────────
+  // PENTING: endCall dideklarasikan sebelum createPC karena createPC mereferensikannya
+  const endCall = useCallback(() => {
+    // FIX: Guard agar endCall tidak dipanggil dua kali (dari tombol & dari oniceconnectionstatechange)
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
+    // BUG-FIX: Kirim reason agar sisi penerima bisa tahu siapa yang mengakhiri
+    socket.emit('vc-end', { consultationId, reason: 'ended' });
+    cleanup();
+    setCallState('ended');
+    setTimeout(onClose, 1800);
+  }, [consultationId, socket, cleanup, onClose]);
 
   // ── Inisialisasi PeerConnection ───────────────────────────────
   const createPC = useCallback(() => {
@@ -414,17 +431,34 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     pc.ontrack = ({ streams }) => {
       if (remoteVideoRef.current && streams[0]) {
         remoteVideoRef.current.srcObject = streams[0];
-        setCallState('connected');
-        setRemoteJoined(true);
+        // BUG-FIX: Manual play() wajib di mobile — autoplay policy browser mobile
+        // sering block autoPlay attribute, terutama di Android Chrome/Samsung Browser
+        remoteVideoRef.current.play().catch(() => {
+          // Sudah ada autoPlay attribute, ignore jika gagal di browser tertentu
+        });
+        // FIX: Jangan set state jika panggilan sudah dalam proses diakhiri
+        if (!isEndingRef.current) {
+          remoteStreamReceivedRef.current = true;
+          setCallState('connected');
+          setRemoteJoined(true);
+        }
       }
     };
 
     pc.oniceconnectionstatechange = () => {
       console.log('[WebRTC] ICE state:', pc.iceConnectionState);
+
+      // FIX FALLBACK: Jika ICE connected & remote stream sudah diterima, pastikan UI ikut connected
+      // Ini menangani edge case di mana ontrack sudah fire tapi state belum terupdate
+      if (pc.iceConnectionState === 'connected' && remoteStreamReceivedRef.current && !isEndingRef.current) {
+        setCallState('connected');
+        setRemoteJoined(true);
+      }
+
       if (pc.iceConnectionState === 'disconnected') {
         // Coba ICE restart setelah 3 detik
         setTimeout(() => {
-          if (pcRef.current?.iceConnectionState === 'disconnected') {
+          if (pcRef.current?.iceConnectionState === 'disconnected' && !isEndingRef.current) {
             console.log('[WebRTC] Attempting ICE restart...');
             socket.emit('vc-ice-restart', { consultationId });
             if (isDoctor) {
@@ -439,13 +473,13 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
         }, 3000);
       }
       if (['failed', 'closed'].includes(pc.iceConnectionState)) {
-        setCallState('ended');
+        if (!isEndingRef.current) endCall();
       }
     };
 
     pcRef.current = pc;
     return pc;
-  }, [consultationId, socket, isDoctor]);
+  }, [consultationId, socket, isDoctor, endCall]);
 
   // ── Ambil stream kamera & mic ─────────────────────────────────
   const getLocalStream = useCallback(async () => {
@@ -495,14 +529,6 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     // Jangan set 'connected' di sini — tunggu ontrack dari remote stream
     // setCallState('connected') dipanggil di pc.ontrack saat stream remote masuk
   }, [consultationId, socket, getLocalStream, createPC]);
-
-  // ── Akhiri call ────────────────────────────────────────────────
-  const endCall = useCallback(() => {
-    socket.emit('vc-end', { consultationId });
-    cleanup();
-    setCallState('ended');
-    onClose();
-  }, [consultationId, socket, cleanup, onClose]);
 
   // ── Toggle mic / cam ───────────────────────────────────────────
   const toggleMic = () => {
@@ -720,11 +746,17 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     if (!socket) return;
 
     // Dokter terima jawaban dari user
+    // BUG-FIX: Jangan set connected di sini — tunggu ontrack saat stream remote masuk.
+    // Sebelumnya dokter langsung 'connected' di sini tapi ontrack belum fire,
+    // sehingga dokter dan user tidak sinkron statusnya.
     const onAnswer = async ({ answer }) => {
       if (!pcRef.current) return;
-      await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-      setCallState('connected');
-      setRemoteJoined(true);
+      try {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        // State tetap 'calling' sampai ontrack fire → setCallState('connected')
+      } catch (err) {
+        console.error('[WebRTC] setRemoteDescription error:', err);
+      }
     };
 
     // User terima offer dari dokter
@@ -737,11 +769,22 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       try { await pcRef.current?.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
     };
 
-    const onEnd = () => {
+    const onEnd = ({ reason } = {}) => {
+      // FIX: Guard agar tidak diproses dua kali jika kita sendiri yang mengakhiri
+      if (isEndingRef.current) return;
+      isEndingRef.current = true;
       cleanup();
       setCallState('ended');
-      toast('Panggilan video diakhiri');
-      onClose();
+      // FIX: Tampilkan pesan berbeda sesuai reason agar dokter tahu kenapa panggilan berakhir
+      if (reason === 'rejected') {
+        toast('📵 Pasien menolak panggilan', { icon: '❌' });
+      } else if (reason === 'no-answer') {
+        toast('⏱️ Panggilan tidak dijawab');
+      } else {
+        toast('Panggilan video diakhiri');
+      }
+      // BUG-FIX: Delay onClose agar UI sempat menampilkan state 'ended'
+      setTimeout(onClose, 1800);
     };
 
     socket.on('vc-offer',         onOffer);
@@ -1578,9 +1621,11 @@ const ConsultationChat = () => {
   };
 
   // ── Styles ──────────────────────────────────────────────────────
+  const isMobile = window.innerWidth <= 640;
   const s = {
     root:        { display: 'flex', height: '100vh', background: '#f6f8fa', fontFamily: "'DM Sans', sans-serif", overflow: 'hidden' },
-    sidebar:     { width: 280, borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', background: '#fff', flexShrink: 0, overflowY: 'auto' },
+    // BUG-FIX: sidebar disembunyikan di mobile (layar < 640px) karena menutupi area chat
+    sidebar:     { width: 280, borderRight: '1px solid #e5e7eb', display: isMobile ? 'none' : 'flex', flexDirection: 'column', background: '#fff', flexShrink: 0, overflowY: 'auto' },
     chat:        { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
     header:      { padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12, background: '#fff', flexShrink: 0 },
     msgArea:     { flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8, background: '#f6f8fa' },
@@ -1679,7 +1724,11 @@ const ConsultationChat = () => {
         <div style={{ color: '#e6edf3', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Panggilan Video Masuk</div>
         <div style={{ color: '#8b949e', fontSize: 13, marginBottom: 28 }}>{fmtDoctorName(doc)} mengajak video call</div>
         <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
-          <button onClick={() => { setIncomingCall(null); }}
+          <button onClick={() => {
+            // FIX: Kirim vc-reject ke server agar dokter tahu panggilan ditolak
+            socket?.emit('vc-reject', { consultationId: id });
+            setIncomingCall(null);
+          }}
             style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', background: '#c0392b', color: '#fff', cursor: 'pointer', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(192,57,43,.5)' }}>
             📵
           </button>
@@ -1980,6 +2029,15 @@ const ConsultationChat = () => {
               )}
             </div>
             <StatusBadge status={consultation.status} />
+            {/* BUG-FIX: Tombol kembali di header untuk mobile (sidebar disembunyikan) */}
+            {isMobile && (
+              <button
+                onClick={() => navigate(isDoctor ? '/doctor/consultations' : '/consultations')}
+                style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
+              >
+                ← Kembali
+              </button>
+            )}
           </div>
 
           <div style={{ ...s.msgArea, position: 'relative' }}>
