@@ -1604,23 +1604,24 @@ router.put('/chat/:doctorId/read', guard, async (req, res) => {
 // SURAT SAKIT & RESEP — DOWNLOAD PDF (ADMIN)
 // ════════════════════════════════════════════════════════════════════════════
 
-// GET /admin/sick-letters/:id/pdf — proxy download PDF surat sakit untuk admin
+// GET /admin/sick-letters/:id/pdf — download PDF surat sakit untuk admin
 router.get('/sick-letters/:id/pdf', guard, async (req, res) => {
     try {
         const sickLetter = await SickLetter.findById(req.params.id).lean();
         if (!sickLetter) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
 
-        // Delegate ke route konsultasi yang sudah ada (reuse logic PDF)
-        const consultation = await Consultation.findById(sickLetter.consultationId);
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+        if (!sickLetter.consultationId) {
+            return res.status(400).json({ message: 'Surat sakit tidak memiliki referensi konsultasi' });
+        }
 
-        // Forward request ke handler /:id/sick-letter/pdf di routes/consultations.js
-        // dengan cara memanggil langsung via internal redirect params
-        req.params.id = sickLetter.consultationId.toString();
-        return require('./consultations').handle(req, res, () => {});
+        // Gunakan fungsi yang diekspor langsung — tanpa router.handle()
+        const { generateSickLetterPdf } = require('./consultations');
+        await generateSickLetterPdf(sickLetter.consultationId.toString(), res);
     } catch (err) {
         console.error('[admin] GET /sick-letters/:id/pdf error:', err);
-        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+        if (!res.headersSent) {
+            res.status(500).json({ success: false, message: 'Server error', error: err.message });
+        }
     }
 });
 

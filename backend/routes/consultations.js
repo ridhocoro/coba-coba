@@ -216,7 +216,7 @@ router.get('/doctor/all', auth, doctorAuth, async (req, res) => {
         if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
 
         let consultations = await Consultation.find({ doctorId: doctor.id })
-            .populate({ path: 'sickLetter', select: 'status letterNumber diagnosis' })
+            .populate({ path: 'sickLetter', select: 'status letterNumber diagnosis startDate endDate issuedAt patientAge patientGender patientWeight notes' })
             .sort('-createdAt')
             .lean();
 
@@ -1918,31 +1918,40 @@ router.put('/:id/sick-letter/issue', auth, doctorAuth, async (req, res) => {
     }
 });
 
-router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
+/**
+ * generateSickLetterPdf
+ * Fungsi shared untuk generate PDF surat sakit berdasarkan consultationId.
+ * Dipakai oleh route /:id/sick-letter/pdf (pasien/dokter) DAN
+ * oleh route admin GET /admin/sick-letters/:id/pdf tanpa perlu router.handle().
+ *
+ * @param {string} consultationId  - MongoDB _id konsultasi
+ * @param {object} res             - Express response object
+ */
+async function generateSickLetterPdf(consultationId, res) {
     try {
-        const consultation = await Consultation.findById(req.params.id).populate('sickLetter');
-        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
-
-        const isAuthorized = await canAccess(consultation, req.userId, req.userRole);
-        if (!isAuthorized) {
-            return res.status(403).json({ message: 'Akses ditolak' });
+        const consultation = await Consultation.findById(consultationId).populate('sickLetter');
+        if (!consultation) {
+            return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
         }
 
         const sickLetter = consultation.sickLetter;
-        if (!sickLetter) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
+        if (!sickLetter) {
+            return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
+        }
 
         const patient = await User.findByPk(consultation.userId);
-        const doctor = await Doctor.findByPk(consultation.doctorId);
+        const doctor  = await Doctor.findByPk(consultation.doctorId);
 
-        const ClinicSettings = require('../models/ClinicSettings');
-        const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
-        const clinicName = clinicSettings.clinicName || 'Klinik Pratama IPB';
-        const clinicAddress = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
-        const signLocation  = clinicSettings.signLocation  || 'Bogor';
+        const ClinicSettings  = require('../models/ClinicSettings');
+        const clinicSettings  = await ClinicSettings.findOne({ key: 'main' }) || {};
+        const clinicName      = clinicSettings.clinicName    || 'Klinik Pratama IPB';
+        const clinicAddress   = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+        const signLocation    = clinicSettings.signLocation  || 'Bogor';
+        const clinicPhone     = clinicSettings.clinicPhone   || '(62251) 8422094';
 
-        const logoBuf      = await fetchImageBuffer(clinicSettings.logoUrl, 'Logo klinik');
-        const stampBuf     = await fetchImageBuffer(clinicSettings.stampUrl, 'Stempel klinik');
-        const signatureBuf = await fetchImageBuffer(doctor?.signatureUrl, 'Tanda tangan dokter');
+        const logoBuf      = await fetchImageBuffer(clinicSettings.logoUrl,  'Logo klinik');
+        const stampBuf     = await fetchImageBuffer(clinicSettings.stampUrl,  'Stempel klinik');
+        const signatureBuf = await fetchImageBuffer(doctor?.signatureUrl,     'Tanda tangan dokter');
 
         const doc = new PDFDocument({ margin: 70, size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
@@ -1956,42 +1965,37 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
 
         const tglPemeriksaan = new Date(consultation.scheduledAt || consultation.createdAt)
             .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        
-        // Gunakan tanggal dari surat sakit (issuedAt) atau tanggal pembuatan
+
         const tglSurat = sickLetter.issuedAt ? new Date(sickLetter.issuedAt) : new Date();
         const tglBogor = tglSurat;
 
-        const days = Math.ceil((new Date(sickLetter.endDate) - new Date(sickLetter.startDate)) / (1000 * 60 * 60 * 24)) + 1;
+        const days     = Math.ceil((new Date(sickLetter.endDate) - new Date(sickLetter.startDate)) / (1000 * 60 * 60 * 24)) + 1;
         const daysWord = ['nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh'][days] || days.toString();
-        const tglMulai = new Date(sickLetter.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        const tglSelesai = new Date(sickLetter.endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglMulai   = new Date(sickLetter.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglSelesai = new Date(sickLetter.endDate).toLocaleDateString('id-ID',   { day: 'numeric', month: 'long', year: 'numeric' });
 
-        // Header dengan logo klinik
         const headerStartX = 50;
         const headerStartY = doc.y;
-        const logoSize = 55;
+        const logoSize     = 55;
 
         if (logoBuf) {
             try {
                 doc.image(logoBuf, headerStartX, headerStartY, { height: logoSize, width: logoSize });
-                console.log('[sick-letter/pdf] ✓ Logo loaded successfully');
             } catch (imgErr) {
-                console.warn('[sick-letter/pdf] Failed to load logo in header:', imgErr.message);
+                console.warn('[sick-letter/pdf] Failed to load logo:', imgErr.message);
             }
         }
 
         const headerTextStartY = headerStartY;
+        const addressParts     = parseAddress(clinicAddress);
 
-        const addressParts = parseAddress(clinicAddress);
-        const clinicPhone = clinicSettings.clinicPhone || '(62251) 8422094'; 
-        
         doc.font('Times-Bold').fontSize(14).text(clinicName, 50, headerTextStartY, { align: 'center', width: 500 });
         doc.font('Times-Roman').fontSize(10).text(addressParts.street, 50, headerTextStartY + 16, { align: 'center', width: 500 });
         if (addressParts.city_province) {
             doc.font('Times-Roman').fontSize(10).text(addressParts.city_province, 50, headerTextStartY + 28, { align: 'center', width: 500 });
         }
-        doc.font('Times-Bold').fontSize(10).text(`${sickLetter.letterNumber || 'DRAFT'}`, 50, headerTextStartY + 52, { align: 'center', width: 500 });
         doc.font('Times-Roman').fontSize(10).text(`Telp. ${clinicPhone}`, 50, headerTextStartY + 40, { align: 'center', width: 500 });
+        doc.font('Times-Bold').fontSize(10).text(`${sickLetter.letterNumber || 'DRAFT'}`, 50, headerTextStartY + 52, { align: 'center', width: 500 });
         doc.y = headerStartY + logoSize + 5;
 
         doc.moveDown(0.3);
@@ -2005,23 +2009,21 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         doc.text('Yang bertanda tangan di bawah ini menerangkan bahwa:', { align: 'left' });
         doc.moveDown(0.5);
 
-        // Data Pasien dengan format rapi (sejajar ':')
-        const labelX = 70;
-        const valueX = 180;
-        let currentY = doc.y;
-        
+        const labelX   = 70;
+        const valueX   = 180;
+        let currentY   = doc.y;
+
         doc.fontSize(10);
-        
         doc.text('Nama', labelX, currentY, { width: 100 });
         doc.text(`: ${patient?.name || '-'}`, valueX, currentY);
         currentY += 16;
-        
+
         if (sickLetter.patientAge) {
             doc.text('Umur', labelX, currentY, { width: 100 });
             doc.text(`: ${sickLetter.patientAge} tahun`, valueX, currentY);
             currentY += 16;
         }
-        
+
         if (sickLetter.patientGender) {
             doc.text('Jenis Kelamin', labelX, currentY, { width: 100 });
             doc.text(`: ${sickLetter.patientGender}`, valueX, currentY);
@@ -2032,62 +2034,52 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         doc.moveDown(0.4);
 
         doc.font('Times-Roman').fontSize(10);
-        const pemeriksaanText = `Berdasarkan hasil pemeriksaan pada tanggal ${tglPemeriksaan}. Pasien didiagnosis ${sickLetter.diagnosis}, dan memerlukan istirahat ${days} (${daysWord}) hari terhitung mulai tanggal ${tglMulai} sampai dengan ${tglSelesai}. Demikian surat keterangan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.`;
+        const pemeriksaanText =
+            `Berdasarkan hasil pemeriksaan pada tanggal ${tglPemeriksaan}. ` +
+            `Pasien didiagnosis ${sickLetter.diagnosis}, dan memerlukan istirahat ${days} (${daysWord}) hari ` +
+            `terhitung mulai tanggal ${tglMulai} sampai dengan ${tglSelesai}. ` +
+            `Demikian surat keterangan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.`;
         doc.text(pemeriksaanText, 50, doc.y, { align: 'left', width: 500 });
-
-        doc.moveDown(0.6);
-
-        // if (sickLetter.notes && sickLetter.notes.toLowerCase() !== '-') {
-        //     doc.text(`Catatan: ${sickLetter.notes}`, 50, doc.y, { align: 'left', width: 500 });
-        //     doc.moveDown(0.6);
-        // }
 
         doc.moveDown(1.5);
 
-        // FOOTER / SIGNATURE
-        doc.font('Times-Roman').fontSize(10);
-        const signY = doc.y;
+        const signY  = doc.y;
         const rightX = 360;
         const imgSize = 52;
 
+        doc.font('Times-Roman').fontSize(10);
         doc.text(`${signLocation}, ${tglBogor.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightX, signY, { align: 'center', width: 200 });
         doc.moveDown(0.5);
         doc.text('Dokter yang memeriksa', rightX, doc.y, { align: 'center', width: 200 });
         doc.moveDown(0.7);
 
         const sigAndStampY = doc.y;
-        const sigImgX = rightX + (190 - imgSize) / 2;
+        const sigImgX      = rightX + (190 - imgSize) / 2;
 
         if (signatureBuf) {
             try {
                 doc.image(signatureBuf, sigImgX, sigAndStampY, { width: imgSize, height: imgSize });
-                console.log('[sick-letter/pdf] ✓ Signature loaded at X:', sigImgX, 'Y:', sigAndStampY);
             } catch (imgErr) {
-                console.warn('[sick-letter/pdf] Failed to load signature image:', imgErr.message);
+                console.warn('[sick-letter/pdf] Failed to load signature:', imgErr.message);
             }
         }
 
         if (stampBuf) {
             try {
                 const stampSize = 40;
-                const stampX = sigImgX + (imgSize - stampSize) / 2;
-                const stampY = sigAndStampY + (imgSize * 0.45) - (stampSize / 2);
+                const stampX    = sigImgX + (imgSize - stampSize) / 2;
+                const stampY    = sigAndStampY + (imgSize * 0.45) - (stampSize / 2);
                 doc.image(stampBuf, stampX, stampY, { width: stampSize, height: stampSize });
-                console.log('[sick-letter/pdf] ✓ Stamp loaded at X:', stampX, 'Y:', stampY);
             } catch (imgErr) {
-                console.warn('[sick-letter/pdf] Failed to load stamp overlay:', imgErr.message);
+                console.warn('[sick-letter/pdf] Failed to load stamp:', imgErr.message);
             }
         }
 
         doc.moveDown(2.5);
-
-        doc.font('Times-Bold').fontSize(10)
-            .text(`${fmtDoctorName(doctor)}`, rightX, doc.y, { align: 'center', width: 200 });
-
+        doc.font('Times-Bold').fontSize(10).text(`${fmtDoctorName(doctor)}`, rightX, doc.y, { align: 'center', width: 200 });
         doc.moveDown(1.2);
         doc.font('Times-Roman').fontSize(8).fillColor('#333333')
-            .text('*Surat keterangan ini dibuat berdasarkan hasil pemeriksaan dan berlaku sesuai tanggal yang tertera.',
-                50, doc.y, { align: 'left', width: 500 });
+            .text('*Surat keterangan ini dibuat berdasarkan hasil pemeriksaan dan berlaku sesuai tanggal yang tertera.', 50, doc.y, { align: 'left', width: 500 });
 
         doc.end();
     } catch (err) {
@@ -2097,6 +2089,21 @@ router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
         } else {
             res.destroy();
         }
+    }
+}
+
+router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
+    try {
+        const consultation = await Consultation.findById(req.params.id).select('userId doctorId');
+        if (!consultation) return res.status(404).json({ message: 'Konsultasi tidak ditemukan' });
+
+        const isAuthorized = await canAccess(consultation, req.userId, req.userRole);
+        if (!isAuthorized) return res.status(403).json({ message: 'Akses ditolak' });
+
+        await generateSickLetterPdf(req.params.id, res);
+    } catch (err) {
+        console.error('[sick-letter/pdf] route error:', err);
+        if (!res.headersSent) res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
 
@@ -2326,4 +2333,5 @@ router.delete('/:id/video-log', auth, async (req, res) => {
 });
 
 module.exports = router;
-module.exports.processRefundInternal = processRefundInternal;
+module.exports.processRefundInternal  = processRefundInternal;
+module.exports.generateSickLetterPdf  = generateSickLetterPdf;
