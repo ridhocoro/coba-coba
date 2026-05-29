@@ -567,7 +567,7 @@ router.post('/book', auth, async (req, res) => {
         }
 
         const apptObj = appointment.toObject();
-        const populated = await populateFromMySQL(apptObj, 'doctorId', 'Doctor', 'name specialization photo userId');
+        const populated = await populateFromMySQL(apptObj, 'doctorId', 'Doctor', 'name specialization photo userId titlePrefix titleSuffix');
         const populated2 = await populateFromMySQL(populated, 'userId', 'User', 'name email phone');
 
         // Invalidasi cache slot dokter setelah booking baru ─ supaya slot terpesan langsung terupdate
@@ -587,7 +587,7 @@ const getMyAppointments = async (req, res) => {
             .lean();
 
         appointments = await populateFromMySQL(
-            appointments, 'doctorId', 'Doctor', 'name specialization photo userId'
+            appointments, 'doctorId', 'Doctor', 'name specialization photo userId titlePrefix titleSuffix'
         );
 
         const doctorIds = [...new Set(
@@ -648,7 +648,7 @@ router.put('/:id/cancel', auth, async (req, res) => {
         if (!apptLean) return res.status(404).json({ message: 'Janji tidak ditemukan' });
 
         const apptPopulated = await populateFromMySQL(
-            { ...apptLean }, 'doctorId', 'Doctor', 'name specialization photo userId'
+            { ...apptLean }, 'doctorId', 'Doctor', 'name specialization photo userId titlePrefix titleSuffix'
         );
 
         if (apptLean.userId?.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
@@ -694,7 +694,7 @@ router.put('/:id/reschedule', auth, async (req, res) => {
         if (!apptLean) return res.status(404).json({ message: 'Janji tidak ditemukan' });
 
         const apptPopulated = await populateFromMySQL(
-            { ...apptLean }, 'doctorId', 'Doctor', 'name specialization photo userId'
+            { ...apptLean }, 'doctorId', 'Doctor', 'name specialization photo userId titlePrefix titleSuffix'
         );
 
         if (apptLean.userId?.toString() !== req.userId) return res.status(403).json({ message: 'Akses ditolak' });
@@ -869,7 +869,7 @@ router.put('/doctor/:id/checkin', auth, doctorAuth, async (req, res) => {
             userId  : appointment.userId.toString(),
             type    : 'appointment_reminder',
             title   : '✅ Check-in Berhasil',
-            message : `Dokter anda telah tiba untuk janji temu pukul ${appointment.appointmentTime} WIB. Silahkan tunggu giliran Anda.`,
+            message : `Anda telah check-in untuk janji temu pukul ${appointment.appointmentTime} WIB. Silakan tunggu giliran Anda.`,
             data    : { appointmentId: appointment._id },
             io      : req.app.get('io'),
         });
@@ -996,7 +996,7 @@ router.get('/admin/today', auth, adminOnly, async (req, res) => {
         }).sort({ appointmentTime: 1 }).lean();
 
         appointments = await populateFromMySQL(appointments, 'userId',   'User',   'name email phone');
-        appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name specialization');
+        appointments = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name specialization titlePrefix titleSuffix');
 
         res.json({ success: true, appointments, date: todayStr });
     } catch (err) {
@@ -1021,7 +1021,7 @@ router.get('/admin/list', auth, adminOnly, async (req, res) => {
 
         if (search) {
             let all = await Appointment.find(query).sort({ scheduledAt: -1 }).lean();
-            all = await populateFromMySQL(all, 'doctorId', 'Doctor', 'name specialization photo userId');
+            all = await populateFromMySQL(all, 'doctorId', 'Doctor', 'name specialization photo userId titlePrefix titleSuffix');
             all = await populateFromMySQL(all, 'userId',   'User',   'name email phone');
 
             const s = search.toLowerCase();
@@ -1060,7 +1060,7 @@ router.get('/admin/report', auth, adminOnly, async (req, res) => {
             appointmentDate : { $gte: fromDate, $lte: new Date(toDate.getTime() + 24*60*60*1000) },
         }).lean();
 
-        const populated = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name');
+        const populated = await populateFromMySQL(appointments, 'doctorId', 'Doctor', 'name titlePrefix titleSuffix');
 
         const byDay = {};
         for (const a of populated) {
@@ -1189,7 +1189,7 @@ router.get('/:id', auth, async (req, res) => {
         const apptLean = await Appointment.findById(req.params.id).lean();
         if (!apptLean) return res.status(404).json({ message: 'Janji tidak ditemukan' });
 
-        const appt = await populateFromMySQL({ ...apptLean }, 'doctorId', 'Doctor', 'name specialization photo userId');
+        const appt = await populateFromMySQL({ ...apptLean }, 'doctorId', 'Doctor', 'name specialization photo userId titlePrefix titleSuffix');
         await populateFromMySQL(appt, 'userId', 'User', 'name email phone');
 
         const isOwner    = appt.userId?.id?.toString() === req.userId || apptLean.userId?.toString() === req.userId;
