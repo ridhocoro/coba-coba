@@ -62,7 +62,21 @@ module.exports = (io) => {
                 console.log(`[Socket] join-consultation found: status=${consultation.status}, userId=${consultation.userId}, doctorId=${consultation.doctorId}`);
 
                 const patientId = consultation.userId?.toString();
-                const doctorUserId = consultation.doctorId?.toString() || null;
+
+                // FIX: consultation.doctorId = UUID doctor di MySQL (doctor.id)
+                // socket.userId = UUID user → perlu query MySQL untuk dapat doctor.userId
+                let doctorUserId = null;
+                if (consultation.doctorId) {
+                    try {
+                        const doctorRecord = await Doctor.findByPk(consultation.doctorId.toString());
+                        doctorUserId = doctorRecord?.userId?.toString() || null;
+                        if (!doctorUserId) {
+                            console.error('[Socket] join-consultation: Doctor tidak ditemukan untuk doctorId:', consultation.doctorId);
+                        }
+                    } catch (dbErr) {
+                        console.error('[Socket] join-consultation Doctor.findByPk error:', dbErr.message);
+                    }
+                }
 
                 const isAdmin   = socket.userRole === 'admin';
                 const isPatient = patientId === socket.userId;
