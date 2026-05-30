@@ -323,7 +323,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 
         const consultation = new Consultation({
             userId: req.userId,
-            doctorId,
+            doctorId: doctor.userId,
             consultationType: consultationType || 'chat',
             scheduleType: 'scheduled',
             scheduledAt: slotStart,
