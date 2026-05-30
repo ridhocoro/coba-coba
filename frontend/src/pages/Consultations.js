@@ -875,7 +875,7 @@ const Consultations = () => {
         setBooking(true);
         try {
             const fd = new FormData();
-            fd.append('doctorId', bookDocId);
+            fd.append('doctor.userId', bookDocId);
             fd.append('consultationType', bookType);
             fd.append('scheduledAt', bookSlotUtc.startUtc);
             fd.append('scheduledEnd', bookSlotUtc.endUtc);
