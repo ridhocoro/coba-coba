@@ -559,7 +559,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    console.log('[Signaling] Dokter kirim vc-offer');
+    console.log('[Signaling] Dokter kirim vc-offer, consultationId:', consultationId, 'socketId:', socket.id);
     socket.emit('vc-offer', { consultationId, offer });
   }, [consultationId, socket, getLocalStream, createPC]);
 
@@ -594,7 +594,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    console.log('[Signaling] User kirim vc-answer');
+    console.log('[Signaling] User kirim vc-answer, consultationId:', consultationId, 'socketId:', socket.id);
     socket.emit('vc-answer', { consultationId, answer });
   }, [consultationId, socket, getLocalStream, createPC]);
 
@@ -1441,6 +1441,7 @@ const ConsultationChat = () => {
   // ── Socket listeners ───────────────────────────────────────────
   useEffect(() => {
     if (!socket || !consultation) return;
+    console.log('[Socket] join-consultation:', consultation._id?.toString(), 'socketId:', socket.id);
     socket.emit('join-consultation', consultation._id);
 
     const onReceive = (msg) => {
