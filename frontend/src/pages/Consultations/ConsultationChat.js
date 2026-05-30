@@ -407,6 +407,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   // FIX: Queue ICE candidate yang datang sebelum setRemoteDescription selesai
   const iceCandidateQueueRef    = useRef([]);
   const remoteDescSetRef        = useRef(false);
+  const isAnsweringRef          = useRef(false); // FIX: cegah double answerCall race condition
 
   const [callState, setCallState]   = useState('idle'); // idle | calling | ringing | connected | ended
   const [micOn,  setMicOn]          = useState(true);
@@ -433,6 +434,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     remoteStreamReceivedRef.current = false;
     iceCandidateQueueRef.current    = [];
     remoteDescSetRef.current        = false;
+    isAnsweringRef.current          = false;
   }, []);
 
   // ── Akhiri call ────────────────────────────────────────────────
@@ -564,14 +566,18 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
   // ── User: terima call (jawab offer) ──────────────────────────
   const answerCall = useCallback(async (offer) => {
-    if (pcRef.current) {
-      console.log('[Signaling] answerCall diabaikan — pcRef sudah ada');
+    // FIX: Guard atomik — cegah race condition dua panggilan bersamaan
+    // pcRef.current belum ter-set saat panggilan kedua masuk karena answerCall adalah async
+    if (isAnsweringRef.current || pcRef.current) {
+      console.log('[Signaling] answerCall diabaikan — sudah dalam proses atau pcRef sudah ada');
       return;
     }
+    isAnsweringRef.current = true;
+
     console.log('[Signaling] User mulai answerCall');
     setCallState('ringing');
     const stream = await getLocalStream();
-    if (!stream) { setCallState('idle'); return; }
+    if (!stream) { setCallState('idle'); isAnsweringRef.current = false; return; }
 
     const pc = createPC();
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -579,7 +585,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     console.log('[Signaling] User setRemoteDescription (offer)');
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-    // FIX: Drain ICE candidate queue yang menumpuk sebelum setRemoteDescription selesai
+    // Drain ICE candidate queue yang menumpuk sebelum setRemoteDescription selesai
     remoteDescSetRef.current = true;
     console.log(`[Signaling] Drain ICE queue: ${iceCandidateQueueRef.current.length} candidate`);
     for (const candidate of iceCandidateQueueRef.current) {
@@ -828,10 +834,11 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       }
     };
 
-    // User terima offer dari dokter via socket (bukan dari initialOffer)
+    // User terima offer dari dokter via socket
+    // Skip jika sudah ada initialOffer (ditangani di useEffect mount) atau sedang menjawab
     const onOffer = async ({ offer }) => {
-      console.log('[Signaling] vc-offer diterima via socket, isDoctor:', isDoctor, 'pcRef exists:', !!pcRef.current);
-      if (!isDoctor && !pcRef.current) answerCall(offer);
+      console.log('[Signaling] vc-offer diterima via socket, isDoctor:', isDoctor, 'isAnswering:', isAnsweringRef.current, 'pcRef exists:', !!pcRef.current);
+      if (!isDoctor && !isAnsweringRef.current && !pcRef.current) answerCall(offer);
     };
 
     const onIce = async ({ candidate }) => {
