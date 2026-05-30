@@ -902,10 +902,28 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     if (hasCalledRef.current) return;
     hasCalledRef.current = true;
     if (isDoctor) {
-      // Dokter: buat offer dan kirim ke pasien
-      startCall();
+      // FIX: Tunggu konfirmasi join-consultation dari server sebelum kirim offer
+      // Ini mencegah vc-offer dikirim sebelum socket benar-benar masuk room,
+      // sehingga vc-answer dari user bisa diterima dokter dengan benar
+      const onJoined = ({ consultationId: joinedId }) => {
+        if (joinedId === consultationId) {
+          console.log('[Signaling] join-consultation confirmed oleh server, mulai startCall');
+          socket.off('joined-consultation', onJoined);
+          startCall();
+        }
+      };
+      socket.on('joined-consultation', onJoined);
+      socket.emit('join-consultation', consultationId);
+      // Fallback: kalau 3 detik tidak ada konfirmasi (server lama), tetap mulai
+      setTimeout(() => {
+        socket.off('joined-consultation', onJoined);
+        if (!pcRef.current && !isEndingRef.current) {
+          console.warn('[Signaling] join-consultation timeout, fallback startCall');
+          startCall();
+        }
+      }, 3000);
     } else if (initialOffer) {
-      // Pasien: langsung jawab offer yang sudah tersimpan (tidak perlu tunggu socket event lagi)
+      // Pasien: langsung jawab offer yang sudah tersimpan
       answerCall(initialOffer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

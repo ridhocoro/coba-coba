@@ -2,6 +2,7 @@ const fmtDoctorName = require('../utils/fmtDoctorName');
 const jwt = require('jsonwebtoken');
 const Consultation = require('../models/Consultation');
 const Doctor       = require('../models/Doctor');
+const User         = require('../models/User'); // FIX: register User schema for populate('userId')
 
 module.exports = (io) => {
     // Middleware autentikasi socket
@@ -41,23 +42,33 @@ module.exports = (io) => {
         // Join room konsultasi — dengan validasi akses
         socket.on('join-consultation', async (consultationId) => {
             try {
-                // Gunakan lean() karena doctorId adalah UUID MySQL bukan ObjectId Mongoose
                 const consultation = await Consultation.findById(consultationId).lean();
 
-                if (!consultation) return;
+                if (!consultation) {
+                    console.error('[Socket] join-consultation: not found:', consultationId);
+                    return;
+                }
 
                 const patientId = consultation.userId?.toString();
-                // Query MySQL untuk mendapatkan userId dokter dari UUID doctorId
                 let doctorUserId = null;
                 if (consultation.doctorId) {
-                    const doctorRecord = await Doctor.findOne({ where: { id: consultation.doctorId.toString() } });
-                    doctorUserId = doctorRecord?.userId?.toString() || null;
+                    try {
+                        const doctorRecord = await Doctor.findOne({ where: { id: consultation.doctorId.toString() } });
+                        doctorUserId = doctorRecord?.userId?.toString() || null;
+                    } catch (dbErr) {
+                        console.error('[Socket] join-consultation MySQL error:', dbErr.message);
+                    }
                 }
+
                 const isAdmin   = socket.userRole === 'admin';
                 const isPatient = patientId === socket.userId;
                 const isDoctor  = doctorUserId === socket.userId;
 
+                // Log selalu untuk debug production
+                console.log(`[Socket] join-consultation attempt: userId=${socket.userId} role=${socket.userRole} isPatient=${isPatient} isDoctor=${isDoctor} doctorUserId=${doctorUserId} consultationId=${consultationId}`);
+
                 if (!isAdmin && !isPatient && !isDoctor) {
+                    console.error('[Socket] join-consultation DENIED: userId:', socket.userId);
                     socket.emit('error', { message: 'Akses room konsultasi ditolak' });
                     return;
                 }
@@ -69,13 +80,14 @@ module.exports = (io) => {
                 }
 
                 socket.join(`consultation-${consultationId}`);
-                // Simpan rooms yang di-join untuk reconnect handling
                 if (!socket.consultationRooms) socket.consultationRooms = new Set();
                 socket.consultationRooms.add(consultationId);
 
-                if (process.env.NODE_ENV !== 'production') {
-                    console.log(`[Socket] Joined consultation: ${consultationId} (user: ${socket.userId})`);
-                }
+                console.log(`[Socket] Joined consultation-${consultationId} (userId: ${socket.userId} role: ${socket.userRole})`);
+
+                // Konfirmasi ke client bahwa join berhasil
+                socket.emit('joined-consultation', { consultationId });
+
             } catch (err) {
                 console.error('[Socket] join-consultation error:', err.message);
             }
