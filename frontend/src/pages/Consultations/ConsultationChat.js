@@ -450,7 +450,17 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
         console.log('[WebRTC] ICE candidate:', candidate.type, candidate.candidate);
+        // Deteksi apakah TURN relay berhasil digunakan
+        if (candidate.type === 'relay') {
+          console.log('[WebRTC] ✅ TURN relay candidate ditemukan — koneksi lintas jaringan tersedia');
+        }
         socket.emit('vc-ice-candidate', { consultationId, candidate });
+      } else {
+        // Null candidate = gathering selesai
+        const hasRelay = remoteStreamReceivedRef._hasRelay;
+        if (!hasRelay) {
+          console.warn('[WebRTC] ⚠️ ICE gathering selesai tapi TIDAK ADA relay candidate — TURN server mungkin tidak terjangkau dari jaringan ini');
+        }
       }
     };
 
