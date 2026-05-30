@@ -424,6 +424,8 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   const [compressProgress, setCompressProgress] = useState(0);  // 0-100
   const [videoLogInfo, setVideoLogInfo]  = useState(null);   // { url, expiresAt, timeLeft }
   const [showLogPanel, setShowLogPanel]  = useState(false);
+  const canvasRef          = useRef(null);  // canvas untuk composite recording
+  const canvasRafRef       = useRef(null);  // requestAnimationFrame id
 
   // ── Bersihkan semua resource ──────────────────────────────────
   const cleanup = useCallback(() => {
@@ -610,20 +612,64 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
   // ── Recording: mulai merekam stream lokal + remote ────────────
   const startRecording = useCallback(() => {
-    // Gabungkan stream lokal dan remote menjadi satu stream
-    const tracks = [];
-    localStreamRef.current?.getTracks().forEach(t => tracks.push(t));
+    const W = 1280, H = 720;
+    const canvas = document.createElement('canvas');
+    canvas.width  = W;
+    canvas.height = H;
+    canvasRef.current = canvas;
+    const ctx = canvas.getContext('2d');
 
-    // Coba ambil remote stream dari video element
+    const drawFrame = () => {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      const remote = remoteVideoRef.current;
+      const local  = localVideoRef.current;
+
+      // Remote video: full canvas (contain — letterbox)
+      if (remote && remote.readyState >= 2 && remote.videoWidth > 0) {
+        const rw = remote.videoWidth, rh = remote.videoHeight;
+        const scale = Math.min(W / rw, H / rh);
+        const dx = (W - rw * scale) / 2, dy = (H - rh * scale) / 2;
+        ctx.drawImage(remote, dx, dy, rw * scale, rh * scale);
+      }
+
+      // Local video (PiP): pojok kanan bawah, 25% lebar canvas
+      if (local && local.readyState >= 2 && local.videoWidth > 0) {
+        const pipW = Math.round(W * 0.25);
+        const pipH = Math.round(pipW * (local.videoHeight / local.videoWidth));
+        const px = W - pipW - 16, py = H - pipH - 16;
+        // rounded clip
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(px, py, pipW, pipH, 10);
+        ctx.clip();
+        // mirror seperti tampilan PiP
+        ctx.translate(px + pipW, py);
+        ctx.scale(-1, 1);
+        ctx.drawImage(local, 0, 0, pipW, pipH);
+        ctx.restore();
+        // border
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(px, py, pipW, pipH, 10);
+        ctx.stroke();
+      }
+
+      canvasRafRef.current = requestAnimationFrame(drawFrame);
+    };
+    drawFrame();
+
+    // Audio: gabungkan audio lokal + remote
+    const audioTracks = [];
+    localStreamRef.current?.getAudioTracks().forEach(t => audioTracks.push(t));
     const remoteStream = remoteVideoRef.current?.srcObject;
-    remoteStream?.getTracks().forEach(t => tracks.push(t));
+    remoteStream?.getAudioTracks().forEach(t => audioTracks.push(t));
 
-    if (tracks.length === 0) {
-      toast.error('Tidak ada stream yang bisa direkam');
-      return;
-    }
+    const canvasStream = canvas.captureStream(30);
+    audioTracks.forEach(t => canvasStream.addTrack(t));
 
-    const combinedStream = new MediaStream(tracks);
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
       ? 'video/webm;codecs=vp9'
       : MediaRecorder.isTypeSupported('video/webm')
@@ -631,7 +677,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       : 'video/mp4';
 
     try {
-      const recorder = new MediaRecorder(combinedStream, { mimeType });
+      const recorder = new MediaRecorder(canvasStream, { mimeType });
       recordedChunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -639,16 +685,17 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       };
 
       recorder.onstop = () => {
+        // Hentikan canvas animation loop
+        if (canvasRafRef.current) cancelAnimationFrame(canvasRafRef.current);
+        canvasRef.current = null;
         const blob = new Blob(recordedChunksRef.current, { type: mimeType });
         setRecordedBlob(blob);
         setShowLogPanel(true);
-        // Simpan ke sessionStorage agar bisa diakses dari sidebar setelah VideoCall ditutup
         try {
           const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
           const objUrl = URL.createObjectURL(blob);
           sessionStorage.setItem(`vc_recording_${consultationId}`, JSON.stringify({
-            url: objUrl,
-            ext,
+            url: objUrl, ext,
             sizeMB: (blob.size / (1024 * 1024)).toFixed(1),
             recordedAt: new Date().toISOString(),
           }));
@@ -656,15 +703,15 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
         toast.success('Rekaman selesai. Siap diunduh atau diupload.');
       };
 
-      recorder.start(1000); // simpan setiap 1 detik
+      recorder.start(1000);
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
-      setRecordedBlob(null);
-      toast('🔴 Perekaman dimulai');
+      toast.success('Rekaman dimulai (dokter + pasien)');
     } catch (err) {
+      if (canvasRafRef.current) cancelAnimationFrame(canvasRafRef.current);
       toast.error('Browser tidak mendukung perekaman: ' + err.message);
     }
-  }, []);
+  }, [consultationId]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -999,7 +1046,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       {/* Remote video — full screen */}
       <div style={{ flex: 1, minHeight: 0, position: 'relative', background: '#0d1117', overflow: 'hidden' }}>
         <video ref={remoteVideoRef} autoPlay playsInline
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: remoteJoined ? 'block' : 'none' }} />
+          style={{ width: '100%', height: '100%', objectFit: 'contain', display: remoteJoined ? 'block' : 'none' }} />
 
         {/* Waiting / error state */}
         {!remoteJoined && (
