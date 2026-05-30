@@ -364,12 +364,37 @@ const RatingModal = ({ consultationId, onClose, onSuccess }) => {
 // ── WebRTC Video Call ─────────────────────────────────────────────
 // Menggunakan socket signaling (offer/answer/ice-candidate)
 // Tidak butuh TURN server untuk jaringan lokal; tambahkan TURN untuk produksi
-const ICE_SERVERS = {
-  iceServers: [
+// Gunakan env variable jika tersedia (production/staging), fallback ke openrelay (testing saja)
+// Untuk ExpressTURN: set REACT_APP_TURN_URLS, REACT_APP_TURN_USERNAME, REACT_APP_TURN_CREDENTIAL di .env
+const buildIceServers = () => {
+  const servers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-  ],
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ];
+
+  if (process.env.REACT_APP_TURN_URLS && process.env.REACT_APP_TURN_USERNAME && process.env.REACT_APP_TURN_CREDENTIAL) {
+    // Production: ExpressTURN atau TURN server lain via environment variable
+    servers.push({
+      urls      : process.env.REACT_APP_TURN_URLS.split(','),
+      username  : process.env.REACT_APP_TURN_USERNAME,
+      credential: process.env.REACT_APP_TURN_CREDENTIAL,
+    });
+    console.log('[WebRTC] Using TURN from env:', process.env.REACT_APP_TURN_URLS);
+  } else {
+    // Fallback: openrelay gratis — hanya untuk testing lokal, jangan dipakai production
+    console.warn('[WebRTC] No TURN env vars found — using openrelay (testing only)');
+    servers.push(
+      { urls: 'turn:openrelay.metered.ca:80',                username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443',               username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    );
+  }
+
+  return servers;
 };
+
+const ICE_SERVERS = { iceServers: buildIceServers() };
 
 const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onClose, setVideoLogInfo: setParentVideoLogInfo }) => {
   const localVideoRef  = useRef(null);
@@ -424,8 +449,13 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
+        console.log('[WebRTC] ICE candidate:', candidate.type, candidate.candidate);
         socket.emit('vc-ice-candidate', { consultationId, candidate });
       }
+    };
+
+    pc.onicegatheringstatechange = () => {
+      console.log('[WebRTC] ICE gathering state:', pc.iceGatheringState);
     };
 
     pc.ontrack = ({ streams }) => {
@@ -473,6 +503,10 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
         }, 3000);
       }
       if (['failed', 'closed'].includes(pc.iceConnectionState)) {
+        if (pc.iceConnectionState === 'failed') {
+          console.error('[WebRTC] ICE failed — kemungkinan butuh TURN server atau jaringan bermasalah');
+          toast.error('Koneksi video gagal. Coba refresh halaman atau gunakan jaringan berbeda.');
+        }
         if (!isEndingRef.current) endCall();
       }
     };
