@@ -53,10 +53,10 @@ module.exports = (io) => {
                 let doctorUserId = null;
                 if (consultation.doctorId) {
                     try {
-                        const doctorRecord = await Doctor.findOne({ where: { id: consultation.doctorId.toString() } });
+                        const doctorRecord = await Doctor.findById(consultation.doctorId).lean();
                         doctorUserId = doctorRecord?.userId?.toString() || null;
                     } catch (dbErr) {
-                        console.error('[Socket] join-consultation MySQL error:', dbErr.message);
+                        console.error('[Socket] join-consultation Doctor query error:', dbErr.message);
                     }
                 }
 
@@ -109,7 +109,7 @@ module.exports = (io) => {
                         const patientId = consultation.userId?.toString();
                         let doctorUserId = null;
                         if (consultation.doctorId) {
-                            const doctorRecord = await Doctor.findOne({ where: { id: consultation.doctorId.toString() } });
+                            const doctorRecord = await Doctor.findById(consultation.doctorId).lean();
                             doctorUserId = doctorRecord?.userId?.toString() || null;
                         }
                         const isAdmin   = socket.userRole === 'admin';
