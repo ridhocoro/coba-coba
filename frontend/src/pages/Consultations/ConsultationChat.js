@@ -558,12 +558,17 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
+    console.log('[Signaling] Dokter kirim vc-offer');
     socket.emit('vc-offer', { consultationId, offer });
   }, [consultationId, socket, getLocalStream, createPC]);
 
   // ── User: terima call (jawab offer) ──────────────────────────
   const answerCall = useCallback(async (offer) => {
-    if (pcRef.current) return; // sudah ada koneksi, hindari double-answer
+    if (pcRef.current) {
+      console.log('[Signaling] answerCall diabaikan — pcRef sudah ada');
+      return;
+    }
+    console.log('[Signaling] User mulai answerCall');
     setCallState('ringing');
     const stream = await getLocalStream();
     if (!stream) { setCallState('idle'); return; }
@@ -571,10 +576,12 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     const pc = createPC();
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
+    console.log('[Signaling] User setRemoteDescription (offer)');
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    
+
     // FIX: Drain ICE candidate queue yang menumpuk sebelum setRemoteDescription selesai
     remoteDescSetRef.current = true;
+    console.log(`[Signaling] Drain ICE queue: ${iceCandidateQueueRef.current.length} candidate`);
     for (const candidate of iceCandidateQueueRef.current) {
       try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
     }
@@ -582,6 +589,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    console.log('[Signaling] User kirim vc-answer');
     socket.emit('vc-answer', { consultationId, answer });
   }, [consultationId, socket, getLocalStream, createPC]);
 
@@ -801,13 +809,16 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     if (!socket) return;
 
     // Dokter terima jawaban dari user
-    // BUG-FIX: Jangan set connected di sini — tunggu ontrack saat stream remote masuk.
     const onAnswer = async ({ answer }) => {
-      if (!pcRef.current) return;
+      if (!pcRef.current) {
+        console.warn('[Signaling] vc-answer diterima tapi pcRef null — diabaikan');
+        return;
+      }
       try {
+        console.log('[Signaling] Dokter terima vc-answer, setRemoteDescription');
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-        // FIX: Drain ICE candidate queue yang menumpuk sebelum setRemoteDescription selesai
         remoteDescSetRef.current = true;
+        console.log(`[Signaling] Drain ICE queue dokter: ${iceCandidateQueueRef.current.length} candidate`);
         for (const candidate of iceCandidateQueueRef.current) {
           try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
         }
@@ -817,9 +828,9 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       }
     };
 
-    // User terima offer dari dokter
-    // Guard: skip jika sudah dijawab via initialOffer (dari IncomingCallBanner)
+    // User terima offer dari dokter via socket (bukan dari initialOffer)
     const onOffer = async ({ offer }) => {
+      console.log('[Signaling] vc-offer diterima via socket, isDoctor:', isDoctor, 'pcRef exists:', !!pcRef.current);
       if (!isDoctor && !pcRef.current) answerCall(offer);
     };
 
