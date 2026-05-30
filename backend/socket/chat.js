@@ -62,16 +62,7 @@ module.exports = (io) => {
                 console.log(`[Socket] join-consultation found: status=${consultation.status}, userId=${consultation.userId}, doctorId=${consultation.doctorId}`);
 
                 const patientId = consultation.userId?.toString();
-                let doctorUserId = null;
-                if (consultation.doctorId) {
-                    try {
-                        const doctorRecord = await Doctor.findById(consultation.doctorId).lean();
-                        doctorUserId = doctorRecord?.userId?.toString() || null;
-                        console.log(`[Socket] Doctor record found: doctorId=${consultation.doctorId}, doctorUserId=${doctorUserId}`);
-                    } catch (dbErr) {
-                        console.error('[Socket] join-consultation Doctor query error:', dbErr.message);
-                    }
-                }
+                const doctorUserId = consultation.doctorId?.toString() || null;
 
                 const isAdmin   = socket.userRole === 'admin';
                 const isPatient = patientId === socket.userId;
