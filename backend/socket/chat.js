@@ -177,8 +177,37 @@ module.exports = (io) => {
         });
 
         // ── WebRTC Video Call Signaling ─────────────────────────────────────
+        // FIX-1: Cache offer terakhir per konsultasi agar bisa dikirim ulang
+        // saat pasien join room setelah dokter sudah kirim offer
+        if (!io._vcOfferCache) io._vcOfferCache = {};
+
         socket.on('vc-offer', ({ consultationId, offer }) => {
+            // Simpan offer terbaru — akan dipakai jika pasien kirim vc-ready
+            io._vcOfferCache[consultationId] = { offer, fromSocketId: socket.id };
             socket.to(`consultation-${consultationId}`).emit('vc-offer', { offer });
+        });
+
+        // FIX-1: Pasien kirim sinyal "siap" → server cek apakah ada cached offer
+        // Ini mengatasi race condition di mana dokter kirim offer sebelum pasien join room
+        socket.on('vc-ready', ({ consultationId }) => {
+            const cached = io._vcOfferCache?.[consultationId];
+            if (cached) {
+                // Ada offer yang tersimpan → kirim langsung ke pasien ini
+                socket.emit('vc-offer', { offer: cached.offer });
+                console.log(`[Socket] vc-ready: replay cached offer ke pasien ${socket.userId} untuk konsultasi ${consultationId}`);
+            } else {
+                // Tidak ada cached offer → relay ke dokter agar kirim ulang offer
+                socket.to(`consultation-${consultationId}`).emit('vc-ready');
+                console.log(`[Socket] vc-ready: tidak ada cache, relay ke dokter untuk konsultasi ${consultationId}`);
+            }
+        });
+
+        // Bersihkan cache saat panggilan berakhir
+        socket.on('vc-end', ({ consultationId, reason }) => {
+            if (io._vcOfferCache?.[consultationId]) {
+                delete io._vcOfferCache[consultationId];
+            }
+            socket.to(`consultation-${consultationId}`).emit('vc-end', { reason: reason || 'ended' });
         });
 
         socket.on('vc-answer', ({ consultationId, answer }) => {
@@ -189,9 +218,7 @@ module.exports = (io) => {
             socket.to(`consultation-${consultationId}`).emit('vc-ice-candidate', { candidate });
         });
 
-        socket.on('vc-end', ({ consultationId, reason }) => {
-            socket.to(`consultation-${consultationId}`).emit('vc-end', { reason: reason || 'ended' });
-        });
+
 
         // Pasien menolak panggilan → beri tahu dokter dengan reason khusus
         socket.on('vc-reject', ({ consultationId }) => {

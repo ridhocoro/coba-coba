@@ -887,12 +887,26 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       }
     });
 
+    // FIX-1: Dokter terima sinyal vc-ready dari pasien → kirim ulang offer
+    // Ini mengatasi race condition di mana pasien join room SETELAH dokter kirim offer
+    const onVcReady = () => {
+      if (isDoctor && pcRef.current) {
+        const offer = pcRef.current.localDescription;
+        if (offer && offer.type === 'offer') {
+          console.log('[Signaling] vc-ready diterima dari pasien — kirim ulang offer');
+          socket.emit('vc-offer', { consultationId, offer });
+        }
+      }
+    };
+    socket.on('vc-ready', onVcReady);
+
     return () => {
       socket.off('vc-offer',         onOffer);
       socket.off('vc-answer',        onAnswer);
       socket.off('vc-ice-candidate', onIce);
       socket.off('vc-end',           onEnd);
       socket.off('vc-ice-restart');
+      socket.off('vc-ready',         onVcReady);
     };
   }, [socket, isDoctor, answerCall, cleanup, onClose, consultationId]);
 
@@ -901,30 +915,72 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   useEffect(() => {
     if (hasCalledRef.current) return;
     hasCalledRef.current = true;
-    if (isDoctor) {
-      // FIX: Tunggu konfirmasi join-consultation dari server sebelum kirim offer
-      // Ini mencegah vc-offer dikirim sebelum socket benar-benar masuk room,
-      // sehingga vc-answer dari user bisa diterima dokter dengan benar
-      const onJoined = ({ consultationId: joinedId }) => {
-        if (joinedId === consultationId) {
-          console.log('[Signaling] join-consultation confirmed oleh server, mulai startCall');
+
+    // FIX-EDGE: Pastikan socket benar-benar terhubung sebelum join room
+    // Kasus: socket.id masih undefined saat VideoCall mount → join-consultation dikirim terlalu cepat
+    const doJoin = () => {
+      if (isDoctor) {
+        const onJoined = ({ consultationId: joinedId }) => {
+          if (joinedId === consultationId) {
+            console.log('[Signaling] join-consultation confirmed oleh server, mulai startCall');
+            socket.off('joined-consultation', onJoined);
+            startCall();
+          }
+        };
+        socket.on('joined-consultation', onJoined);
+        socket.emit('join-consultation', consultationId);
+        // FIX-3: Naikkan timeout dari 3s → 6s untuk toleransi Railway yang lebih lambat
+        setTimeout(() => {
           socket.off('joined-consultation', onJoined);
-          startCall();
-        }
-      };
-      socket.on('joined-consultation', onJoined);
-      socket.emit('join-consultation', consultationId);
-      // Fallback: kalau 3 detik tidak ada konfirmasi (server lama), tetap mulai
-      setTimeout(() => {
-        socket.off('joined-consultation', onJoined);
-        if (!pcRef.current && !isEndingRef.current) {
-          console.warn('[Signaling] join-consultation timeout, fallback startCall');
-          startCall();
-        }
-      }, 3000);
-    } else if (initialOffer) {
-      // Pasien: langsung jawab offer yang sudah tersimpan
-      answerCall(initialOffer);
+          if (!pcRef.current && !isEndingRef.current) {
+            console.warn('[Signaling] join-consultation timeout (6s), fallback startCall');
+            startCall();
+          }
+        }, 6000);
+      } else {
+        // Pasien: join room dulu, lalu kirim sinyal vc-ready ke server
+        // FIX-1: Setelah join room dikonfirmasi, beri tahu dokter bahwa pasien siap
+        // Ini mengatasi race condition di mana dokter sudah kirim offer sebelum pasien join
+        const onJoined = ({ consultationId: joinedId }) => {
+          if (joinedId === consultationId) {
+            console.log('[Signaling] Pasien join room confirmed, kirim vc-ready');
+            socket.off('joined-consultation', onJoined);
+            if (initialOffer) {
+              // Ada offer yang tersimpan dari IncomingCallBanner → langsung jawab
+              answerCall(initialOffer);
+            } else {
+              // Tidak ada offer → kirim vc-ready agar dokter/server kirim ulang offer
+              socket.emit('vc-ready', { consultationId });
+            }
+          }
+        };
+        socket.on('joined-consultation', onJoined);
+        socket.emit('join-consultation', consultationId);
+        // Fallback jika joined-consultation tidak datang dalam 4s
+        setTimeout(() => {
+          socket.off('joined-consultation', onJoined);
+          if (!pcRef.current && !isAnsweringRef.current) {
+            if (initialOffer) {
+              answerCall(initialOffer);
+            } else {
+              console.warn('[Signaling] join timeout — kirim vc-ready sebagai fallback');
+              socket.emit('vc-ready', { consultationId });
+            }
+          }
+        }, 4000);
+      }
+    };
+
+    if (socket.connected) {
+      // Socket sudah connect → langsung join
+      doJoin();
+    } else {
+      // Socket belum connect (misalnya sedang reconnect) → tunggu event connect
+      console.log('[Signaling] Socket belum connected, tunggu connect event...');
+      socket.once('connect', () => {
+        console.log('[Signaling] Socket connect event — lanjut join room');
+        doJoin();
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1433,6 +1489,8 @@ const ConsultationChat = () => {
     const sock = io(API_URL, {
       auth: { token: localStorage.getItem('token') },
       query: { userId: user.id },
+      // FIX-4: Utamakan WebSocket langsung, hindari polling → upgrade yang lambat di Railway
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
@@ -1482,8 +1540,11 @@ const ConsultationChat = () => {
       toast.success('Dokter mengirimkan resep! 💊');
     };
     // Incoming video call (user side)
+    // FIX-2: Jika VideoCall sudah terbuka (showVideoCall), jangan overwrite incomingCall
+    // karena VideoCall component sudah punya listener vc-offer sendiri dan akan handle sendiri.
+    // Listener di parent hanya untuk menampilkan IncomingCallBanner saat VideoCall belum mount.
     const onVcOffer = ({ offer }) => {
-      if (!isDoctor) setIncomingCall({ offer });
+      if (!isDoctor && !showVideoCall) setIncomingCall({ offer });
     };
     // Status update (e.g. cron auto-started, auto-ended)
     const onStatusUpdate = ({ consultationId, status }) => {
@@ -1530,7 +1591,7 @@ const ConsultationChat = () => {
       socket.off('show-rating-modal',          onShowRating);
       socket.off('medical-record-update',      onMedicalRecordUpdate);
     };
-  }, [socket, consultation, myId, isDoctor, isUser, fetchConsultation]);
+  }, [socket, consultation, myId, isDoctor, isUser, fetchConsultation, showVideoCall]);
 
   useEffect(() => { msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, typing]);
 

@@ -30,6 +30,10 @@ const io     = socketIO(server, {
         origin:  ['https://klinik-frontend-amber.vercel.app', 'http://localhost:3000'],
         methods: ['GET', 'POST'],
     },
+    // FIX-4: Utamakan WebSocket, hindari polling yang lambat di Railway
+    transports:    ['websocket', 'polling'],
+    pingTimeout:   60000,  // toleransi koneksi lambat / Railway cold start
+    pingInterval:  25000,  // kirim ping lebih sering agar koneksi tidak mati
 });
 
 app.set('io', io);
