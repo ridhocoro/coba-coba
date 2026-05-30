@@ -457,15 +457,14 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
         console.log('[WebRTC] ICE candidate:', candidate.type, candidate.candidate);
-        // Deteksi apakah TURN relay berhasil digunakan
         if (candidate.type === 'relay') {
           console.log('[WebRTC] ✅ TURN relay candidate ditemukan — koneksi lintas jaringan tersedia');
+          pc._hasRelay = true; // tandai di objek pc langsung
         }
         socket.emit('vc-ice-candidate', { consultationId, candidate });
       } else {
-        // Null candidate = gathering selesai
-        const hasRelay = remoteStreamReceivedRef._hasRelay;
-        if (!hasRelay) {
+        // null candidate = gathering selesai
+        if (!pc._hasRelay) {
           console.warn('[WebRTC] ⚠️ ICE gathering selesai tapi TIDAK ADA relay candidate — TURN server mungkin tidak terjangkau dari jaringan ini');
         }
       }
@@ -1817,7 +1816,11 @@ const ConsultationChat = () => {
             style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', background: '#c0392b', color: '#fff', cursor: 'pointer', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(192,57,43,.5)' }}>
             📵
           </button>
-          <button onClick={() => { setShowVideoCall(true); }}
+          <button onClick={() => {
+              // FIX: Re-join room sebelum terima panggilan
+              socket?.emit('join-consultation', consultation._id);
+              setShowVideoCall(true);
+            }}
             style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', background: '#1a7f37', color: '#fff', cursor: 'pointer', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(26,127,55,.5)' }}>
             📞
           </button>
@@ -1965,7 +1968,12 @@ const ConsultationChat = () => {
                 <>
                   {/* Video call button untuk dokter */}
                   {isVideoCall && (
-                    <button onClick={() => setShowVideoCall(true)} style={s.actionBtn('#7c3aed')}>
+                    <button onClick={() => {
+                      // FIX: Re-join room sebelum mulai video call
+                      // Mencegah kasus di mana socket reconnect tapi belum re-join room
+                      socket?.emit('join-consultation', consultation._id);
+                      setShowVideoCall(true);
+                    }} style={s.actionBtn('#7c3aed')}>
                       📹 Mulai Video Call
                     </button>
                   )}
@@ -2006,7 +2014,10 @@ const ConsultationChat = () => {
 
               {/* Video call button untuk user — hanya saat live */}
               {isVideoCall && isLive && (
-                <button onClick={() => setShowVideoCall(true)} style={s.actionBtn('#7c3aed')}>
+                <button onClick={() => {
+                  socket?.emit('join-consultation', consultation._id);
+                  setShowVideoCall(true);
+                }} style={s.actionBtn('#7c3aed')}>
                   📹 Gabung Video Call
                 </button>
               )}
