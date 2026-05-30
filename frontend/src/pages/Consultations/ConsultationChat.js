@@ -404,6 +404,9 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   // FIX: Track apakah remote stream sudah diterima & apakah sedang dalam proses end
   const remoteStreamReceivedRef = useRef(false);
   const isEndingRef             = useRef(false);
+  // FIX: Queue ICE candidate yang datang sebelum setRemoteDescription selesai
+  const iceCandidateQueueRef    = useRef([]);
+  const remoteDescSetRef        = useRef(false);
 
   const [callState, setCallState]   = useState('idle'); // idle | calling | ringing | connected | ended
   const [micOn,  setMicOn]          = useState(true);
@@ -428,6 +431,8 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     pcRef.current                   = null;
     localStreamRef.current          = null;
     remoteStreamReceivedRef.current = false;
+    iceCandidateQueueRef.current    = [];
+    remoteDescSetRef.current        = false;
   }, []);
 
   // ── Akhiri call ────────────────────────────────────────────────
@@ -567,11 +572,17 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    
+    // FIX: Drain ICE candidate queue yang menumpuk sebelum setRemoteDescription selesai
+    remoteDescSetRef.current = true;
+    for (const candidate of iceCandidateQueueRef.current) {
+      try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+    }
+    iceCandidateQueueRef.current = [];
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socket.emit('vc-answer', { consultationId, answer });
-    // Jangan set 'connected' di sini — tunggu ontrack dari remote stream
-    // setCallState('connected') dipanggil di pc.ontrack saat stream remote masuk
   }, [consultationId, socket, getLocalStream, createPC]);
 
   // ── Toggle mic / cam ───────────────────────────────────────────
@@ -791,13 +802,16 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
     // Dokter terima jawaban dari user
     // BUG-FIX: Jangan set connected di sini — tunggu ontrack saat stream remote masuk.
-    // Sebelumnya dokter langsung 'connected' di sini tapi ontrack belum fire,
-    // sehingga dokter dan user tidak sinkron statusnya.
     const onAnswer = async ({ answer }) => {
       if (!pcRef.current) return;
       try {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-        // State tetap 'calling' sampai ontrack fire → setCallState('connected')
+        // FIX: Drain ICE candidate queue yang menumpuk sebelum setRemoteDescription selesai
+        remoteDescSetRef.current = true;
+        for (const candidate of iceCandidateQueueRef.current) {
+          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+        }
+        iceCandidateQueueRef.current = [];
       } catch (err) {
         console.error('[WebRTC] setRemoteDescription error:', err);
       }
@@ -810,7 +824,16 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     };
 
     const onIce = async ({ candidate }) => {
-      try { await pcRef.current?.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+      if (!candidate) return;
+      // FIX: Queue candidate jika remoteDescription belum di-set
+      // Ini mengatasi race condition di mana ICE candidate tiba sebelum
+      // setRemoteDescription selesai — biasanya terjadi pada koneksi cepat
+      if (!remoteDescSetRef.current || !pcRef.current) {
+        console.log('[WebRTC] ICE candidate diqueue (remoteDesc belum siap)');
+        iceCandidateQueueRef.current.push(candidate);
+        return;
+      }
+      try { await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
     };
 
     const onEnd = ({ reason } = {}) => {
