@@ -1,330 +1,987 @@
 keluhan,kategori
-"kepala pusing dan mual sudah 2 hari",ISPA
-"demam tinggi disertai batuk kering",ISPA
-"hidung tersumbat dan bersin-bersin terus",ISPA
+"batuk kering dan demam 38 derajat sudah 2 hari",ISPA
+"pilek encer dan bersin-bersin terus menerus",ISPA
 "tenggorokan sakit saat menelan makanan",ISPA
-"batuk berdahak sudah 4 hari tidak sembuh",ISPA
-"pilek dan demam ringan sejak kemarin",ISPA
-"badan panas dingin dan kepala pusing",ISPA
+"hidung tersumbat sebelah dan kepala berat",ISPA
+"demam tinggi disertai batuk berdahak hijau",ISPA
+"badan meriang dan tenggorokan terasa gatal",ISPA
+"batuk tidak berhenti sudah 3 hari mengganggu tidur",ISPA
+"demam naik turun sejak kemarin malam",ISPA
+"pilek dan kepala pusing ringan",ISPA
+"suara serak dan batuk kering",ISPA
 "flu berat disertai nyeri seluruh badan",ISPA
-"radang tenggorokan dan suara serak",ISPA
-"batuk terus menerus dan badan lemas",ISPA
-"demam naik turun sudah 3 hari",ISPA
-"hidung meler dan mata berair",ISPA
-"badan meriang dan tenggorokan gatal",ISPA
-"demam dan menggigil sejak semalam",ISPA
-"batuk kering tidak berhenti dan demam",ISPA
-"pilek berat dan kepala pusing sekali",ISPA
-"bersin terus dan hidung gatal berair",ISPA
-"suara hilang dan tenggorokan sakit menelan",ISPA
-"badan panas dan kepala berat susah bangun",ISPA
-"flu disertai nyeri otot dan kelelahan",ISPA
-"batuk tidak berhenti sudah seminggu",ISPA
-"demam 38 derajat dan badan tidak enak",ISPA
-"hidung mampet sebelah dan kepala berat",ISPA
-"tenggorokan kering dan gatal batuk terus",ISPA
-"pilek encer dan bersin pagi hari terus",ISPA
+"batuk berdahak putih dan demam ringan",ISPA
+"hidung meler terus dan mata berair",ISPA
+"demam dan menggigil semalaman",ISPA
+"batuk kering dan dada terasa gatal",ISPA
+"pilek berat sampai hidung merah lecet",ISPA
+"tenggorokan kering dan batuk terus",ISPA
 "badan lemas demam dan tidak nafsu makan",ISPA
-"kepala nyut nyutan dan hidung tersumbat",ISPA
-"batuk berdahak hijau dan demam ringan",ISPA
-"meriang seluruh badan dan kepala pusing berat",ISPA
-"suara serak dan batuk kering sejak 3 hari",ISPA
-"tekanan darah saya tinggi sekitar 160",Hipertensi
-"kepala terasa berat dan leher kaku",Hipertensi
-"sering pusing terutama saat bangun tidur",Hipertensi
-"tekanan darah naik dan jantung berdegup kencang",Hipertensi
-"kepala bagian belakang sakit dan berat",Hipertensi
-"tensi tinggi disertai penglihatan kabur",Hipertensi
-"darah tinggi dan sering sakit kepala",Hipertensi
-"hipertensi kambuh kepala pusing berat",Hipertensi
-"tekanan darah 150 80 dan badan tidak enak",Hipertensi
-"tekanan darah naik tiba tiba dan telinga berdengung",Hipertensi
-"hipertensi dan wajah terasa panas memerah",Hipertensi
-"tensi 170 dan kepala terasa mau pecah",Hipertensi
-"darah tinggi kambuh dan susah tidur malam",Hipertensi
-"tekanan darah tidak terkontrol dan mudah lelah",Hipertensi
-"tekanan darah 140 90 dan leher terasa tegang",Hipertensi
-"tensi naik mendadak dan pandangan berkunang",Hipertensi
-"hipertensi disertai sesak napas ringan",Hipertensi
-"kepala pusing berat saat tensi naik",Hipertensi
-"darah tinggi dan mudah marah",Hipertensi
-"tekanan darah 160 100 dan telinga berdenging",Hipertensi
-"gula darah saya tinggi sekitar 300",Diabetes
-"sering buang air kecil terutama malam hari",Diabetes
-"badan lemas dan cepat haus terus menerus",Diabetes
-"luka di kaki susah sembuh sudah 2 minggu",Diabetes
-"gula darah naik disertai badan lemas",Diabetes
-"sering lapar meski sudah makan banyak",Diabetes
+"batuk tidak sembuh-sembuh sudah seminggu",ISPA
+"demam 39 derajat dan badan terasa panas",ISPA
+"pilek hijau kental dan hidung tersumbat",ISPA
+"batuk malam hari terus menerus",ISPA
+"tenggorokan bengkak dan suara hilang",ISPA
+"demam disertai ruam merah di badan",ISPA
+"batuk dan pilek sudah 5 hari",ISPA
+"meriang dan sakit kepala ringan",ISPA
+"batuk berdahak kuning dan sesak ringan",ISPA
+"pilek dan badan pegal-pegal",ISPA
+"tenggorokan seperti ada yang mengganjal",ISPA
+"demam batuk dan pilek bersamaan",ISPA
+"batuk kering disertai mual",ISPA
+"hidung mampet total tidak bisa bernapas",ISPA
+"demam turun naik disertai keringat dingin",ISPA
+"pilek dan mata perih",ISPA
+"batuk berdahak susah dikeluarkan",ISPA
+"tenggorokan perih seperti terbakar",ISPA
+"demam dan lemas tidak bertenaga",ISPA
+"batuk sampai muntah",ISPA
+"pilek dan telinga terasa berdengung",ISPA
+"hidung tersumbat disertai sakit kepala",ISPA
+"demam menggigil dan badan terasa berat",ISPA
+"batuk kronis ringan tidak terlalu parah",ISPA
+"pilek dan bersin setiap pagi",ISPA
+"tenggorokan sakit menjalar ke telinga",ISPA
+"batuk terus menerus sampai dada sakit",ISPA
+"demam tidak terlalu tinggi tapi lemas",ISPA
+"pilek bening terus mengalir",ISPA
+"hidung tersumbat saat tidur",ISPA
+"batuk pagi hari setelah bangun tidur",ISPA
+"demam dan nafsu makan menurun drastis",ISPA
+"tekanan darah 150/90 dan kepala pusing",Hipertensi
+"kepala bagian belakang terasa berat",Hipertensi
+"tensi 160/100 disertai jantung berdebar",Hipertensi
+"leher terasa tegang dan tekanan darah naik",Hipertensi
+"pusing saat bangun tidur tensi 140/90",Hipertensi
+"tekanan darah 170/110 dan wajah merah",Hipertensi
+"kepala nyut-nyutan dan tensi tinggi",Hipertensi
+"tensi tidak terkontrol meski sudah minum obat",Hipertensi
+"pandangan berkunang dan tekanan darah naik",Hipertensi
+"telinga berdenging dan tensi 150/95",Hipertensi
+"kepala pusing berat disertai mual",Hipertensi
+"tekanan darah 145/95 dan badan lemas",Hipertensi
+"tensi naik mendadak setelah marah",Hipertensi
+"hidung mimisan dan tekanan darah tinggi",Hipertensi
+"kepala terasa mau pecah tensi 180/100",Hipertensi
+"tekanan darah 155/85 dan jantung berdebar",Hipertensi
+"pusing berputar dan tensi 160/90",Hipertensi
+"tensi 135/90 dan kaki kesemutan",Hipertensi
+"wajah terasa panas dan kemerahan tensi tinggi",Hipertensi
+"kepala berat dan penglihatan kabur",Hipertensi
+"tekanan darah fluktuatif sering naik turun",Hipertensi
+"susah tidur dan tensi malam hari naik",Hipertensi
+"tensi 165/95 disertai keringat dingin",Hipertensi
+"pusing dan dada terasa tidak nyaman",Hipertensi
+"tekanan darah 140/100 dan mudah lelah",Hipertensi
+"kepala belakang sakit dan leher kaku",Hipertensi
+"tensi 175/105 dan mual",Hipertensi
+"berdebar debar dan tekanan darah 150/80",Hipertensi
+"pusing setelah makan dan tensi tinggi",Hipertensi
+"tekanan darah 130/90 dengan gejala pusing",Hipertensi
+"tangan kesemutan dan tensi 155/90",Hipertensi
+"kepala terasa penuh dan tensi tinggi",Hipertensi
+"tekanan darah naik setelah begadang",Hipertensi
+"tensi 145/85 dan napas sedikit sesak",Hipertensi
+"pusing disertai mual tensi 160/95",Hipertensi
+"kepala berdenyut dan tensi 150/95",Hipertensi
+"tekanan darah 170/100 dan badan terasa berat",Hipertensi
+"tensi tidak turun-turun sudah seminggu",Hipertensi
+"wajah sembab dan tekanan darah tinggi",Hipertensi
+"kepala pusing sebelah dan tensi 140/90",Hipertensi
+"tekanan darah 155/95 dan mudah marah",Hipertensi
+"tensi 165/85 dan telinga berdengung",Hipertensi
+"kepala terasa berputar tensi 145/95",Hipertensi
+"pusing dan mata berkunang-kunang",Hipertensi
+"tekanan darah 135/95 dan lelah terus",Hipertensi
+"tensi 175/95 disertai sesak ringan",Hipertensi
+"kepala berat seperti ditekan benda berat",Hipertensi
+"tekanan darah 150/85 dan jantung berdebar kencang",Hipertensi
+"pusing saat beraktivitas tensi naik",Hipertensi
+"tensi 160/85 dan keringat berlebihan",Hipertensi
+"gula darah puasa 280 mg/dL dan sering haus",Diabetes
+"buang air kecil terus terutama malam hari",Diabetes
+"badan lemas dan cepat lapar padahal sudah makan",Diabetes
+"luka di kaki sudah 2 minggu tidak sembuh",Diabetes
+"gula darah 350 mg/dL dan pandangan kabur",Diabetes
 "berat badan turun drastis tanpa sebab",Diabetes
-"penglihatan kabur dan sering kesemutan di kaki",Diabetes
-"diabetes kambuh gula darah tidak terkontrol",Diabetes
-"gula darah 400 dan badan terasa berat",Diabetes
-"sering kencing malam dan mulut terasa kering",Diabetes
-"luka tidak sembuh dan kaki sering kesemutan",Diabetes
-"gula darah naik dan nafsu makan berlebih",Diabetes
-"sering merasa lemas dan gula darah fluktuatif",Diabetes
-"kaki kesemutan dan penglihatan buram gula darah",Diabetes
-"mulut kering dan sering minum tapi tetap haus",Diabetes
-"gula darah tidak stabil dan mudah mengantuk",Diabetes
-"mual muntah sudah dari tadi pagi",Gangguan Pencernaan
-"sakit perut bagian bawah dan diare",Gangguan Pencernaan
+"sering kesemutan di kaki dan tangan",Diabetes
+"mulut terasa kering terus meski banyak minum",Diabetes
+"gula darah 400 mg/dL dan badan terasa berat",Diabetes
+"sering mengantuk setelah makan",Diabetes
+"gula darah tidak stabil fluktuatif",Diabetes
+"luka lecet di jempol kaki susah sembuh",Diabetes
+"keluar nanah di sela jari kaki",Diabetes
+"sering infeksi jamur di lipatan kulit",Diabetes
+"gula darah 300 mg/dL dan mudah lelah",Diabetes
+"sering kencing malam sampai 5-6 kali",Diabetes
+"kulit terasa gatal tanpa ruam",Diabetes
+"gula darah 250 mg/dL dan nafsu makan besar",Diabetes
+"kesemutan terus menerus di kedua kaki",Diabetes
+"penglihatan buram kadang-kadang",Diabetes
+"gula darah 380 mg/dL dan mual",Diabetes
+"lambat penyembuhan luka ringan sekalipun",Diabetes
+"kaki terasa dingin terus",Diabetes
+"gula darah 320 mg/dL dan sering pusing",Diabetes
+"sariawan terus menerus tidak sembuh",Diabetes
+"gula darah puasa 290 mg/dL",Diabetes
+"kulit kering dan bersisik terutama di kaki",Diabetes
+"sering lapar tengah malam",Diabetes
+"gula darah 360 mg/dL dan bau mulut aseton",Diabetes
+"kaki bengkak dan gula darah tinggi",Diabetes
+"gula darah 270 mg/dL dan susah tidur",Diabetes
+"mati rasa di ujung jari",Diabetes
+"gula darah 410 mg/dL dan muntah",Diabetes
+"penurunan berat badan tanpa diet",Diabetes
+"gula darah 230 mg/dL dan sering haus",Diabetes
+"infeksi saluran kemih berulang",Diabetes
+"gula darah 310 mg/dL dan mudah marah",Diabetes
+"kesemutan dari lutut ke bawah",Diabetes
+"gula darah 340 mg/dL dan nafas berbau",Diabetes
+"luka bakar kecil 2 minggu belum kering",Diabetes
+"gula darah 260 mg/dL dan sering lapar",Diabetes
+"penglihatan ganda kadang-kadang",Diabetes
+"gula darah 370 mg/dL dan lemas",Diabetes
+"kaki terasa kebas seperti tertusuk jarum",Diabetes
+"gula darah 290 mg/dL dan mulut pahit",Diabetes
+"sering mimisan dan gula darah tinggi",Diabetes
+"gula darah 330 mg/dL dan kepala pusing",Diabetes
+"penurunan gairah seksual",Diabetes
+"gula darah 240 mg/dL dan mudah lelah",Diabetes
+"rambut rontok banyak dan gula darah tinggi",Diabetes
+"perut bagian atas terasa perih dan mual",Gangguan Pencernaan
+"diare cair sudah 4 kali hari ini",Gangguan Pencernaan
 "perut kembung dan tidak bisa buang angin",Gangguan Pencernaan
-"diare sudah 5 kali sejak semalam",Gangguan Pencernaan
-"mulas dan perut terasa penuh terus",Gangguan Pencernaan
-"nyeri ulu hati dan mual setelah makan",Gangguan Pencernaan
-"maag kambuh perut perih saat lapar",Gangguan Pencernaan
-"sembelit sudah 3 hari tidak bisa BAB",Gangguan Pencernaan
-"perut sakit dan buang air besar berdarah",Gangguan Pencernaan
-"mual muntah dan tidak nafsu makan",Gangguan Pencernaan
-"perut sakit melilit dan diare terus",Gangguan Pencernaan
-"asam lambung naik dan dada terasa panas",Gangguan Pencernaan
-"perut begah dan sering sendawa berbau",Gangguan Pencernaan
-"mual hebat dan perut kram sejak pagi",Gangguan Pencernaan
-"sakit perut setelah makan dan mual",Gangguan Pencernaan
+"sakit ulu hati setelah makan pedas",Gangguan Pencernaan
+"mual muntah dan perut kram",Gangguan Pencernaan
+"maag kambuh perut perih saat telat makan",Gangguan Pencernaan
+"sembelit 4 hari tidak BAB",Gangguan Pencernaan
+"perut begah dan sendawa terus",Gangguan Pencernaan
+"asam lambung naik sampai kerongkongan",Gangguan Pencernaan
+"diare disertai lendir dan darah",Gangguan Pencernaan
 "perut terasa penuh meski makan sedikit",Gangguan Pencernaan
-"diare berair dan perut melilit",Gangguan Pencernaan
-"muntah terus dan tidak bisa makan",Gangguan Pencernaan
-"lambung perih dan mual saat pagi",Gangguan Pencernaan
-"kulit gatal gatal dan kemerahan",Penyakit Kulit
-"ruam merah di lengan dan terasa panas",Penyakit Kulit
-"bintik bintik merah di badan gatal",Penyakit Kulit
-"kulit kering dan mengelupas di kaki",Penyakit Kulit
-"eksim kambuh kulit merah dan gatal parah",Penyakit Kulit
-"alergi kulit muncul bentol setelah makan udang",Penyakit Kulit
-"jerawat meradang dan terasa nyeri",Penyakit Kulit
-"kulit bersisik dan gatal di kepala",Penyakit Kulit
-"gatal di seluruh badan dan kulit kemerahan",Penyakit Kulit
-"biduran muncul tiba tiba di lengan dan perut",Penyakit Kulit
-"kulit mengelupas dan terasa panas di punggung",Penyakit Kulit
-"alergi muncul bintil kecil gatal setelah minum obat",Penyakit Kulit
-"kulit wajah merah dan perih seperti terbakar",Penyakit Kulit
-"gatal dan bentol setelah kena sengatan serangga",Penyakit Kulit
-"kulit terasa terbakar dan memerah",Penyakit Kulit
-"bercak putih di kulit gatal",Penyakit Kulit
-"kulit kepala gatal dan bersisik ketombe parah",Penyakit Kulit
-"nyeri dada sebelah kiri terasa berat",Gangguan Jantung
-"jantung berdebar kencang tiba tiba",Gangguan Jantung
-"dada terasa tertekan dan sesak",Gangguan Jantung
-"detak jantung tidak teratur dan pusing",Gangguan Jantung
-"nyeri dada menjalar ke lengan kiri",Gangguan Jantung
-"jantung berdegup tidak normal dan lemas",Gangguan Jantung
-"dada sakit saat beraktivitas ringan",Gangguan Jantung
-"sesak nafas dan nyeri dada saat malam",Gangguan Jantung
-"dada berdebar dan keringat dingin tiba tiba",Gangguan Jantung
-"jantung terasa berhenti sebentar lalu berdebar",Gangguan Jantung
-"nyeri dada kiri dan tangan kiri terasa berat",Gangguan Jantung
-"detak jantung cepat dan napas sesak saat istirahat",Gangguan Jantung
-"sesak napas saat berjalan sedikit saja",Gangguan Paru
-"batuk kronis sudah lebih dari sebulan",Gangguan Paru
-"nafas berbunyi mengi saat bernapas",Gangguan Paru
-"asma kambuh sesak dan sulit bernapas",Gangguan Paru
-"batuk berdahak campur darah",Gangguan Paru
-"sesak napas parah saat malam hari",Gangguan Paru
-"napas pendek dan mudah lelah",Gangguan Paru
-"sesak napas saat berbaring dan batuk terus",Gangguan Paru
-"asma kambuh dan obat tidak mempan",Gangguan Paru
-"batuk berdarah dan dada terasa berat",Gangguan Paru
-"sulit bernapas dan dada terasa penuh",Gangguan Paru
-"napas berbunyi ngik ngik dan sesak",Gangguan Paru
+"mual setelah minum susu",Gangguan Pencernaan
+"sakit perut melilit disertai diare",Gangguan Pencernaan
+"naik asam lambung setiap malam",Gangguan Pencernaan
+"perut bunyi keras terus menerus",Gangguan Pencernaan
+"mual di pagi hari tidak hamil",Gangguan Pencernaan
+"bab keras seperti kambing",Gangguan Pencernaan
+"perut bagian bawah nyeri saat BAB",Gangguan Pencernaan
+"muntah setelah makan berlemak",Gangguan Pencernaan
+"lambung terasa panas seperti terbakar",Gangguan Pencernaan
+"diare setelah makan pedas",Gangguan Pencernaan
+"perut kram dan mual bersamaan",Gangguan Pencernaan
+"telat makan langsung maag kambuh",Gangguan Pencernaan
+"bab tidak tuntas masih ada rasa",Gangguan Pencernaan
+"mual dan perut begah setelah makan",Gangguan Pencernaan
+"diare muntah dan lemas",Gangguan Pencernaan
+"asam lambung naik ke tenggorokan",Gangguan Pencernaan
+"perut nyeri di pusar",Gangguan Pencernaan
+"mual saat melihat atau mencium bau",Gangguan Pencernaan
+"bab berlendir tapi tidak sakit",Gangguan Pencernaan
+"perut terasa nyut-nyutan",Gangguan Pencernaan
+"sembelit dan perut keras",Gangguan Pencernaan
+"sendawa bau telur busuk",Gangguan Pencernaan
+"muntah makanan yang belum dicerna",Gangguan Pencernaan
+"perut sakit setelah makan asam",Gangguan Pencernaan
+"diare tidak berhenti sudah 2 hari",Gangguan Pencernaan
+"lambung perih dan sering bersendawa",Gangguan Pencernaan
+"perut kram hebat setiap mau BAB",Gangguan Pencernaan
+"mual dan pusing bersamaan",Gangguan Pencernaan
+"bab lebih dari 3 kali sehari",Gangguan Pencernaan
+"nafas berbau asam akibat lambung",Gangguan Pencernaan
+"perut sakit disertai demam",Gangguan Pencernaan
+"muntah terus tidak bisa minum",Gangguan Pencernaan
+"diare berair seperti air",Gangguan Pencernaan
+"maag kronis setiap hari kambuh",Gangguan Pencernaan
+"perut begah meski belum makan",Gangguan Pencernaan
+"mual setelah minum obat",Gangguan Pencernaan
+"sakit perut menjalar ke punggung",Gangguan Pencernaan
+"bab cair disertai lendir",Gangguan Pencernaan
+"lambung perih dan mual setiap pagi",Gangguan Pencernaan
+"kulit gatal bentol kemerahan",Penyakit Kulit
+"ruam merah di lengan dan paha",Penyakit Kulit
+"bintik berair di sela jari tangan",Penyakit Kulit
+"kulit kering bersisik di siku dan lutut",Penyakit Kulit
+"eksim di lipatan siku gatal parah",Penyakit Kulit
+"bentol seperti digigit nyamuk besar",Penyakit Kulit
+"kulit mengelupas di telapak kaki",Penyakit Kulit
+"jerawat meradang banyak di wajah",Penyakit Kulit
+"kulit kepala gatal dan berketombe",Penyakit Kulit
+"gatal di seluruh badan tanpa ruam",Penyakit Kulit
+"biduran muncul setelah mandi air panas",Penyakit Kulit
+"kulit kemerahan dan perih",Penyakit Kulit
+"bintil kecil berisi nanah di punggung",Penyakit Kulit
+"kulit hitam menebal di leher",Penyakit Kulit
+"gatal di lipatan paha",Penyakit Kulit
+"ruam seperti bekas gigitan kutu",Penyakit Kulit
+"kulit terasa panas setelah kena sinar matahari",Penyakit Kulit
+"bintik merah di pipi anak",Penyakit Kulit
+"kulit pecah pecah di tumit",Penyakit Kulit
+"gatal setelah makan seafood",Penyakit Kulit
+"jerawat batu di punggung dan dada",Penyakit Kulit
+"kulit kusam dan mengelupas",Penyakit Kulit
+"bintil merah berkelompok di pinggang",Penyakit Kulit
+"kulit terasa seperti terbakar tanpa sebab",Penyakit Kulit
+"gatal di sekitar kemaluan",Penyakit Kulit
+"ruam yang menyebar ke seluruh tubuh",Penyakit Kulit
+"kulit bersisik seperti ketombe di alis",Penyakit Kulit
+"bintik putih di kulit tidak gatal",Penyakit Kulit
+"gatal hebat malam hari",Penyakit Kulit
+"kulit melepuh setelah terbakar sinar matahari",Penyakit Kulit
+"jerawat meradang dan sakit saat disentuh",Penyakit Kulit
+"kulit kering dan retak retak di tangan",Penyakit Kulit
+"bentol merah besar di betis",Penyakit Kulit
+"gatal di sela sela jempol kaki",Penyakit Kulit
+"kulit menghitam di ketiak",Penyakit Kulit
+"ruam seperti bunga krisan",Penyakit Kulit
+"kulit berkerak dan mengeras",Penyakit Kulit
+"gatal di pergelangan tangan",Penyakit Kulit
+"bintil merah berair di telapak tangan",Penyakit Kulit
+"kulit kepala terasa panas dan gatal",Penyakit Kulit
+"jerawat kistik di rahang",Penyakit Kulit
+"kulit kering dan mengelupas di jari",Penyakit Kulit
+"bentol dan bengkak di bibir",Penyakit Kulit
+"gatal di punggung tidak kunjung sembuh",Penyakit Kulit
+"ruam merah susah hilang",Penyakit Kulit
+"kulit bersisik seperti ular",Penyakit Kulit
+"bintil kecil di perut tidak gatal",Penyakit Kulit
+"gatal saat udara dingin",Penyakit Kulit
+"kulit mengelupas setelah demam",Penyakit Kulit
+"jerawat hormonal sebelum haid",Penyakit Kulit
+"kepala pusing berputar saat bangun tidur",Gangguan Saraf
+"migrain sebelah kiri berdenyut",Gangguan Saraf
 "tangan dan kaki kesemutan terus menerus",Gangguan Saraf
-"migrain berat sebelah kepala berdenyut",Gangguan Saraf
-"wajah sebelah terasa kaku dan kebas",Gangguan Saraf
+"vertigo sampai mual muntah",Gangguan Saraf
+"kepala terasa seperti diikat kencang",Gangguan Saraf
 "tangan gemetar tidak bisa dikontrol",Gangguan Saraf
-"sakit kepala berdenyut disertai mual berat",Gangguan Saraf
+"kepala pusing berputar saat menengok",Gangguan Saraf
+"wajah sebelah terasa kebas",Gangguan Saraf
+"sakit kepala berdenyut disertai mual",Gangguan Saraf
 "kaki terasa kebas dari lutut ke bawah",Gangguan Saraf
-"vertigo kepala berputar saat bergerak",Gangguan Saraf
-"kepala pusing berputar dan mual saat berdiri",Gangguan Saraf
-"tangan kiri tiba tiba kebas dan lemah",Gangguan Saraf
-"migrain sebelah kiri dan mual muntah",Gangguan Saraf
-"kaki terasa seperti ditusuk jarum terus menerus",Gangguan Saraf
-"vertigo parah tidak bisa berdiri tegak",Gangguan Saraf
-"mata merah dan terasa perih dan gatal",Gangguan Mata
-"penglihatan tiba tiba kabur di satu mata",Gangguan Mata
-"mata berair terus dan silau saat cahaya",Gangguan Mata
-"mata terasa mengganjal dan merah",Gangguan Mata
-"minus mata meningkat penglihatan buram",Gangguan Mata
-"mata bengkak dan keluar kotoran kuning",Gangguan Mata
-"mata merah dan bernanah sejak pagi",Gangguan Mata
-"penglihatan dobel dan mata sakit saat digerakkan",Gangguan Mata
-"mata gatal dan merah setelah kena debu",Gangguan Mata
-"kelopak mata bengkak dan terasa berat",Gangguan Mata
-"mata kering dan perih saat menatap layar lama",Gangguan Mata
-"nyeri pinggang belakang sebelah kanan",Gangguan Ginjal
-"urin berwarna keruh dan berbau tidak enak",Gangguan Ginjal
-"kaki dan pergelangan bengkak tanpa sebab",Gangguan Ginjal
-"sakit saat buang air kecil terasa panas",Gangguan Ginjal
-"pinggang sakit dan urin sedikit berbau",Gangguan Ginjal
-"sering buang air kecil dan terasa nyeri",Gangguan Ginjal
-"urin berwarna merah dan pinggang sakit sekali",Gangguan Ginjal
-"nyeri pinggang kanan dan demam ringan",Gangguan Ginjal
-"buang air kecil terasa panas dan frekuensi sering",Gangguan Ginjal
-"kaki bengkak dan urin berbusa",Gangguan Ginjal
-"batu ginjal terasa nyeri pinggang tembus perut",Gangguan Ginjal
-"sering cemas berlebihan tanpa alasan jelas",Gangguan Mental
-"sulit tidur sudah lebih dari seminggu",Gangguan Mental
-"merasa sedih terus dan tidak bersemangat",Gangguan Mental
-"stres berat dan mudah marah marah",Gangguan Mental
-"serangan panik tiba tiba dan jantung berdegup",Gangguan Mental
-"depresi tidak mau makan dan keluar rumah",Gangguan Mental
-"cemas berlebih dan sulit konsentrasi bekerja",Gangguan Mental
-"susah tidur dan pikiran tidak bisa tenang",Gangguan Mental
-"merasa putus asa dan tidak ada semangat hidup",Gangguan Mental
-"panik tiba tiba dan takut mati",Gangguan Mental
-"stres berkepanjangan dan sering menangis sendiri",Gangguan Mental
-"tidak bisa tidur dan bayangan buruk terus muncul",Gangguan Mental
-"cemas berat dan tangan gemetar saat panik",Gangguan Mental
-"merasa hampa dan tidak punya motivasi",Gangguan Mental
-"sulit konsentrasi dan mudah lupa",Gangguan Mental
-"sering overthinking dan susah rileks",Gangguan Mental
-"mood turun drastis dan tidak mau bergaul",Gangguan Mental
-"sakit gigi geraham terasa nyut nyutan",Karies Gigi
-"gigi berlubang dan sakit saat minum dingin",Karies Gigi
-"gigi bolong dan nyeri saat mengunyah",Karies Gigi
-"gigi ngilu dan sensitif saat makan manis",Karies Gigi
-"gigi geraham berlubang dan terasa sakit terus",Karies Gigi
-"sakit gigi parah dan pipi bengkak",Karies Gigi
-"gigi terasa ngilu saat minum es",Karies Gigi
-"gigi berlubang dan bau mulut tidak enak",Karies Gigi
-"nyeri gigi geraham bawah saat gigit makanan keras",Karies Gigi
-"gigi depan berlubang dan hitam",Karies Gigi
-"sakit gigi tidak bisa tidur malam",Karies Gigi
-"gigi ngilu dan sakit saat makan asam manis",Karies Gigi
-"gigi goyang dan sakit saat disentuh",Karies Gigi
-"sakit gigi menjalar ke kepala",Karies Gigi
-"gigi terasa nyeri terus menerus",Karies Gigi
-"gusi bengkak dan terasa sakit sekali",Sakit Gusi
-"gusi berdarah saat sikat gigi",Sakit Gusi
-"gusi merah bengkak dan nyeri",Sakit Gusi
-"gusi sakit dan bau mulut",Sakit Gusi
-"gusi terasa nyeri saat makan",Sakit Gusi
-"gusi bengkak di belakang gigi geraham",Sakit Gusi
-"gusi berdarah dan terasa lunak",Sakit Gusi
-"pembengkakan gusi dan sulit membuka mulut",Sakit Gusi
-"gusi kemerahan dan mudah berdarah",Sakit Gusi
-"gusi terasa perih dan sensitif",Sakit Gusi
-"abses di gusi dan terasa berdenyut",Abses Gigi
-"ada benjolan di gusi dan sangat nyeri",Abses Gigi
-"gusi bernanah dan bau mulut parah",Abses Gigi
-"gigi terasa berdenyut nyeri luar biasa",Abses Gigi
-"bengkak di rahang dan nyeri gigi",Abses Gigi
-"gusi bernanah dan pipi bengkak",Abses Gigi
-"infeksi gigi dan rahang membengkak",Abses Gigi
-"gigi terasa berdenyut dan ada nanah",Abses Gigi
-"gigi sensitif banget saat kena udara dingin",Gigi Sensitif
-"ngilu gigi saat minum panas atau dingin",Gigi Sensitif
-"gigi terasa ngilu tiba tiba tanpa sebab",Gigi Sensitif
-"saraf gigi terasa sensitif saat sikat gigi",Gigi Sensitif
-"gigi ngilu saat makan makanan manis",Gigi Sensitif
-"gigi sensitif di bagian depan",Gigi Sensitif
-"gigi bungsu tumbuh dan terasa sakit",Gigi Bungsu
-"gigi geraham belakang baru tumbuh sakit",Gigi Bungsu
-"gigi bungsu tumbuh miring dan nyeri",Gigi Bungsu
-"rahang belakang sakit ada gigi baru tumbuh",Gigi Bungsu
-"gigi bungsu bengkak dan sulit membuka mulut",Gigi Bungsu
-"berat badan kurang dan badan lemas",Malnutrisi
-"tubuh kurus dan sering pusing karena kurang makan",Malnutrisi
-"kekurangan gizi dan rambut rontok",Malnutrisi
-"badan kurus drastis dan tidak berenergi",Malnutrisi
-"makan sedikit tapi badan tidak bertenaga",Malnutrisi
-"kurang makan dan sering lemas",Malnutrisi
-"anak susah makan dan berat badan tidak naik",Malnutrisi
-"tubuh terasa lemah karena asupan gizi kurang",Malnutrisi
-"rambut rontok dan kuku rapuh kurang nutrisi",Malnutrisi
-"pucat dan lemas karena kurang makan bergizi",Malnutrisi
-"berat badan berlebih dan susah turun",Obesitas
-"gemuk dan sesak saat beraktivitas",Obesitas
-"kelebihan berat badan dan sendi lutut sakit",Obesitas
-"badan berat dan mudah lelah saat jalan",Obesitas
-"perut buncit dan susah olahraga",Obesitas
-"badan gemuk dan sering pegal",Obesitas
-"kelebihan berat badan mau konsultasi diet",Obesitas
-"obesitas dan ingin program penurunan berat badan",Obesitas
-"tubuh gemuk dan kolesterol tinggi",Obesitas
-"berat badan naik terus dan sulit dikontrol",Obesitas
-"sering pusing dan lemas karena kurang darah",Anemia
-"muka pucat dan mudah lelah",Anemia
-"anemia dan jantung berdebar saat berdiri",Anemia
-"hemoglobin rendah dan badan lemas",Anemia
-"kurang darah dan kepala pusing",Anemia
-"mata berkunang dan lemas karena anemia",Anemia
-"sering pingsan dan tubuh terasa lemah",Anemia
-"cepat lelah dan nafas sesak saat aktivitas ringan",Anemia
-"kuku pucat dan mudah lemas anemia",Anemia
-"darah rendah dan sering pusing",Anemia
-"susah makan dan berat badan tidak ideal",Gangguan Makan
-"tidak nafsu makan sudah berhari hari",Gangguan Makan
-"mual saat melihat makanan",Gangguan Makan
-"makan berlebihan lalu merasa bersalah",Gangguan Makan
-"takut gemuk dan tidak mau makan",Gangguan Makan
-"konsultasi pola makan karena tidak teratur",Gangguan Makan
-"porsi makan tidak terkontrol",Gangguan Makan
-"badan lemas karena pola makan buruk",Gangguan Makan
-"kurang vitamin C dan sering sariawan",Defisiensi Vitamin
-"rambut rontok dan kuku rapuh kekurangan vitamin",Defisiensi Vitamin
-"tulang terasa nyeri karena kurang kalsium",Defisiensi Vitamin
-"kurang vitamin D dan tulang mudah nyeri",Defisiensi Vitamin
-"sering kram otot karena kurang magnesium",Defisiensi Vitamin
-"kulit kusam dan lelah kurang vitamin B",Defisiensi Vitamin
-"kekurangan zat besi dan lemas",Defisiensi Vitamin
-"imun tubuh lemah sering sakit kekurangan vitamin",Defisiensi Vitamin
-"mual di pagi hari sudah beberapa minggu",Kehamilan
-"telat haid dan mual muntah tiap pagi",Kehamilan
-"hamil muda dan sering pusing mual",Kehamilan
-"morning sickness dan tidak nafsu makan",Kehamilan
-"kontrol kehamilan rutin trimester pertama",Kehamilan
-"hamil dan perut terasa kencang",Kehamilan
-"gerak janin berkurang ingin periksa",Kehamilan
-"hamil muda dan bercak darah ringan",Kehamilan
-"mual parah saat hamil dan tidak bisa makan",Kehamilan
-"kehamilan berisiko ingin konsultasi dokter",Kehamilan
-"nyeri perut saat hamil muda",Kehamilan
-"hamil trimester dua dan kaki bengkak",Kehamilan
+"migrain dengan aura melihat kilatan cahaya",Gangguan Saraf
+"tangan kiri lemah tidak bisa menggenggam",Gangguan Saraf
+"pusing berputar setelah menunduk",Gangguan Saraf
+"kepala pusing seperti mau pingsan",Gangguan Saraf
+"kesemutan di jari jari tangan",Gangguan Saraf
+"sakit kepala cluster sebelah mata",Gangguan Saraf
+"tremor saat memegang gelas",Gangguan Saraf
+"kaki terasa seperti tertusuk jarum",Gangguan Saraf
+"vertigo berat sampai tidak bisa berdiri",Gangguan Saraf
+"kepala nyeri seperti ditekan pita",Gangguan Saraf
+"tangan gemetar saat stres",Gangguan Saraf
+"mati rasa di pipi kiri",Gangguan Saraf
+"sakit kepala belakang atas",Gangguan Saraf
+"kesemutan di telapak kaki",Gangguan Saraf
+"pusing berputar saat di tempat ramai",Gangguan Saraf
+"migraine dengan mual dan sensitif cahaya",Gangguan Saraf
+"kaki kram terus menerus malam hari",Gangguan Saraf
+"pusing dan pandangan gelap sesaat",Gangguan Saraf
+"tangan kebas saat tidur",Gangguan Saraf
+"kepala pusing seperti melayang",Gangguan Saraf
+"otot wajah berkedut tidak berhenti",Gangguan Saraf
+"kesemutan di lidah dan mulut",Gangguan Saraf
+"sakit kepala saat bangun pagi",Gangguan Saraf
+"vertigo saat naik turun tangga",Gangguan Saraf
+"tangan kanan lemah dan sulit menulis",Gangguan Saraf
+"kepala pusing saat berdiri lama",Gangguan Saraf
+"otot betis berkedut terus",Gangguan Saraf
+"mati rasa di jempol telunjuk",Gangguan Saraf
+"migrain saat hamil",Gangguan Saraf
+"pusing seperti di kapal",Gangguan Saraf
+"tangan kesemutan sampai bahu",Gangguan Saraf
+"sakit kepala tegang setiap sore",Gangguan Saraf
+"vertigo kambuh setiap 3 bulan",Gangguan Saraf
+"kaki gemetar tidak bisa diam",Gangguan Saraf
+"pusing saat melihat gerakan cepat",Gangguan Saraf
+"kepala nyeri semua bagian",Gangguan Saraf
+"kesemutan di ujung jari kaki",Gangguan Saraf
+"migrain sampai tidak bisa aktivitas",Gangguan Saraf
+"pusing berputar setelah mengemudi",Gangguan Saraf
+"tangan kram dan kaku",Gangguan Saraf
+"nyeri dada sebelah kiri seperti ditekan",Gangguan Jantung
+"jantung berdebar kencang tiba tiba",Gangguan Jantung
+"dada terasa tidak nyaman dan sesak",Gangguan Jantung
+"detak jantung tidak teratur seperti loncat",Gangguan Jantung
+"nyeri dada menjalar ke lengan kiri",Gangguan Jantung
+"jantung berdegup cepat saat istirahat",Gangguan Jantung
+"dada sakit saat beraktivitas ringan",Gangguan Jantung
+"sesak napas dan nyeri dada saat malam",Gangguan Jantung
+"berdebar debar disertai keringat dingin",Gangguan Jantung
+"jantung seperti berhenti sebentar lalu berdebar",Gangguan Jantung
+"nyeri dada kiri dan rahang terasa kaku",Gangguan Jantung
+"detak jantung cepat dan napas pendek",Gangguan Jantung
+"dada terasa tertekan benda berat",Gangguan Jantung
+"jantung berdebar setelah begadang",Gangguan Jantung
+"nyeri dada seperti ditusuk jarum",Gangguan Jantung
+"sesak dada dan lemas tiba tiba",Gangguan Jantung
+"palpitasi sampai terasa di tenggorokan",Gangguan Jantung
+"dada sakit menjalar ke punggung",Gangguan Jantung
+"jantung berdebar saat berbaring",Gangguan Jantung
+"nyeri dada kiri seperti diremas",Gangguan Jantung
+"detak jantung di atas 120 per menit",Gangguan Jantung
+"dada tidak nyaman setelah makan",Gangguan Jantung
+"jantung berdebar disertai pusing",Gangguan Jantung
+"sakit dada kiri saat stres",Gangguan Jantung
+"sesak napas dan jantung berdebar",Gangguan Jantung
+"dada terasa penuh seperti gas",Gangguan Jantung
+"palpitasi setiap malam",Gangguan Jantung
+"nyeri dada yang datang dan pergi",Gangguan Jantung
+"jantung berdebar kencang setelah minum kopi",Gangguan Jantung
+"dada sakit saat menarik napas",Gangguan Jantung
+"detak jantung lambat tapi berdebar",Gangguan Jantung
+"nyeri dada sebelah kanan",Gangguan Jantung
+"jantung berdebar disertai gemetar",Gangguan Jantung
+"dada terasa nyeri dan mual",Gangguan Jantung
+"berdebar debar setelah berolahraga ringan",Gangguan Jantung
+"sesak dan nyeri dada saat emosi",Gangguan Jantung
+"jantung terasa memukul tulang rusuk",Gangguan Jantung
+"nyeri dada kiri saat tidur miring",Gangguan Jantung
+"detak jantung tidak beraturan berhari hari",Gangguan Jantung
+"dada tidak nyaman dan mudah lelah",Gangguan Jantung
+"jantung berdebar tanpa sebab",Gangguan Jantung
+"sakit dada seperti tertusuk di kiri",Gangguan Jantung
+"palpitasi sampai susah tidur",Gangguan Jantung
+"dada terasa penuh sesak",Gangguan Jantung
+"jantung berdebar disertai napas ngos ngosan",Gangguan Jantung
+"nyeri dada kiri dan linu di lengan",Gangguan Jantung
+"detak jantung tidak teratur setiap hari",Gangguan Jantung
+"dada sakit saat menyentuh",Gangguan Jantung
+"jantung berdebar dan kepala pusing berat",Gangguan Jantung
+"sesak di dada seperti tertahan",Gangguan Jantung
+"pinggang belakang nyeri kanan",Gangguan Ginjal
+"buang air kecil terasa panas dan perih",Gangguan Ginjal
+"kaki dan mata bengkak pagi hari",Gangguan Ginjal
+"urin berwarna keruh dan berbusa",Gangguan Ginjal
+"sakit pinggang menjalar ke selangkangan",Gangguan Ginjal
+"sering buang air kecil sedikit sedikit",Gangguan Ginjal
+"demam menggigil disertai nyeri pinggang",Gangguan Ginjal
+"urin berwarna merah muda",Gangguan Ginjal
+"nyeri pinggang kiri dan mual",Gangguan Ginjal
+"buang air kecil tidak tuntas",Gangguan Ginjal
+"kaki bengkak dan wajah sembab",Gangguan Ginjal
+"urin berbau tidak sedap",Gangguan Ginjal
+"nyeri pinggang menetap terus",Gangguan Ginjal
+"buang air kecil malam lebih dari 3 kali",Gangguan Ginjal
+"darah dalam urin tanpa rasa sakit",Gangguan Ginjal
+"pinggang sakit setelah jatuh",Gangguan Ginjal
+"tekanan darah tinggi dan urin berbusa",Gangguan Ginjal
+"kencing berbatu terasa tajam",Gangguan Ginjal
+"nyeri pinggang disertai demam tinggi",Gangguan Ginjal
+"buang air kecil susah keluar",Gangguan Ginjal
+"kaki bengkak dan badan lemas",Gangguan Ginjal
+"urin keruh seperti cucian beras",Gangguan Ginjal
+"nyeri perut bagian bawah menjalar ke pinggang",Gangguan Ginjal
+"sering kencing tapi sedikit",Gangguan Ginjal
+"darah dalam urin dan nyeri pinggang",Gangguan Ginjal
+"mata cekung dan kulit kering",Gangguan Ginjal
+"kencing terasa sakit di ujung",Gangguan Ginjal
+"pinggang nyeri setelah minum sedikit",Gangguan Ginjal
+"buang air kecil berbusa susah hilang",Gangguan Ginjal
+"kram otot di malam hari",Gangguan Ginjal
+"urin berwarna coklat seperti teh",Gangguan Ginjal
+"nyeri pinggang dan perut kembung",Gangguan Ginjal
+"kencing berdarah saat awal buang air kecil",Gangguan Ginjal
+"kaki bengkak tidak simetris",Gangguan Ginjal
+"mual muntah disertai nyeri pinggang",Gangguan Ginjal
+"buang air kecil seperti ada pasir",Gangguan Ginjal
+"pinggang sakit saat berdiri lama",Gangguan Ginjal
+"tekanan darah tinggi tidak terkontrol",Gangguan Ginjal
+"kencing sakit perih di sekitar perut",Gangguan Ginjal
+"urin berbusa dan tekanan darah tinggi",Gangguan Ginjal
+"nyeri pinggang kiri yang menyebar",Gangguan Ginjal
+"kencing terus menerus setiap jam",Gangguan Ginjal
+"darah dalam urin tanpa nyeri",Gangguan Ginjal
+"kaki bengkak dan sesak napas",Gangguan Ginjal
+"buang air kecil berbusa sangat banyak",Gangguan Ginjal
+"nyeri pinggang dan lemas",Gangguan Ginjal
+"kencing tidak lancar meski banyak minum",Gangguan Ginjal
+"demam dan nyeri pinggang bersamaan",Gangguan Ginjal
+"wajah bengkak terutama pagi hari",Gangguan Ginjal
+"kencing berbusa disertai pegal",Gangguan Ginjal
+"mata merah dan terasa perih seperti kemasukan debu",Gangguan Mata
+"penglihatan kabur pada satu mata",Gangguan Mata
+"mata berair terus dan sensitif cahaya",Gangguan Mata
+"mata terasa mengganjal seperti ada pasir",Gangguan Mata
+"minus mata bertambah cepat",Gangguan Mata
+"kelopak mata bengkak dan merah",Gangguan Mata
+"mata merah dan keluar kotoran kuning",Gangguan Mata
+"penglihatan dobel melihat 2",Gangguan Mata
+"mata terasa gatal dan berair setelah keluar rumah",Gangguan Mata
+"bintitan di kelopak mata atas",Gangguan Mata
+"mata kering dan terasa panas",Gangguan Mata
+"penglihatan buram seperti ada selaput",Gangguan Mata
+"mata merah disertai rasa sakit",Gangguan Mata
+"kelopak mata turun tidak bisa terbuka penuh",Gangguan Mata
+"mata silau saat melihat lampu",Gangguan Mata
+"bercak hitam melayang di pandangan",Gangguan Mata
+"mata perih setelah pakai lensa kontak",Gangguan Mata
+"penglihatan kabur mendadak",Gangguan Mata
+"mata bengkak setelah bangun tidur",Gangguan Mata
+"sakit kepala di belakang mata",Gangguan Mata
+"mata gatal merah dan keluar air",Gangguan Mata
+"penglihatan seperti ada lingkaran cahaya",Gangguan Mata
+"kelopak mata bergetar terus",Gangguan Mata
+"mata terasa nyeri saat digerakkan",Gangguan Mata
+"penglihatan buram seperti berkabut",Gangguan Mata
+"mata merah dan bengkak parah",Gangguan Mata
+"banyak kotoran mata di pagi hari",Gangguan Mata
+"mata terasa kering dan perih di ruangan AC",Gangguan Mata
+"penglihatan gelap tiba tiba",Gangguan Mata
+"mata terasa berdenyut",Gangguan Mata
+"bintik merah di bagian putih mata",Gangguan Mata
+"mata gatal dan kelopak mata bersisik",Gangguan Mata
+"penglihatan kabur setelah baca lama",Gangguan Mata
+"mata berair terus tanpa sebab",Gangguan Mata
+"terasa ada bayangan di mata",Gangguan Mata
+"kelopak mata sulit dibuka saat pagi",Gangguan Mata
+"mata merah dan perih seperti terbakar",Gangguan Mata
+"penglihatan kabur bergantian",Gangguan Mata
+"mata terasa panas dan berair",Gangguan Mata
+"benjolan kecil di kelopak mata tidak sakit",Gangguan Mata
+"mata cepat lelah saat membaca",Gangguan Mata
+"penglihatan buram saat malam hari",Gangguan Mata
+"mata kering dan terasa pasir",Gangguan Mata
+"bintitan berulang di tempat sama",Gangguan Mata
+"mata merah dan keluar air terus",Gangguan Mata
+"penglihatan seperti terowongan",Gangguan Mata
+"kelopak mata bengkak dan gatal",Gangguan Mata
+"mata terasa nyeri di bagian dalam",Gangguan Mata
+"penglihatan kabur dan sakit kepala",Gangguan Mata
+"mata terasa tidak nyaman tanpa reda",Gangguan Mata
+"sakit gigi geraham bawah saat mengunyah",Gangguan Gigi & Mulut
+"gigi berlubang dan sakit saat minum dingin",Gangguan Gigi & Mulut
+"gusi bengkak dan berdarah saat sikat gigi",Gangguan Gigi & Mulut
+"gigi ngilu saat makan manis",Gangguan Gigi & Mulut
+"sariawan besar di pipi bagian dalam",Gangguan Gigi & Mulut
+"gigi goyang dan sakit saat disentuh",Gangguan Gigi & Mulut
+"gusi bengkak seperti bisul dan bernanah",Gangguan Gigi & Mulut
+"lidah terasa perih seperti terbakar",Gangguan Gigi & Mulut
+"gigi terasa ngilu terus tanpa sebab",Gangguan Gigi & Mulut
+"sakit gigi menjalar ke telinga dan kepala",Gangguan Gigi & Mulut
+"gusi berwarna merah keunguan dan nyeri",Gangguan Gigi & Mulut
+"gigi depan berlubang hitam",Gangguan Gigi & Mulut
+"sariawan di ujung lidah sakit sekali",Gangguan Gigi & Mulut
+"gigi terasa panjang dan sakit saat digigit",Gangguan Gigi & Mulut
+"gusi turun sehingga akar gigi terlihat",Gangguan Gigi & Mulut
+"bau mulut tidak sedap meski sudah sikat gigi",Gangguan Gigi & Mulut
+"gigi ngilu saat minum panas",Gangguan Gigi & Mulut
+"gusi bengkak di sekitar gigi bungsu",Gangguan Gigi & Mulut
+"bibir pecah pecah dan tidak sembuh",Gangguan Gigi & Mulut
+"gigi patah dan meninggalkan akar",Gangguan Gigi & Mulut
+"gusi mudah berdarah tanpa sengaja",Gangguan Gigi & Mulut
+"sakit gigi berdenyut sampai tidak bisa tidur",Gangguan Gigi & Mulut
+"gigi terasa ada lubang tidak kelihatan",Gangguan Gigi & Mulut
+"sariawan menyebar di dalam mulut",Gangguan Gigi & Mulut
+"gigi sensitif saat sikat gigi",Gangguan Gigi & Mulut
+"gusi seperti terkelupas",Gangguan Gigi & Mulut
+"gigi terasa kendur padahal tidak goyang",Gangguan Gigi & Mulut
+"ada rasa asin di mulut terus",Gangguan Gigi & Mulut
+"gigi geraham berlubang besar",Gangguan Gigi & Mulut
+"gusi bengkak dan sulit membuka mulut",Gangguan Gigi & Mulut
+"sakit gigi setelah tambal copot",Gangguan Gigi & Mulut
+"gusi berdarah dan bengkak di satu titik",Gangguan Gigi & Mulut
+"gigi terasa kasar dan bergerigi",Gangguan Gigi & Mulut
+"mulut terasa pahit terus menerus",Gangguan Gigi & Mulut
+"gigi terasa berkarang banyak",Gangguan Gigi & Mulut
+"gusi nyeri saat menyikat",Gangguan Gigi & Mulut
+"sakit gigi seperti ditusuk jarum",Gangguan Gigi & Mulut
+"gigi tambalan lepas dan sakit",Gangguan Gigi & Mulut
+"sariawan tidak sembuh lebih 2 minggu",Gangguan Gigi & Mulut
+"gigi berjejal menyulitkan sikat gigi",Gangguan Gigi & Mulut
+"gusi terasa gatal dan merah",Gangguan Gigi & Mulut
+"mulut kering terus meski banyak minum",Gangguan Gigi & Mulut
+"gigi terasa ngilu saat berangin",Gangguan Gigi & Mulut
+"benjolan di langit langit mulut",Gangguan Gigi & Mulut
+"gigi susu tidak copot padahal sudah besar",Gangguan Gigi & Mulut
+"gusi mengelupas dan berdarah",Gangguan Gigi & Mulut
+"sakit gigi saat mengunyah makanan keras",Gangguan Gigi & Mulut
+"lidah berlapis putih dan bau mulut",Gangguan Gigi & Mulut
+"gigi terasa tidak rata permukaannya",Gangguan Gigi & Mulut
+"gusi bengkak setelah pakai kawat gigi",Gangguan Gigi & Mulut
+"anak saya belum bisa bicara padahal sudah 2 tahun",Tumbuh Kembang Anak
+"anak saya belum bisa ngomong sama sekali",Tumbuh Kembang Anak
+"anak belum bicara di usia 18 bulan",Tumbuh Kembang Anak
+"anak saya 3 tahun belum lancar bicara",Tumbuh Kembang Anak
+"anak lambat ngomong",Tumbuh Kembang Anak
+"anak telat bicara dibanding teman sebayanya",Tumbuh Kembang Anak
+"anak saya kurus sekali",Tumbuh Kembang Anak
+"anak kurus tidak mau makan",Tumbuh Kembang Anak
+"anak saya badannya kurus dan susah makan",Tumbuh Kembang Anak
+"bayi saya kurus meski sudah sering menyusu",Tumbuh Kembang Anak
+"balita kurus berat badan tidak naik naik",Tumbuh Kembang Anak
+"anak 1 tahun berat badan tidak naik",Tumbuh Kembang Anak
+"bb anak tidak naik sudah 3 bulan",Tumbuh Kembang Anak
+"berat badan anak turun drastis",Tumbuh Kembang Anak
+"anak saya belum bisa berjalan usia 14 bulan",Tumbuh Kembang Anak
+"balita belum bisa jalan padahal sudah 1,5 tahun",Tumbuh Kembang Anak
+"perkembangan motorik anak lambat",Tumbuh Kembang Anak
+"anak belum bisa duduk sendiri",Tumbuh Kembang Anak
+"anak hiperaktif susah diatur",Tumbuh Kembang Anak
+"anak sulit fokus dan tidak mau diam",Tumbuh Kembang Anak
+"anak tidak merespon saat dipanggil namanya",Tumbuh Kembang Anak
+"anak tidak ada kontak mata",Tumbuh Kembang Anak
+"anak kurang bersosialisasi dengan teman",Tumbuh Kembang Anak
+"anak sering tantrum tidak terkontrol",Tumbuh Kembang Anak
+"anak saya tidak berkembang seperti anak normal",Tumbuh Kembang Anak
+"pertumbuhan anak lambat dari teman sebaya",Tumbuh Kembang Anak
+"anak sering rewel dan menangis terus",Tumbuh Kembang Anak
+"bayi saya rewel dan susah tidur",Tumbuh Kembang Anak
+"anak saya mengalami keterlambatan tumbuh kembang",Tumbuh Kembang Anak
+"konsultasi tumbuh kembang anak usia 2 tahun",Tumbuh Kembang Anak
+"anak sering sakit terus menerus",Tumbuh Kembang Anak
+"anak susah makan sama sekali",Tumbuh Kembang Anak
+"anak tidak mau makan sayur dan buah",Tumbuh Kembang Anak
+"anak pilih pilih makanan",Tumbuh Kembang Anak
+"balita saya tidak nafsu makan sudah 2 minggu",Tumbuh Kembang Anak
+"anak 2 tahun bicaranya tidak jelas",Tumbuh Kembang Anak
+"anak bicara tidak jelas dan pelo",Tumbuh Kembang Anak
+"anak saya terlambat duduk dan merangkak",Tumbuh Kembang Anak
+"anak 9 bulan belum bisa tengkurap",Tumbuh Kembang Anak
+"bayi saya belum bisa merespon senyuman",Tumbuh Kembang Anak
+"badan anak sangat kurus tidak seperti anak lain",Malnutrisi
+"anak kekurangan gizi",Malnutrisi
+"anak saya gizi buruk",Malnutrisi
+"tubuh sangat kurus kurang gizi",Malnutrisi
+"sangat kurus dan tidak bertenaga",Malnutrisi
+"kurus dan lemah susah beraktivitas",Malnutrisi
+"badan kurus drastis berat badan turun terus",Malnutrisi
+"kekurangan gizi berat badan jauh di bawah normal",Malnutrisi
+"rambut rontok dan badan kurus",Malnutrisi
+"kuku rapuh dan badan kurus kurang gizi",Malnutrisi
+"makan sedikit badan lemas tidak bertenaga",Malnutrisi
+"tubuh kurus tidak mau gemuk padahal sudah banyak makan",Malnutrisi
+"bb jauh di bawah ideal",Malnutrisi
+"berat badan kurang jauh dari normal",Malnutrisi
+"perut buncit tapi tubuh kurus",Malnutrisi
+"kulit kering badan kurus kurang gizi",Malnutrisi
+"rambut kusam dan mudah patah kurang nutrisi",Malnutrisi
+"wajah pucat tubuh kurus kurang gizi",Malnutrisi
+"mau imunisasi anak",Imunisasi
+"jadwal vaksin anak bulan ini",Imunisasi
+"vaksin apa yang harus diberikan bayi usia 2 bulan",Imunisasi
+"belum imunisasi lengkap mau melengkapi",Imunisasi
+"bayi mau disuntik vaksin",Imunisasi
+"anak perlu booster vaksin",Imunisasi
+"cek jadwal imunisasi anak",Imunisasi
+"vaksin polio balita",Imunisasi
+"mau vaksin campak untuk anak",Imunisasi
+"anak demam setelah imunisasi",Imunisasi
+"efek samping setelah vaksin bcg",Imunisasi
+"bekas suntikan vaksin bengkak",Imunisasi
+"mau vaksinasi covid",Imunisasi
+"imunisasi anak belum lengkap",Imunisasi
+"vaksin hpv untuk remaja putri",Imunisasi
+"anak panas setelah vaksin dpt",Imunisasi
+"konsultasi imunisasi bayi baru lahir",Imunisasi
+"batuk terus tidak berhenti sudah seminggu",ISPA
+"pilek dan hidung meler tidak berhenti",ISPA
+"demam dan badan pegal pegal",ISPA
+"tenggorokan sakit dan sulit menelan",ISPA
+"hidung tersumbat dan kepala berat",ISPA
+"suara serak dan tenggorokan kering",ISPA
+"badan panas disertai batuk pilek",ISPA
+"batuk berdahak sudah beberapa hari",ISPA
+"hidung berair dan bersin terus",ISPA
+"demam menggigil disertai flu",ISPA
+"kepala pusing dan badan lemas demam",ISPA
+"meriang dan tidak enak badan",ISPA
+"tenggorokan gatal dan batuk kering",ISPA
+"influenza badan pegal demam",ISPA
+"batuk tidak berhenti di malam hari",ISPA
+"nyeri perut dan mual",Gangguan Pencernaan
+"diare sudah 3 kali hari ini",Gangguan Pencernaan
+"perut mulas dan kembung",Gangguan Pencernaan
+"muntah terus tidak bisa makan",Gangguan Pencernaan
+"maag kambuh ulu hati sakit",Gangguan Pencernaan
+"buang air besar berdarah",Gangguan Pencernaan
+"sembelit tidak bisa bab 3 hari",Gangguan Pencernaan
+"asam lambung naik dada terasa panas",Gangguan Pencernaan
+"perut melilit dan mencret",Gangguan Pencernaan
+"mual setiap habis makan",Gangguan Pencernaan
+"kepala pusing tekanan darah 160",Hipertensi
+"tensi saya tinggi 150 90",Hipertensi
+"leher terasa kaku darah tinggi",Hipertensi
+"hipertensi obat habis mau kontrol",Hipertensi
+"tekanan darah tidak terkontrol",Hipertensi
+"kepala bagian belakang sakit tensi tinggi",Hipertensi
+"leher tegang dan mata berkunang darah tinggi",Hipertensi
+"pusing tengkuk darah tinggi",Hipertensi
+"gula darah saya 350 harus bagaimana",Diabetes
+"sering kencing malam gula darah tinggi",Diabetes
+"luka di kaki susah sembuh diabetes",Diabetes
+"sering haus dan lapar gula darah naik",Diabetes
+"kesemutan kaki diabetes tidak terkontrol",Diabetes
+"gula darah fluktuatif butuh pengobatan",Diabetes
+"cek kadar gula darah rutin",Diabetes
+"kulit gatal gatal dan ruam merah",Penyakit Kulit
+"eksim di tangan kambuh lagi",Penyakit Kulit
+"alergi kulit setelah makan udang",Penyakit Kulit
+"bintik merah di seluruh badan",Penyakit Kulit
+"biduran gatal seluruh tubuh",Penyakit Kulit
+"kulit bersisik dan mengelupas",Penyakit Kulit
+"bercak putih di kulit",Penyakit Kulit
+"nyeri dada sebelah kiri",Gangguan Jantung
+"jantung berdebar tidak teratur",Gangguan Jantung
+"dada terasa ditekan dan sesak",Gangguan Jantung
+"detak jantung cepat tidak normal",Gangguan Jantung
+"keringat dingin tiba tiba dada nyeri",Gangguan Jantung
+"kesemutan dan kebas di tangan",Gangguan Saraf
+"migrain sebelah kiri berdenyut",Gangguan Saraf
+"vertigo dunia terasa berputar",Gangguan Saraf
+"wajah kaku tiba tiba",Gangguan Saraf
+"kaki kebas dan tangan gemetar",Gangguan Saraf
+"mata merah dan gatal",Gangguan Mata
+"penglihatan kabur tiba tiba",Gangguan Mata
+"mata berair dan perih",Gangguan Mata
+"mata bengkak dan susah dibuka",Gangguan Mata
+"kotoran mata banyak dan kuning",Gangguan Mata
+"pinggang sakit dan kencing nyeri",Gangguan Ginjal
+"batu ginjal terasa nyeri pinggang",Gangguan Ginjal
+"urin keruh dan berbau",Gangguan Ginjal
+"kaki bengkak dan urin sedikit",Gangguan Ginjal
+"kencing berdarah dan nyeri",Gangguan Ginjal
+"sakit gigi berlubang sangat nyeri",Gangguan Gigi & Mulut
+"gigi bolong dan berdenyut",Gangguan Gigi & Mulut
+"gigi ngilu saat makan manis",Gangguan Gigi & Mulut
+"gigi geraham berlubang sakit",Gangguan Gigi & Mulut
+"gigi hitam dan berlubang",Gangguan Gigi & Mulut
+"gusi bengkak dan berdarah",Gangguan Gigi & Mulut
+"gusi merah dan nyeri",Gangguan Gigi & Mulut
+"gusi sensitif saat sikat gigi",Gangguan Gigi & Mulut
+"kontrol kehamilan trimester pertama",Kehamilan
+"mual muntah pagi hari hamil",Kehamilan
+"kaki bengkak saat hamil",Kehamilan
+"perdarahan saat hamil",Kehamilan
 "tekanan darah tinggi saat hamil",Kehamilan
-"siklus haid tidak teratur sudah beberapa bulan",Gangguan Menstruasi
-"nyeri haid yang sangat parah",Gangguan Menstruasi
-"haid tidak lancar dan perut kram",Gangguan Menstruasi
-"darah haid sangat banyak dan lemas",Gangguan Menstruasi
-"haid sudah telat 2 bulan tapi tidak hamil",Gangguan Menstruasi
-"nyeri haid sampai tidak bisa beraktivitas",Gangguan Menstruasi
-"haid tidak teratur dan jerawat",Gangguan Menstruasi
-"menstruasi sangat sedikit dan jarang",Gangguan Menstruasi
-"kram perut hebat saat haid",Gangguan Menstruasi
-"haid lebih dari 2 minggu tidak berhenti",Gangguan Menstruasi
-"konsultasi KB dan kontrasepsi yang aman",Kontrasepsi
-"ingin pasang IUD konsultasi dulu",Kontrasepsi
-"efek samping pil KB dan ingin ganti",Kontrasepsi
-"konsultasi metode kontrasepsi yang tepat",Kontrasepsi
-"suntik KB dan efek sampingnya",Kontrasepsi
-"berhenti KB dan ingin program hamil",Kontrasepsi
-"KB implan dan keluhan yang dirasakan",Kontrasepsi
-"terlambat suntik KB dan khawatir",Kontrasepsi
-"anak tidak mau makan dan berat badan kurang",Tumbuh Kembang Anak
-"anak terlambat bicara ingin konsultasi",Tumbuh Kembang Anak
-"pertumbuhan anak lambat dan kurus",Tumbuh Kembang Anak
-"anak sering sakit dan imun lemah",Tumbuh Kembang Anak
-"bayi tidak naik berat badan",Tumbuh Kembang Anak
-"anak demam dan rewel",Tumbuh Kembang Anak
-"anak susah makan sayur dan buah",Tumbuh Kembang Anak
-"balita berat badan tidak ideal",Tumbuh Kembang Anak
-"jadwal imunisasi anak yang perlu dilengkapi",Imunisasi
-"bayi belum imunisasi lengkap",Imunisasi
-"konsultasi vaksin apa yang perlu untuk anak",Imunisasi
-"imunisasi booster dan jadwalnya",Imunisasi
-"efek samping vaksin pada anak",Imunisasi
-"imunisasi anak terlambat dan ingin kejar",Imunisasi
-"vaksinasi dan jadwal untuk bayi baru lahir",Imunisasi
-"nyeri sendi lutut saat berjalan",Lainnya
-"telinga berdenging terus menerus",Lainnya
-"badan pegal pegal setelah kerja keras",Lainnya
-"keseleo kaki setelah jatuh",Lainnya
-"sariawan besar di dalam mulut",Lainnya
-"rambut rontok parah dalam jumlah banyak",Lainnya
-"nyeri lutut saat naik turun tangga",Lainnya
-"telinga sakit dan keluar cairan kuning",Lainnya
-"badan pegel semua setelah olahraga berat",Lainnya
-"pergelangan tangan sakit saat diputar",Lainnya
-"hidung mimisan tiba tiba dan sering",Lainnya
-"nyeri bahu dan leher setelah kerja lama",Lainnya
-"sakit kepala ringan biasa",Lainnya
-"capek dan kurang tidur",Lainnya
-"pingsan tiba tiba dan lemas",Lainnya
+"janin tidak bergerak aktif",Kehamilan
+"haid tidak teratur sudah 3 bulan",Gangguan Menstruasi
+"nyeri haid sangat sakit",Gangguan Menstruasi
+"mens banyak tidak berhenti",Gangguan Menstruasi
+"haid telat 2 bulan",Gangguan Menstruasi
+"kram perut saat menstruasi",Gangguan Menstruasi
+"konsultasi pemasangan kb",Kontrasepsi
+"pil kb efek samping",Kontrasepsi
+"mau pasang iud",Kontrasepsi
+"suntik kb sudah tidak cocok",Kontrasepsi
+"lepas kb ingin punya anak",Kontrasepsi
+"berat badan berlebih susah turun",Obesitas
+"gemuk dan perut buncit ingin diet",Obesitas
+"kelebihan berat badan kolesterol tinggi",Obesitas
+"program penurunan berat badan",Obesitas
+"tubuh gemuk susah gerak",Obesitas
+"kurang darah sering lemas dan pusing",Anemia
+"hemoglobin rendah muka pucat",Anemia
+"wajah pucat dan mudah lelah",Anemia
+"hb rendah sering pusing",Anemia
+"pingsan akibat anemia",Anemia
+"tidak nafsu makan sama sekali",Gangguan Makan
+"susah makan takut gemuk",Gangguan Makan
+"makan berlebihan lalu menyesal",Gangguan Makan
+"pola makan tidak teratur",Gangguan Makan
+"anoreksia takut makan",Gangguan Makan
+"kurang vitamin c sariawan terus",Defisiensi Vitamin
+"kekurangan vitamin d tulang lemah",Defisiensi Vitamin
+"kram otot kekurangan magnesium",Defisiensi Vitamin
+"imun lemah butuh suplemen vitamin",Defisiensi Vitamin
+"kulit kusam kekurangan vitamin b",Defisiensi Vitamin
+"batuk pilek disertai demam sudah 4 hari",ISPA
+"tenggorokan sakit dan badan terasa panas",ISPA
+"pilek hijau dan batuk berdahak kuning",ISPA
+"demam 38.5 dan kepala pusing berat",ISPA
+"flu disertai nyeri sendi seluruh badan",ISPA
+"batuk kering dan gatal di tenggorokan",ISPA
+"hidung tersumbat total dan pilek encer",ISPA
+"demam meriang dan badan terasa ngilu",ISPA
+"batuk terus sampai suara serak",ISPA
+"pilek dan bersin disertai mata berair",ISPA
+"tensi 145/95 dan kepala terasa ringan",Hipertensi
+"tekanan darah 150/95 dan leher pegal",Hipertensi
+"darah tinggi disertai jantung berdebar",Hipertensi
+"tensi 155/100 dan pusing berat",Hipertensi
+"kepala berat dan tensi 140/90",Hipertensi
+"tekanan darah naik setelah makan asin",Hipertensi
+"tensi 160/95 dan wajah kemerahan",Hipertensi
+"pusing dan tensi tidak stabil",Hipertensi
+"hipertensi disertai susah tidur",Hipertensi
+"tekanan darah 170/90 dan leher tegang",Hipertensi
+"gula darah 280 dan sering pusing",Diabetes
+"diabetes tipe 2 gula darah tidak stabil",Diabetes
+"gula darah 320 dan luka di kaki",Diabetes
+"kesemutan hebat di kedua telapak kaki",Diabetes
+"gula darah puasa 300 dan sering haus",Diabetes
+"diabetes kambuh disertai lemas",Diabetes
+"gula darah 350 dan penglihatan buram",Diabetes
+"sering kencing dan gula darah tinggi",Diabetes
+"gula darah 270 dan mulut terasa pahit",Diabetes
+"diabetes disertai kesemutan di tangan",Diabetes
+"perut mual dan diare 2 kali hari ini",Gangguan Pencernaan
+"sakit ulu hati dan perut kembung",Gangguan Pencernaan
+"maag akut disertai mual muntah",Gangguan Pencernaan
+"diare encer sudah 6 kali",Gangguan Pencernaan
+"perut kram dan BAB tidak lancar",Gangguan Pencernaan
+"asam lambung naik disertai mual",Gangguan Pencernaan
+"sembelit 5 hari tidak BAB",Gangguan Pencernaan
+"muntah setelah makan dan perut sakit",Gangguan Pencernaan
+"perut begah dan sendawa terus menerus",Gangguan Pencernaan
+"diare lendir dan perut melilit",Gangguan Pencernaan
+"gatal di sela jari tangan dan kaki",Penyakit Kulit
+"ruam merah di punggung dan dada",Penyakit Kulit
+"kulit mengelupas di telapak tangan",Penyakit Kulit
+"biduran di seluruh badan setelah mandi",Penyakit Kulit
+"jerawat meradang di punggung",Penyakit Kulit
+"gatal di kulit kepala sampai mengelupas",Penyakit Kulit
+"bentol merah setelah kena debu",Penyakit Kulit
+"kulit kemerahan dan terasa gatal",Penyakit Kulit
+"eksim di tangan dan kaki kambuh",Penyakit Kulit
+"alergi kulit disertai bengkak",Penyakit Kulit
+"kepala pusing seperti berputar",Gangguan Saraf
+"migrain dengan mual dan muntah",Gangguan Saraf
+"kesemutan di seluruh tangan dan kaki",Gangguan Saraf
+"vertigo disertai keringat dingin",Gangguan Saraf
+"tangan gemetar saat memegang benda",Gangguan Saraf
+"kaki kebas dan susah berjalan",Gangguan Saraf
+"sakit kepala tegang di dahi",Gangguan Saraf
+"pusing berputar setelah bangun tidur",Gangguan Saraf
+"wajah sebelah terasa baal",Gangguan Saraf
+"tremor di jari jari tangan",Gangguan Saraf
+"nyeri dada seperti ditekan batu",Gangguan Jantung
+"jantung berdebar tidak beraturan",Gangguan Jantung
+"dada terasa sesak dan tidak nyaman",Gangguan Jantung
+"palpitasi disertai pusing",Gangguan Jantung
+"nyeri dada kiri saat tidur",Gangguan Jantung
+"jantung berdegup kencang tanpa sebab",Gangguan Jantung
+"dada sakit menjalar ke leher",Gangguan Jantung
+"sesak napas dan dada terasa berat",Gangguan Jantung
+"berdebar debar setelah makan",Gangguan Jantung
+"detak jantung cepat dan gelisah",Gangguan Jantung
+"nyeri pinggang kiri menjalar ke perut",Gangguan Ginjal
+"kencing berbusa dan kaki bengkak",Gangguan Ginjal
+"buang air kecil terasa perih",Gangguan Ginjal
+"urin keruh dan berbau menyengat",Gangguan Ginjal
+"pinggang sakit disertai demam",Gangguan Ginjal
+"kencing berdarah dan nyeri pinggang",Gangguan Ginjal
+"kaki bengkak dan wajah sembab",Gangguan Ginjal
+"sering kencing malam sampai 4 kali",Gangguan Ginjal
+"urin berbusa tidak hilang hilang",Gangguan Ginjal
+"nyeri pinggang kanan dan mual",Gangguan Ginjal
+"mata perih dan berair terus menerus",Gangguan Mata
+"penglihatan kabur di malam hari",Gangguan Mata
+"mata merah disertai keluar kotoran",Gangguan Mata
+"bintitan di kelopak mata bawah",Gangguan Mata
+"mata kering dan terasa berpasir",Gangguan Mata
+"penglihatan buram dan sakit kepala",Gangguan Mata
+"mata gatal dan merah setelah keluar",Gangguan Mata
+"kelopak mata bengkak dan nyeri",Gangguan Mata
+"mata silau dan susah melihat terang",Gangguan Mata
+"penglihatan dobel dan mata capek",Gangguan Mata
+"sakit gigi geraham kiri bawah",Gangguan Gigi & Mulut
+"gusi berdarah dan bau mulut",Gangguan Gigi & Mulut
+"gigi ngilu saat minum air dingin",Gangguan Gigi & Mulut
+"sariawan di bibir bagian dalam",Gangguan Gigi & Mulut
+"gigi berlubang sampai ke saraf",Gangguan Gigi & Mulut
+"gusi bengkak dan terasa berdenyut",Gangguan Gigi & Mulut
+"lidah terasa pahit dan kering",Gangguan Gigi & Mulut
+"gigi goyang karena usia lanjut",Gangguan Gigi & Mulut
+"mulut terasa asam terus menerus",Gangguan Gigi & Mulut
+"gigi sensitif saat menyikat gigi",Gangguan Gigi & Mulut
+"anak usia 2 tahun belum bisa bicara jelas",Tumbuh Kembang Anak
+"anak 18 bulan belum bisa jalan sendiri",Tumbuh Kembang Anak
+"bayi 9 bulan belum bisa merangkak",Tumbuh Kembang Anak
+"anak susah makan dan BB tidak naik",Tumbuh Kembang Anak
+"anak hiperaktif tidak bisa diam",Tumbuh Kembang Anak
+"anak tidak merespon saat dipanggil",Tumbuh Kembang Anak
+"anak terlambat bicara disertai tantrum",Tumbuh Kembang Anak
+"anak 3 tahun bicara masih pelo",Tumbuh Kembang Anak
+"anak tidak mau bersosialisasi",Tumbuh Kembang Anak
+"anak sering marah tanpa sebab",Tumbuh Kembang Anak
+"badan kurus dan tidak nafsu makan",Malnutrisi
+"anak gizi buruk BB kurang",Malnutrisi
+"kurus sekali dan sering sakit",Malnutrisi
+"BB jauh di bawah standar",Malnutrisi
+"tubuh kurus dan mudah lelah",Malnutrisi
+"anak kekurangan gizi kronis",Malnutrisi
+"kurus dan rambut rontok",Malnutrisi
+"badan kurus tidak bertambah berat",Malnutrisi
+"gizi kurang disertai anemia",Malnutrisi
+"anak kurus dan tidak aktif",Malnutrisi
+"imunisasi campak untuk anak 9 bulan",Imunisasi
+"vaksin polio tetes jadwalnya",Imunisasi
+"imunisasi DPT booster",Imunisasi
+"vaksin Hepatitis B untuk bayi baru lahir",Imunisasi
+"imunisasi BCG untuk bayi",Imunisasi
+"vaksin rotavirus jadwalnya",Imunisasi
+"imunisasi MMR untuk anak 2 tahun",Imunisasi
+"vaksin HPV untuk anak perempuan",Imunisasi
+"imunisasi JE untuk anak",Imunisasi
+"vaksin tifoid untuk anak sekolah",Imunisasi
+"hamil trimester pertama mual terus",Kehamilan
+"hamil 7 bulan perut terasa kencang",Kehamilan
+"kontrol kehamilan rutin trimester 2",Kehamilan
+"hamil muda disertai flek",Kehamilan
+"kaki bengkak saat hamil 8 bulan",Kehamilan
+"gerak janin sangat aktif",Kehamilan
+"hamil 5 bulan perut sakit",Kehamilan
+"mual muntah hebat saat hamil",Kehamilan
+"tekanan darah tinggi saat hamil 9 bulan",Kehamilan
+"hamil anak kedua perut berbeda",Kehamilan
+"haid tidak teratur selama 6 bulan",Gangguan Menstruasi
+"nyeri haid sampai pingsan",Gangguan Menstruasi
+"darah haid keluar sangat banyak",Gangguan Menstruasi
+"haid hanya 2 hari sedikit",Gangguan Menstruasi
+"telat haid 3 bulan tidak hamil",Gangguan Menstruasi
+"haid 2 kali dalam sebulan",Gangguan Menstruasi
+"nyeri haid tidak tertahankan",Gangguan Menstruasi
+"darah haid menggumpal besar",Gangguan Menstruasi
+"haid tidak teratur disertai jerawat",Gangguan Menstruasi
+"menstruasi sangat sakit setiap bulan",Gangguan Menstruasi
+"mau pasang KB spiral",Kontrasepsi
+"konsultasi KB yang cocok",Kontrasepsi
+"efek samping KB suntik",Kontrasepsi
+"mau ganti KB pil ke IUD",Kontrasepsi
+"KB implan menyebabkan haid tidak teratur",Kontrasepsi
+"berhenti KB ingin program",Kontrasepsi
+"pil KB sering lupa minum",Kontrasepsi
+"suntik KB telat 2 minggu",Kontrasepsi
+"KB darurat setelah berhubungan",Kontrasepsi
+"konsultasi KB pasca melahirkan",Kontrasepsi
+"berat badan naik terus susah turun",Obesitas
+"obesitas ingin program diet",Obesitas
+"gemuk dan sesak napas",Obesitas
+"perut buncit tidak ideal",Obesitas
+"kelebihan berat badan 20 kg",Obesitas
+"BMI di atas 30 konsultasi",Obesitas
+"gemuk dan kolesterol tinggi",Obesitas
+"berat badan 100 kg susah turun",Obesitas
+"obesitas disertai nyeri lutut",Obesitas
+"program penurunan berat badan medis",Obesitas
+"lemas dan pusing kurang darah",Anemia
+"hemoglobin 9 g/dL",Anemia
+"wajah pucat dan sering pingsan",Anemia
+"anemia disertai sesak napas",Anemia
+"kurang darah saat hamil",Anemia
+"hb rendah dan mudah lelah",Anemia
+"pucat dan kuku rapuh",Anemia
+"anemia berat perlu transfusi",Anemia
+"lemas terus karena anemia",Anemia
+"kepala pusing dan Hb rendah",Anemia
+"susah makan karena takut gemuk",Gangguan Makan
+"makan berlebihan kemudian muntah",Gangguan Makan
+"pola makan tidak teratur sejak SMA",Gangguan Makan
+"tidak nafsu makan sudah 1 bulan",Gangguan Makan
+"makan sangat sedikit takut gemuk",Gangguan Makan
+"binge eating disorder konsultasi",Gangguan Makan
+"makan malam terus tidak bisa kontrol",Gangguan Makan
+"stres makan berlebihan",Gangguan Makan
+"diet ketat tidak mau makan",Gangguan Makan
+"konsumsi makanan sangat terbatas",Gangguan Makan
+"kekurangan vitamin D sering sakit",Defisiensi Vitamin
+"kram otot karena kurang magnesium",Defisiensi Vitamin
+"sariawan terus kurang vitamin B12",Defisiensi Vitamin
+"kulit kering dan rambut rontok",Defisiensi Vitamin
+"gampang sakit dan imun turun",Defisiensi Vitamin
+"tulang keropos kurang kalsium",Defisiensi Vitamin
+"mata rabun senja kurang vitamin A",Defisiensi Vitamin
+"gusi berdarah kurang vitamin C",Defisiensi Vitamin
+"kesemutan kurang vitamin B kompleks",Defisiensi Vitamin
+"anemia karena kekurangan zat besi",Defisiensi Vitamin
+"batuk pilek tidak kunjung sembuh 1 minggu",ISPA
+"demam tinggi 40 derajat dan kejang",ISPA
+"flu berat sampai tidak bisa bangun",ISPA
+"tenggorokan sangat sakit seperti tertusuk",ISPA
+"pilek hijau kental disertai demam",ISPA
+"batuk berdahak coklat",ISPA
+"nafas berbunyi grok grok",ISPA
+"demam 5 hari tidak turun",ISPA
+"batuk sampai muntah setiap malam",ISPA
+"pilek disertai sakit kepala hebat",ISPA
+"tensi 180/110 kepala mau pecah",Hipertensi
+"tekanan darah 200/100 darurat",Hipertensi
+"hipertensi disertai muntah",Hipertensi
+"tensi sangat tinggi tidak turun",Hipertensi
+"tekanan darah 190/95 dan pingsan",Hipertensi
+"darah tinggi disertai mimisan",Hipertensi
+"tensi 175/105 dan pandangan gelap",Hipertensi
+"hipertensi krisis perlu rawat",Hipertensi
+"tekanan darah 185/100 leher kaku",Hipertensi
+"tensi 195/100 dan sesak napas",Hipertensi
+"gula darah 500 mg/dL dan koma",Diabetes
+"diabetes ketoasidosis",Diabetes
+"gula darah 450 dan muntah terus",Diabetes
+"hiperglikemia parah",Diabetes
+"gula darah 480 dan dehidrasi",Diabetes
+"diabetes tidak terkontrol dengan insulin",Diabetes
+"gula darah 420 dan napas bau aseton",Diabetes
+"hipoglikemia gula darah 50",Diabetes
+"gula darah 520 dan lemas",Diabetes
+"diabetes dengan luka gangren",Diabetes
+"diare berdarah 10 kali sehari",Gangguan Pencernaan
+"muntah hijau dan perut sakit hebat",Gangguan Pencernaan
+"perut keras seperti papan",Gangguan Pencernaan
+"muntah terus tidak bisa berhenti",Gangguan Pencernaan
+"diare disertai darah segar banyak",Gangguan Pencernaan
+"perut sakit luar biasa tidak tertahankan",Gangguan Pencernaan
+"muntah dan diare bersamaan dehidrasi",Gangguan Pencernaan
+"perut buncit asites",Gangguan Pencernaan
+"muntah darah segar",Gangguan Pencernaan
+"BAB hitam seperti aspal",Gangguan Pencernaan
+"kulit melepuh di sekujur tubuh",Penyakit Kulit
+"kulit mengelupas seperti luka bakar",Penyakit Kulit
+"gatal di seluruh badan sampai tidak bisa tidur",Penyakit Kulit
+"kulit bernanah di mana mana",Penyakit Kulit
+"bentol besar disertai demam",Penyakit Kulit
+"kulit berwarna kuning seluruh badan",Penyakit Kulit
+"ruam yang tidak hilang hilang",Penyakit Kulit
+"kulit hitam seperti arang",Penyakit Kulit
+"bisul besar di sekujur tubuh",Penyakit Kulit
+"kulit terkelupas habis",Penyakit Kulit
+"kejang tanpa sadar",Gangguan Saraf
+"kesadaran menurun tiba tiba",Gangguan Saraf
+"bicara pelo tiba tiba",Gangguan Saraf
+"setengah badan lumpuh",Gangguan Saraf
+"tidak sadarkan diri",Gangguan Saraf
+"kejang demam pada anak",Gangguan Saraf
+"wajah mencong sebelah",Gangguan Saraf
+"bicara tidak jelas mendadak",Gangguan Saraf
+"lengan kiri tidak bisa digerakkan",Gangguan Saraf
+"pingsan tanpa sebab",Gangguan Saraf
+"nyeri dada kiri sangat hebat",Gangguan Jantung
+"jantung berhenti sesaat",Gangguan Jantung
+"dada sakit sampai ke rahang",Gangguan Jantung
+"keringat dingin dan dada sesak",Gangguan Jantung
+"detak jantung sangat cepat 150 bpm",Gangguan Jantung
+"nyeri dada tidak hilang dengan istirahat",Gangguan Jantung
+"jantung berdebar sampai mau pingsan",Gangguan Jantung
+"dada sakit dan mual muntah",Gangguan Jantung
+"palpitasi berat susah bernapas",Gangguan Jantung
+"sesak napas dan dada sakit hebat",Gangguan Jantung
+"kencing berdarah banyak",Gangguan Ginjal
+"tidak bisa kencing sama sekali",Gangguan Ginjal
+"kaki bengkak sampai ke paha",Gangguan Ginjal
+"wajah sangat bengkak seperti kardinal",Gangguan Ginjal
+"urin seperti teh pekat",Gangguan Ginjal
+"nyeri pinggang hebat tidak tertahankan",Gangguan Ginjal
+"demam tinggi disertai nyeri pinggang",Gangguan Ginjal
+"kencing batu keluar darah",Gangguan Ginjal
+"tidak bisa menahan kencing",Gangguan Ginjal
+"kencing keluar pasir",Gangguan Ginjal
+"mata buta tiba tiba",Gangguan Mata
+"penglihatan hilang satu mata",Gangguan Mata
+"mata sangat merah seperti kelinci",Gangguan Mata
+"kornea mata keruh",Gangguan Mata
+"penglihatan gelap total",Gangguan Mata
+"mata bernanah sangat banyak",Gangguan Mata
+"kelopak mata tidak bisa ditutup",Gangguan Mata
+"mata kering parah sampai iritasi",Gangguan Mata
+"penglihatan ganda terus menerus",Gangguan Mata
+"bintitan bernanah di mata",Gangguan Mata
+"gigi patah seluruhnya",Gangguan Gigi & Mulut
+"gusi berdarah sangat banyak",Gangguan Gigi & Mulut
+"bengkak di rahang sampai ke leher",Gangguan Gigi & Mulut
+"gigi copot seluruhnya",Gangguan Gigi & Mulut
+"mulut tidak bisa membuka",Gangguan Gigi & Mulut
+"sariawan sangat besar dan tidak sembuh",Gangguan Gigi & Mulut
+"gusi bengkak sampai menutupi gigi",Gangguan Gigi & Mulut
+"lidah bengkak dan sulit bicara",Gangguan Gigi & Mulut
+"akar gigi keluar semua",Gangguan Gigi & Mulut
+"infeksi gigi menyebar ke leher",Gangguan Gigi & Mulut
