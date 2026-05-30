@@ -997,7 +997,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 10000, display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }}>
       {/* Remote video — full screen */}
-      <div style={{ flex: 1, position: 'relative', background: '#0d1117' }}>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', background: '#0d1117', overflow: 'hidden' }}>
         <video ref={remoteVideoRef} autoPlay playsInline
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: remoteJoined ? 'block' : 'none' }} />
 
@@ -1049,7 +1049,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
       </div>
 
       {/* Controls bar */}
-      <div style={{ background: '#161b22', borderTop: '1px solid #30363d', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ background: '#161b22', borderTop: '1px solid #30363d', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap', flexShrink: 0 }}>
         <button onClick={toggleMic}
           style={{ width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', fontSize: 20, background: micOn ? '#21262d' : '#c0392b', color: micOn ? '#e6edf3' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {micOn ? '🎙️' : '🔇'}
