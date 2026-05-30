@@ -861,7 +861,7 @@ const Consultations = () => {
 
     const handleBookStart = (doc) => {
         if (!user) { setModalLogin(true); return; }
-        setBookDocId(doc._id || doc.id);
+        setBookDocId(doc.userId);
         setBookType('chat');
         setBookDate(''); setBookTime(''); setBookSlotUtc(null);
         setBookComplaint(''); setBookMedHistory(''); setBookAttachments([]);
@@ -875,7 +875,7 @@ const Consultations = () => {
         setBooking(true);
         try {
             const fd = new FormData();
-            fd.append('doctor.userId', bookDocId);
+            fd.append('doctorId', bookDocId);
             fd.append('consultationType', bookType);
             fd.append('scheduledAt', bookSlotUtc.startUtc);
             fd.append('scheduledEnd', bookSlotUtc.endUtc);
