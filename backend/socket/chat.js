@@ -1,8 +1,8 @@
 const fmtDoctorName = require('../utils/fmtDoctorName');
 const jwt = require('jsonwebtoken');
 const Consultation = require('../models/Consultation');
-const Doctor       = require('../models/Doctor');
-const User         = require('../models/User'); // FIX: register User schema for populate('userId')
+const { Doctor }   = require('../models/mysql');
+const User         = require('../models/User'); // register Mongoose User schema untuk populate
 
 module.exports = (io) => {
     // Middleware autentikasi socket
@@ -24,10 +24,23 @@ module.exports = (io) => {
         }
     });
 
+    // ── Helper: ambil doctorUserId dari consultation.doctorId (UUID MySQL) ──
+    // consultation.doctorId = UUID doctor di tabel MySQL doctors
+    // Kita perlu doctor.userId (UUID user di tabel MySQL users) untuk dibandingkan dengan socket.userId
+    async function getDoctorUserId(doctorId) {
+        if (!doctorId) return null;
+        try {
+            const doctorRecord = await Doctor.findByPk(doctorId.toString());
+            return doctorRecord?.userId?.toString() || null;
+        } catch (err) {
+            console.error('[Socket] getDoctorUserId error:', err.message);
+            return null;
+        }
+    }
+
     io.on('connection', (socket) => {
         console.log(`[Socket] New connection: ${socket.id}, userId: ${socket.userId}, role: ${socket.userRole}`);
 
-        // Log hanya di development, dan hanya sekali per userId (bukan per socket id)
         if (process.env.NODE_ENV !== 'production') {
             if (!global._socketLog) global._socketLog = {};
             const now = Date.now();
@@ -49,7 +62,7 @@ module.exports = (io) => {
         // Join room konsultasi — dengan validasi akses
         socket.on('join-consultation', async (consultationId) => {
             console.log(`[Socket] join-consultation RAW: userId=${socket.userId} role=${socket.userRole} consultationId=${consultationId} socketId=${socket.id}`);
-            
+
             try {
                 const consultation = await Consultation.findById(consultationId).lean();
 
@@ -63,20 +76,9 @@ module.exports = (io) => {
 
                 const patientId = consultation.userId?.toString();
 
-                // FIX: consultation.doctorId = UUID doctor di MySQL (doctor.id)
-                // socket.userId = UUID user → perlu query MySQL untuk dapat doctor.userId
-                let doctorUserId = null;
-                if (consultation.doctorId) {
-                    try {
-                        const doctorRecord = await Doctor.findByPk(consultation.doctorId.toString());
-                        doctorUserId = doctorRecord?.userId?.toString() || null;
-                        if (!doctorUserId) {
-                            console.error('[Socket] join-consultation: Doctor tidak ditemukan untuk doctorId:', consultation.doctorId);
-                        }
-                    } catch (dbErr) {
-                        console.error('[Socket] join-consultation Doctor.findByPk error:', dbErr.message);
-                    }
-                }
+                // FIX-BUG1: consultation.doctorId = UUID doctor MySQL, BUKAN userId
+                // Harus query MySQL untuk dapat doctor.userId, lalu bandingkan dengan socket.userId
+                const doctorUserId = await getDoctorUserId(consultation.doctorId);
 
                 const isAdmin   = socket.userRole === 'admin';
                 const isPatient = patientId === socket.userId;
@@ -92,7 +94,7 @@ module.exports = (io) => {
 
                 const userAllowed = ['confirmed', 'paid', 'scheduled', 'in_progress', 'ongoing', 'completed', 'no_show'];
                 if (!isAdmin && !isDoctor && !userAllowed.includes(consultation.status)) {
-                    console.log(`[Socket] join-consultation status check failed: status=${consultation.status} not in allowed list`);
+                    console.log(`[Socket] join-consultation status check failed: status=${consultation.status}`);
                     socket.emit('error', { message: 'Konsultasi belum aktif' });
                     return;
                 }
@@ -103,8 +105,6 @@ module.exports = (io) => {
                 socket.consultationRooms.add(consultationId);
 
                 console.log(`[Socket] ✅ Joined ${roomName} (userId: ${socket.userId} role: ${socket.userRole})`);
-
-                // Konfirmasi ke client bahwa join berhasil
                 socket.emit('joined-consultation', { consultationId });
                 console.log(`[Socket] ✅ Emitted joined-consultation to ${socket.id}`);
 
@@ -117,26 +117,21 @@ module.exports = (io) => {
         // Reconnect: re-join semua rooms yang sebelumnya di-join
         socket.on('reconnect-rooms', async ({ consultationIds, userId }) => {
             console.log(`[Socket] reconnect-rooms: userId=${userId}, consultationIds=${consultationIds}`);
-            // Re-join user room
             if (userId === socket.userId) {
                 socket.join(`user-${userId}`);
             }
-            // Re-join consultation rooms
             if (Array.isArray(consultationIds)) {
                 for (const cId of consultationIds) {
                     try {
                         const consultation = await Consultation.findById(cId).lean();
                         if (!consultation) continue;
 
-                        const patientId = consultation.userId?.toString();
-                        let doctorUserId = null;
-                        if (consultation.doctorId) {
-                            const doctorRecord = await Doctor.findById(consultation.doctorId).lean();
-                            doctorUserId = doctorRecord?.userId?.toString() || null;
-                        }
-                        const isAdmin   = socket.userRole === 'admin';
-                        const isPatient = patientId === socket.userId;
-                        const isDoctor  = doctorUserId === socket.userId;
+                        const patientId    = consultation.userId?.toString();
+                        // FIX: gunakan helper getDoctorUserId, bukan Doctor.findById (Mongoose)
+                        const doctorUserId = await getDoctorUserId(consultation.doctorId);
+                        const isAdmin      = socket.userRole === 'admin';
+                        const isPatient    = patientId === socket.userId;
+                        const isDoctor     = doctorUserId === socket.userId;
 
                         if (isAdmin || isPatient || isDoctor) {
                             socket.join(`consultation-${cId}`);
@@ -153,21 +148,35 @@ module.exports = (io) => {
         // Kirim pesan teks
         socket.on('send-message', async (data) => {
             try {
+                // FIX-BUG2: populate('doctorId') gagal karena doctorId = UUID MySQL, bukan MongoDB ObjectId
+                // Jangan populate doctorId — ambil nama dokter via MySQL Doctor
                 const consultation = await Consultation.findById(data.consultationId)
-                    .populate('userId', 'name')
-                    .populate('doctorId', 'name userId')
+                    .populate('userId', 'name role')
                     .lean();
                 if (!consultation) return;
 
-                const isPatient = consultation.userId?._id?.toString() === socket.userId;
-                const isDr      = consultation.doctorId?.userId?.toString() === socket.userId;
+                const patientId    = consultation.userId?._id?.toString();
+                // FIX-BUG2: cek dokter via MySQL, bukan via populate Mongoose
+                const doctorUserId = await getDoctorUserId(consultation.doctorId);
+
+                const isPatient = patientId === socket.userId;
+                const isDr      = doctorUserId === socket.userId;
 
                 if (!isPatient && !isDr && socket.userRole !== 'admin') return;
 
+                // Nama dokter: ambil dari MySQL
+                let senderName;
+                if (isPatient) {
+                    senderName = consultation.userId?.name || 'Pasien';
+                } else {
+                    const doctorRecord = await Doctor.findByPk(consultation.doctorId?.toString());
+                    // fmtDoctorName butuh object dengan titlePrefix, name, titleSuffix
+                    senderName = doctorRecord
+                        ? fmtDoctorName({ titlePrefix: doctorRecord.titlePrefix, name: doctorRecord.name, titleSuffix: doctorRecord.titleSuffix })
+                        : 'Dokter';
+                }
+
                 const senderRole = isPatient ? (consultation.userId?.role || 'user') : 'doctor';
-                const senderName = isPatient
-                    ? (consultation.userId?.name || 'Pasien')
-                    : `${fmtDoctorName(consultation.doctorId)}`;
 
                 io.to(`consultation-${data.consultationId}`).emit('receive-message', {
                     _id:        data._id,
@@ -198,7 +207,6 @@ module.exports = (io) => {
         });
 
         // ── WebRTC Video Call Signaling ─────────────────────────────────────
-        // Cache offer terakhir per konsultasi agar bisa dikirim ulang
         if (!io._vcOfferCache) io._vcOfferCache = {};
 
         socket.on('vc-offer', ({ consultationId, offer }) => {
@@ -208,7 +216,6 @@ module.exports = (io) => {
             console.log(`[WebRTC] vc-offer broadcast to consultation-${consultationId}`);
         });
 
-        // Pasien kirim sinyal "siap" → server cek apakah ada cached offer
         socket.on('vc-ready', ({ consultationId }) => {
             console.log(`[WebRTC] vc-ready from ${socket.id} for consultation ${consultationId}`);
             const cached = io._vcOfferCache?.[consultationId];
@@ -221,7 +228,6 @@ module.exports = (io) => {
             }
         });
 
-        // Bersihkan cache saat panggilan berakhir
         socket.on('vc-end', ({ consultationId, reason }) => {
             console.log(`[WebRTC] vc-end from ${socket.id} for consultation ${consultationId}, reason: ${reason || 'ended'}`);
             if (io._vcOfferCache?.[consultationId]) {
@@ -240,19 +246,16 @@ module.exports = (io) => {
             socket.to(`consultation-${consultationId}`).emit('vc-ice-candidate', { candidate });
         });
 
-        // Pasien menolak panggilan → beri tahu dokter dengan reason khusus
         socket.on('vc-reject', ({ consultationId }) => {
             console.log(`[WebRTC] vc-reject from ${socket.id} for consultation ${consultationId}`);
             socket.to(`consultation-${consultationId}`).emit('vc-end', { reason: 'rejected' });
         });
 
-        // Dokter batal karena timeout unanswered
         socket.on('vc-no-answer', ({ consultationId }) => {
             console.log(`[WebRTC] vc-no-answer from ${socket.id} for consultation ${consultationId}`);
             socket.to(`consultation-${consultationId}`).emit('vc-end', { reason: 'no-answer' });
         });
 
-        // WebRTC ICE restart request (reconnect)
         socket.on('vc-ice-restart', ({ consultationId }) => {
             console.log(`[WebRTC] vc-ice-restart from ${socket.id} for consultation ${consultationId}`);
             socket.to(`consultation-${consultationId}`).emit('vc-ice-restart');
@@ -260,36 +263,23 @@ module.exports = (io) => {
 
         // ── WebRTC Signaling (alias) ──────────────────────────────────────
         socket.on('webrtc-offer', ({ consultationId, offer }) => {
-            socket.to(`consultation-${consultationId}`).emit('webrtc-offer', {
-                offer,
-                fromId: socket.userId
-            });
+            socket.to(`consultation-${consultationId}`).emit('webrtc-offer', { offer, fromId: socket.userId });
         });
 
         socket.on('webrtc-answer', ({ consultationId, answer }) => {
-            socket.to(`consultation-${consultationId}`).emit('webrtc-answer', {
-                answer,
-                fromId: socket.userId
-            });
+            socket.to(`consultation-${consultationId}`).emit('webrtc-answer', { answer, fromId: socket.userId });
         });
 
         socket.on('webrtc-ice-candidate', ({ consultationId, candidate }) => {
-            socket.to(`consultation-${consultationId}`).emit('webrtc-ice-candidate', {
-                candidate,
-                fromId: socket.userId
-            });
+            socket.to(`consultation-${consultationId}`).emit('webrtc-ice-candidate', { candidate, fromId: socket.userId });
         });
 
         socket.on('webrtc-call-start', ({ consultationId }) => {
-            socket.to(`consultation-${consultationId}`).emit('webrtc-incoming-call', {
-                fromId: socket.userId
-            });
+            socket.to(`consultation-${consultationId}`).emit('webrtc-incoming-call', { fromId: socket.userId });
         });
 
         socket.on('webrtc-call-end', ({ consultationId }) => {
-            socket.to(`consultation-${consultationId}`).emit('webrtc-call-ended', {
-                fromId: socket.userId
-            });
+            socket.to(`consultation-${consultationId}`).emit('webrtc-call-ended', { fromId: socket.userId });
         });
 
         socket.on('leave-consultation', (consultationId) => {
