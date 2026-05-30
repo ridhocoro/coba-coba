@@ -861,7 +861,7 @@ const Consultations = () => {
 
     const handleBookStart = (doc) => {
         if (!user) { setModalLogin(true); return; }
-        setBookDocId(doc.userId);
+        setBookDocId(doc._id || doc.id);
         setBookType('chat');
         setBookDate(''); setBookTime(''); setBookSlotUtc(null);
         setBookComplaint(''); setBookMedHistory(''); setBookAttachments([]);
