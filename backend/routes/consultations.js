@@ -156,16 +156,23 @@ router.get('/my-consultations', auth, async (req, res) => {
     try {
         const consultations = await Consultation.find({ userId: req.userId })
             .populate({ path: 'sickLetter', select: 'letterNumber diagnosis status startDate endDate issuedAt patientAge patientGender' })
-            .sort('-createdAt');
+            .sort('-createdAt')
+            .lean();
 
         const CANCEL_DEADLINE_MS = 24 * 60 * 60 * 1000;
-        const withDeadline = consultations.map(c => {
-            const obj = c.toObject();
+        let withDeadline = consultations.map(c => {
             if (c.scheduledAt) {
-                obj.cancelDeadline = new Date(new Date(c.scheduledAt).getTime() - CANCEL_DEADLINE_MS).toISOString();
+                c.cancelDeadline = new Date(new Date(c.scheduledAt).getTime() - CANCEL_DEADLINE_MS).toISOString();
             }
-            return obj;
+            return c;
         });
+
+        withDeadline = await populateFromMySQL(
+            withDeadline,
+            'doctorId',
+            'Doctor',
+            ['id', 'name', 'specialization', 'photo', 'userId', 'titlePrefix', 'titleSuffix', 'consultationFee', 'rating', 'isOnline']
+        );
 
         res.json(withDeadline);
     } catch (err) {
@@ -323,7 +330,7 @@ router.post('/create', auth, uploadAttachment.array('attachments', 5), async (re
 
         const consultation = new Consultation({
             userId: req.userId,
-            doctorId: doctor.userId,
+            doctorId: doctor.id,
             consultationType: consultationType || 'chat',
             scheduleType: 'scheduled',
             scheduledAt: slotStart,
