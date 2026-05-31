@@ -27,6 +27,30 @@ const SectionJanjiTemu = ({ socketRef }) => {
     const [cancelReason, setCancelReason]     = useState('');
     const [cancelling, setCancelling]         = useState(false);
 
+    // ── Surat Sakit (appointment) ──────────────────────────────────
+    const [slTarget,       setSlTarget]       = useState(null);
+    const [slDiagnosis,    setSlDiagnosis]    = useState('');
+    const [slRestDays,     setSlRestDays]     = useState('3');
+    const [slNotes,        setSlNotes]        = useState('');
+    const [slAge,          setSlAge]          = useState('');
+    const [slGender,       setSlGender]       = useState('');
+    const [slWeight,       setSlWeight]       = useState('');
+    const [slSaving,       setSlSaving]       = useState(false);
+    const [slIssuing,      setSlIssuing]      = useState(false);
+
+    // ── Surat Rujukan (appointment) ────────────────────────────────
+    const [rlTarget,       setRlTarget]       = useState(null);
+    const [rlDiagnosis,    setRlDiagnosis]    = useState('');
+    const [rlReason,       setRlReason]       = useState('');
+    const [rlTo,           setRlTo]           = useState('');
+    const [rlSpecialty,    setRlSpecialty]    = useState('');
+    const [rlNotes,        setRlNotes]        = useState('');
+    const [rlAge,          setRlAge]          = useState('');
+    const [rlGender,       setRlGender]       = useState('');
+    const [rlWeight,       setRlWeight]       = useState('');
+    const [rlSaving,       setRlSaving]       = useState(false);
+    const [rlIssuing,      setRlIssuing]      = useState(false);
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
@@ -83,9 +107,7 @@ const SectionJanjiTemu = ({ socketRef }) => {
             });
             toast.success('Janji temu selesai ✅');
             setCompleteTarget(null);
-            setCompleteNotes('');
-            setCompleteAssessment('');
-            setCompletePlan('');
+            setCompleteNotes(''); setCompleteAssessment(''); setCompletePlan('');
             fetchData();
         } catch (e) { toast.error(e.response?.data?.message || 'Gagal'); }
         finally { setCompleting(false); }
@@ -101,50 +123,147 @@ const SectionJanjiTemu = ({ socketRef }) => {
         finally { setCancelling(false); }
     };
 
-    const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-    const todayStr   = new Date(Date.now() + WIB_OFFSET_MS).toISOString().slice(0, 10);
-    const todayCount = appointments.filter(a => {
-        if (!a.appointmentDate) return false;
-        return new Date(new Date(a.appointmentDate).getTime() + WIB_OFFSET_MS).toISOString().slice(0, 10) === todayStr;
-    }).length;
+    // ── Surat Sakit handlers ────────────────────────────────────────
+    const openSlModal = (appt) => {
+        const sl = appt.sickLetter;
+        setSlTarget(appt);
+        if (sl && typeof sl === 'object') {
+            setSlDiagnosis(sl.diagnosis || '');
+            setSlNotes(sl.notes || '');
+            setSlAge(sl.patientAge || '');
+            setSlGender(sl.patientGender || '');
+            setSlWeight(sl.patientWeight || '');
+            setSlRestDays(sl.startDate && sl.endDate
+                ? String(Math.ceil((new Date(sl.endDate) - new Date(sl.startDate)) / 86400000) + 1)
+                : '3');
+        } else {
+            setSlDiagnosis(appt.medicalRecord?.assessment || '');
+            setSlNotes(''); setSlAge(''); setSlGender(''); setSlWeight(''); setSlRestDays('3');
+        }
+    };
+
+    const doSaveSl = async () => {
+        if (!slDiagnosis.trim() || !slRestDays) { toast.error('Diagnosis dan hari istirahat wajib diisi'); return; }
+        setSlSaving(true);
+        try {
+            await api.post(`/api/appointments/doctor/${slTarget._id}/sick-letter`, {
+                diagnosis: slDiagnosis, restDays: slRestDays, notes: slNotes,
+                patientAge: slAge, patientGender: slGender, patientWeight: slWeight,
+            });
+            toast.success('Surat sakit berhasil disimpan ✅');
+            setSlTarget(null); fetchData();
+        } catch (e) { toast.error(e.response?.data?.message || 'Gagal menyimpan'); }
+        finally { setSlSaving(false); }
+    };
+
+    const doIssueSl = async () => {
+        setSlIssuing(true);
+        try {
+            await api.put(`/api/appointments/doctor/${slTarget._id}/sick-letter/issue`);
+            toast.success('Surat sakit diterbitkan ✅');
+            setSlTarget(null); fetchData();
+        } catch (e) { toast.error(e.response?.data?.message || 'Gagal menerbitkan'); }
+        finally { setSlIssuing(false); }
+    };
+
+    const downloadSlPdf = async (apptId, letterNum) => {
+        try {
+            const r = await api.get(`/api/appointments/${apptId}/sick-letter/pdf`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+            const a = document.createElement('a'); a.href = url;
+            a.setAttribute('download', `surat-sakit-${letterNum || apptId}.pdf`);
+            document.body.appendChild(a); a.click(); a.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('PDF surat sakit berhasil diunduh');
+        } catch { toast.error('Gagal mengunduh PDF'); }
+    };
+
+    // ── Surat Rujukan handlers ──────────────────────────────────────
+    const openRlModal = (appt) => {
+        const rl = appt.referralLetter;
+        setRlTarget(appt);
+        if (rl && typeof rl === 'object') {
+            setRlDiagnosis(rl.diagnosis || '');
+            setRlReason(rl.referralReason || '');
+            setRlTo(rl.referralTo || '');
+            setRlSpecialty(rl.referralSpecialty || '');
+            setRlNotes(rl.notes || '');
+            setRlAge(rl.patientAge || '');
+            setRlGender(rl.patientGender || '');
+            setRlWeight(rl.patientWeight || '');
+        } else {
+            setRlDiagnosis(appt.medicalRecord?.assessment || '');
+            setRlReason(''); setRlTo(''); setRlSpecialty(''); setRlNotes('');
+            setRlAge(''); setRlGender(''); setRlWeight('');
+        }
+    };
+
+    const doSaveRl = async () => {
+        if (!rlDiagnosis.trim() || !rlReason.trim() || !rlTo.trim()) {
+            toast.error('Diagnosis, alasan rujukan, dan tujuan rujukan wajib diisi'); return;
+        }
+        setRlSaving(true);
+        try {
+            await api.post(`/api/appointments/doctor/${rlTarget._id}/referral-letter`, {
+                diagnosis: rlDiagnosis, referralReason: rlReason, referralTo: rlTo,
+                referralSpecialty: rlSpecialty, notes: rlNotes,
+                patientAge: rlAge, patientGender: rlGender, patientWeight: rlWeight,
+            });
+            toast.success('Surat rujukan berhasil disimpan ✅');
+            setRlTarget(null); fetchData();
+        } catch (e) { toast.error(e.response?.data?.message || 'Gagal menyimpan'); }
+        finally { setRlSaving(false); }
+    };
+
+    const doIssueRl = async () => {
+        setRlIssuing(true);
+        try {
+            await api.put(`/api/appointments/doctor/${rlTarget._id}/referral-letter/issue`);
+            toast.success('Surat rujukan diterbitkan ✅');
+            setRlTarget(null); fetchData();
+        } catch (e) { toast.error(e.response?.data?.message || 'Gagal menerbitkan'); }
+        finally { setRlIssuing(false); }
+    };
+
+    const downloadRlPdf = async (apptId, letterNum) => {
+        try {
+            const r = await api.get(`/api/appointments/${apptId}/referral-letter/pdf`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+            const a = document.createElement('a'); a.href = url;
+            a.setAttribute('download', `surat-rujukan-${letterNum || apptId}.pdf`);
+            document.body.appendChild(a); a.click(); a.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('PDF surat rujukan berhasil diunduh');
+        } catch { toast.error('Gagal mengunduh PDF'); }
+    };
+
+    const inputStyle = { width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
+    const textareaStyle = { ...inputStyle, resize: 'vertical' };
+    const labelStyle = { display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text };
 
     return (
         <div>
-            <SectionHeader title="Janji Temu" subtitle="Kelola jadwal janji temu pasien klinik"
+            <SectionHeader title="📅 Janji Temu" subtitle="Kelola janji temu pasien"
                 action={<Btn size="sm" variant="ghost" onClick={fetchData}>↻ Refresh</Btn>} />
 
-            {/* Stats */}
-            <div style={{ display: 'flex', gap: 14, marginBottom: 22, flexWrap: 'wrap' }}>
-                {[
-                    { label: 'Hari Ini',     val: todayCount,                                                   color: '#7c3aed' },
-                    { label: 'Terjadwal',    val: appointments.filter(a => a.status === 'scheduled').length,    color: '#2563eb' },
-                    { label: 'Sudah Hadir',  val: appointments.filter(a => a.status === 'checked_in').length,   color: '#059669' },
-                ].map(s => (
-                    <Card key={s.label} style={{ padding: '14px 20px', flex: '1 1 110px' }}>
-                        <div style={{ fontSize: 26, fontWeight: 800, color: s.color }}>{s.val}</div>
-                        <div style={{ fontSize: 12, color: colors.muted, marginTop: 3 }}>{s.label}</div>
-                    </Card>
-                ))}
-            </div>
-
-            {/* Filters */}
-            <Card style={{ padding: '14px 18px', marginBottom: 18 }}>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: colors.muted, marginBottom: 5 }}>Tanggal</label>
-                        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-                            style={{ padding: '7px 11px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: colors.muted, marginBottom: 5 }}>Status</label>
-                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-                            style={{ padding: '7px 11px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff' }}>
-                            <option value="all">Semua Status</option>
-                            {Object.entries(APPT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                        </select>
-                    </div>
-                    <Btn size="sm" variant="ghost" onClick={() => { setDateFilter(''); setStatusFilter('all'); }}>Reset</Btn>
+            {/* Filter */}
+            <Card style={{ padding: 16, marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div>
+                    <label style={{ ...labelStyle, marginBottom: 4 }}>Tanggal</label>
+                    <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+                        style={{ ...inputStyle, width: 160 }} />
                 </div>
+                <div>
+                    <label style={{ ...labelStyle, marginBottom: 4 }}>Status</label>
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                        style={{ ...inputStyle, width: 160 }}>
+                        <option value="all">Semua</option>
+                        {Object.entries(APPT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                    </select>
+                </div>
+                {(dateFilter || statusFilter !== 'all') && (
+                    <Btn size="sm" variant="ghost" onClick={() => { setDateFilter(''); setStatusFilter('all'); }}>✕ Reset</Btn>
+                )}
             </Card>
 
             {loading ? <Spinner /> : appointments.length === 0 ? <Empty icon="📅" text="Tidak ada janji temu" /> : (
@@ -152,29 +271,26 @@ const SectionJanjiTemu = ({ socketRef }) => {
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                             <thead>
-                                <tr>{['Pasien', 'Tanggal', 'Jam', 'Keluhan', 'Status', 'Aksi'].map(h => <th key={h} style={TH}>{h}</th>)}</tr>
+                                <tr>{['Pasien', 'Tanggal', 'Jam', 'Keluhan', 'Surat', 'Status', 'Aksi'].map(h => <th key={h} style={TH}>{h}</th>)}</tr>
                             </thead>
                             <tbody>
                                 {appointments.map((a, i) => {
                                     const proc = processing[a._id];
-                                    
-                                    // ── LOGIKA VALIDASI WAKTU CHECK-IN ──
                                     let isTime = true;
                                     if (a.appointmentDate && a.appointmentTime) {
                                         const dt = new Date(a.appointmentDate);
                                         const [h, m] = a.appointmentTime.split(':').map(Number);
                                         dt.setHours(h, m, 0, 0);
-                                        // Mencegah check-in jika jadwal > 30 menit dari sekarang
-                                        if ((dt.getTime() - Date.now()) > 30 * 60000) {
-                                            isTime = false;
-                                        }
+                                        if ((dt.getTime() - Date.now()) > 30 * 60000) isTime = false;
                                     }
-
                                     const canCI    = a.status === 'scheduled';
                                     const canComp  = a.status === 'checked_in';
                                     const canCancl = a.status === 'scheduled' && (new Date(a.scheduledAt || a.appointmentDate).getTime() - Date.now() > 24 * 3600000);
+                                    const canLetter = ['checked_in', 'completed'].includes(a.status);
                                     const accent   = APPT_STATUS[a.status]?.color || colors.border;
-                                    
+                                    const sl = a.sickLetter;
+                                    const rl = a.referralLetter;
+
                                     return (
                                         <tr key={a._id} style={{ borderBottom: `1px solid #f8fafc`, background: i % 2 ? '#fafafa' : '#fff', borderLeft: `3px solid ${accent}` }}>
                                             <td style={TD}>
@@ -183,18 +299,51 @@ const SectionJanjiTemu = ({ socketRef }) => {
                                             </td>
                                             <td style={{ ...TD, whiteSpace: 'nowrap', color: colors.muted }}>{fmtDate(a.appointmentDate)}</td>
                                             <td style={{ ...TD, fontWeight: 700, color: colors.text, whiteSpace: 'nowrap' }}>{a.appointmentTime}</td>
-                                            <td style={{ ...TD, color: colors.muted, maxWidth: 160 }}>
+                                            <td style={{ ...TD, color: colors.muted, maxWidth: 140 }}>
                                                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.complaint || '—'}</div>
                                                 {a.cancelReason && <div style={{ fontSize: 11, color: colors.danger }}>Alasan: {a.cancelReason}</div>}
+                                            </td>
+                                            <td style={{ ...TD, whiteSpace: 'nowrap' }}>
+                                                <div style={{ display: 'flex', gap: 4, flexDirection: 'column' }}>
+                                                    {/* Surat Sakit badge */}
+                                                    {sl && typeof sl === 'object' ? (
+                                                        <span
+                                                            onClick={() => openSlModal(a)}
+                                                            title="Lihat / edit surat sakit"
+                                                            style={{ cursor: 'pointer', background: sl.status === 'issued' ? '#dcfce7' : '#fef9c3', color: sl.status === 'issued' ? '#166534' : '#854d0e', border: `1px solid ${sl.status === 'issued' ? '#86efac' : '#fde68a'}`, borderRadius: 12, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>
+                                                            📄 {sl.status === 'issued' ? 'Sakit ✓' : 'Sakit Draft'}
+                                                        </span>
+                                                    ) : canLetter ? (
+                                                        <span onClick={() => openSlModal(a)} title="Buat surat sakit"
+                                                            style={{ cursor: 'pointer', background: '#f1f5f9', color: colors.muted, border: `1px solid ${colors.border}`, borderRadius: 12, padding: '2px 8px', fontSize: 10 }}>
+                                                            + Sakit
+                                                        </span>
+                                                    ) : null}
+                                                    {/* Surat Rujukan badge */}
+                                                    {rl && typeof rl === 'object' ? (
+                                                        <span
+                                                            onClick={() => openRlModal(a)}
+                                                            title="Lihat / edit surat rujukan"
+                                                            style={{ cursor: 'pointer', background: rl.status === 'issued' ? '#dbeafe' : '#ede9fe', color: rl.status === 'issued' ? '#1d4ed8' : '#6d28d9', border: `1px solid ${rl.status === 'issued' ? '#93c5fd' : '#c4b5fd'}`, borderRadius: 12, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>
+                                                            🔀 {rl.status === 'issued' ? 'Rujukan ✓' : 'Rujukan Draft'}
+                                                        </span>
+                                                    ) : canLetter ? (
+                                                        <span onClick={() => openRlModal(a)} title="Buat surat rujukan"
+                                                            style={{ cursor: 'pointer', background: '#f1f5f9', color: colors.muted, border: `1px solid ${colors.border}`, borderRadius: 12, padding: '2px 8px', fontSize: 10 }}>
+                                                            + Rujukan
+                                                        </span>
+                                                    ) : null}
+                                                    {!canLetter && !sl && !rl && <span style={{ color: colors.muted, fontSize: 11 }}>—</span>}
+                                                </div>
                                             </td>
                                             <td style={TD}><SBadge status={a.status} map={APPT_STATUS} /></td>
                                             <td style={TD}>
                                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                                     {canCI && (
-                                                        <Btn size="sm" variant="success" 
-                                                             disabled={!!proc || !isTime} 
+                                                        <Btn size="sm" variant="success"
+                                                             disabled={!!proc || !isTime}
                                                              onClick={() => doCheckin(a._id)}
-                                                             title={!isTime ? "Hanya bisa check-in 30 menit sebelum jadwal" : "Mulai sesi"}>
+                                                             title={!isTime ? 'Hanya bisa check-in 30 menit sebelum jadwal' : 'Mulai sesi'}>
                                                             {proc === 'ci' ? '…' : '✅ Check-in'}
                                                         </Btn>
                                                     )}
@@ -211,35 +360,28 @@ const SectionJanjiTemu = ({ socketRef }) => {
                 </Card>
             )}
 
-            {/* Complete modal — rekam medis wajib */}
+            {/* ── Complete modal ── */}
             <Modal open={!!completeTarget} onClose={() => setCompleteTarget(null)} title="🏁 Selesaikan Janji Temu">
                 <p style={{ margin: '0 0 14px', color: colors.muted, fontSize: 14 }}>
                     Pasien: <strong>{completeTarget?.userId?.name}</strong> — pukul <strong>{completeTarget?.appointmentTime}</strong>
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div>
-                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
-                            Pemeriksaan Fisik / Temuan Objektif <span style={{ color: colors.muted, fontWeight: 400 }}>(opsional)</span>
-                        </label>
+                        <label style={labelStyle}>Pemeriksaan Fisik / Temuan Objektif <span style={{ color: colors.muted, fontWeight: 400 }}>(opsional)</span></label>
                         <textarea value={completeNotes} onChange={e => setCompleteNotes(e.target.value)} rows={2}
-                            placeholder="Tekanan darah, suhu, temuan fisik..."
-                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                            placeholder="Tekanan darah, suhu, temuan fisik..." style={textareaStyle} />
                     </div>
                     <div>
-                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
-                            Diagnosis <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
+                        <label style={labelStyle}>Diagnosis <span style={{ color: '#ef4444' }}>*</span></label>
                         <textarea value={completeAssessment} onChange={e => setCompleteAssessment(e.target.value)} rows={2}
                             placeholder="Contoh: ISPA ringan, Gastritis akut..."
-                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${!completeAssessment.trim() ? '#fca5a5' : colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                            style={{ ...textareaStyle, borderColor: !completeAssessment.trim() ? '#fca5a5' : colors.border }} />
                     </div>
                     <div>
-                        <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text }}>
-                            Rencana Terapi / Tindakan <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
+                        <label style={labelStyle}>Rencana Terapi / Tindakan <span style={{ color: '#ef4444' }}>*</span></label>
                         <textarea value={completePlan} onChange={e => setCompletePlan(e.target.value)} rows={2}
-                            placeholder="Contoh: Pemberian antibiotik amoxicillin 3x500mg, istirahat 3 hari..."
-                            style={{ width: '100%', padding: '9px 12px', border: `1px solid ${!completePlan.trim() ? '#fca5a5' : colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                            placeholder="Contoh: Pemberian antibiotik amoxicillin 3x500mg..."
+                            style={{ ...textareaStyle, borderColor: !completePlan.trim() ? '#fca5a5' : colors.border }} />
                     </div>
                 </div>
                 <p style={{ fontSize: 11, color: colors.muted, margin: '8px 0 14px' }}>
@@ -253,22 +395,229 @@ const SectionJanjiTemu = ({ socketRef }) => {
                 </div>
             </Modal>
 
-            {/* Cancel modal */}
+            {/* ── Cancel modal ── */}
             <Modal open={!!cancelTarget} onClose={() => setCancelTarget(null)} title="❌ Batalkan Janji Temu">
                 <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 9, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#b91c1c' }}>
                     <strong>{cancelTarget?.userId?.name}</strong> — pukul {cancelTarget?.appointmentTime}
                 </div>
-                <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: colors.text }}>Alasan Pembatalan *</label>
+                <label style={{ ...labelStyle, marginBottom: 6 }}>Alasan Pembatalan *</label>
                 <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={3}
                     placeholder="Masukkan alasan pembatalan (min 5 karakter)..."
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 18 }} />
+                    style={{ ...textareaStyle, marginBottom: 18 }} />
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                     <Btn variant="ghost" onClick={() => setCancelTarget(null)}>Batal</Btn>
                     <Btn variant="danger" onClick={doCancel} disabled={cancelling}>{cancelling ? '…' : 'Konfirmasi Batalkan'}</Btn>
                 </div>
             </Modal>
+
+            {/* ── MODAL: Surat Sakit (Appointment) ── */}
+            <Modal open={!!slTarget} onClose={() => setSlTarget(null)} title="📄 Surat Keterangan Sakit" width={540}>
+                {slTarget && (() => {
+                    const sl = slTarget.sickLetter;
+                    const hasLetter = sl && typeof sl === 'object';
+                    const isIssued  = hasLetter && sl.status === 'issued';
+                    return (
+                        <div>
+                            <div style={{ background: '#f8fafc', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                                Pasien: <strong>{slTarget.userId?.name}</strong>
+                                {hasLetter && <span style={{ marginLeft: 12, color: isIssued ? '#16a34a' : '#ca8a04', fontWeight: 600 }}>{isIssued ? '✓ Terbit' : '📝 Draft'}</span>}
+                            </div>
+
+                            {/* Form — hanya tampil jika belum terbit */}
+                            {!isIssued && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                                        <div>
+                                            <label style={labelStyle}>Umur (tahun)</label>
+                                            <input value={slAge} onChange={e => setSlAge(e.target.value)} placeholder="cth: 32" style={inputStyle} />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Jenis Kelamin</label>
+                                            <select value={slGender} onChange={e => setSlGender(e.target.value)} style={inputStyle}>
+                                                <option value="">—</option>
+                                                <option value="Laki-laki">Laki-laki</option>
+                                                <option value="Perempuan">Perempuan</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Berat Badan (kg)</label>
+                                            <input value={slWeight} onChange={e => setSlWeight(e.target.value)} placeholder="cth: 65" style={inputStyle} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Diagnosis <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <textarea value={slDiagnosis} onChange={e => setSlDiagnosis(e.target.value)} rows={2}
+                                            placeholder="Contoh: ISPA ringan, Gastritis akut..."
+                                            style={{ ...textareaStyle, borderColor: !slDiagnosis.trim() ? '#fca5a5' : colors.border }} />
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                                        <div>
+                                            <label style={labelStyle}>Hari Istirahat <span style={{ color: '#ef4444' }}>*</span></label>
+                                            <input type="number" min="1" max="30" value={slRestDays} onChange={e => setSlRestDays(e.target.value)}
+                                                style={inputStyle} />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Catatan Tambahan</label>
+                                            <input value={slNotes} onChange={e => setSlNotes(e.target.value)}
+                                                placeholder="Opsional..." style={inputStyle} />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Readonly view saat sudah issued */}
+                            {isIssued && (
+                                <div style={{ fontSize: 13, color: colors.text, lineHeight: 1.7 }}>
+                                    {[
+                                        ['No. Surat',   sl.letterNumber],
+                                        ['Diagnosis',   sl.diagnosis],
+                                        ['Umur',        sl.patientAge ? sl.patientAge + ' tahun' : null],
+                                        ['Jenis Kelamin',sl.patientGender],
+                                        ['Berat Badan', sl.patientWeight ? sl.patientWeight + ' kg' : null],
+                                        ['Mulai',       sl.startDate ? new Date(sl.startDate).toLocaleDateString('id-ID') : null],
+                                        ['Sampai',      sl.endDate   ? new Date(sl.endDate).toLocaleDateString('id-ID')   : null],
+                                        ['Catatan',     sl.notes],
+                                    ].filter(([,v]) => v).map(([label, value]) => (
+                                        <div key={label} style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
+                                            <span style={{ minWidth: 110, color: colors.muted, fontWeight: 600 }}>{label}</span>
+                                            <span>{value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' }}>
+                                <Btn variant="ghost" onClick={() => setSlTarget(null)}>Tutup</Btn>
+                                {!hasLetter && (
+                                    <Btn variant="primary" onClick={doSaveSl} disabled={slSaving || !slDiagnosis.trim() || !slRestDays}>
+                                        {slSaving ? '…' : '💾 Simpan Draft'}
+                                    </Btn>
+                                )}
+                                {hasLetter && !isIssued && (
+                                    <Btn variant="success" onClick={doIssueSl} disabled={slIssuing}>
+                                        {slIssuing ? '…' : '✅ Terbitkan Surat'}
+                                    </Btn>
+                                )}
+                                {isIssued && (
+                                    <Btn variant="outline" onClick={() => downloadSlPdf(slTarget._id, sl.letterNumber)}>
+                                        ⬇ Download PDF
+                                    </Btn>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
+            {/* ── MODAL: Surat Rujukan (Appointment) ── */}
+            <Modal open={!!rlTarget} onClose={() => setRlTarget(null)} title="🔀 Surat Rujukan" width={560}>
+                {rlTarget && (() => {
+                    const rl = rlTarget.referralLetter;
+                    const hasLetter = rl && typeof rl === 'object';
+                    const isIssued  = hasLetter && rl.status === 'issued';
+                    return (
+                        <div>
+                            <div style={{ background: '#f8fafc', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                                Pasien: <strong>{rlTarget.userId?.name}</strong>
+                                {hasLetter && <span style={{ marginLeft: 12, color: isIssued ? '#1d4ed8' : '#7c3aed', fontWeight: 600 }}>{isIssued ? '✓ Terbit' : '📝 Draft'}</span>}
+                            </div>
+
+                            {!isIssued && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                                        <div>
+                                            <label style={labelStyle}>Umur (tahun)</label>
+                                            <input value={rlAge} onChange={e => setRlAge(e.target.value)} placeholder="cth: 32" style={inputStyle} />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Jenis Kelamin</label>
+                                            <select value={rlGender} onChange={e => setRlGender(e.target.value)} style={inputStyle}>
+                                                <option value="">—</option>
+                                                <option value="Laki-laki">Laki-laki</option>
+                                                <option value="Perempuan">Perempuan</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Berat Badan (kg)</label>
+                                            <input value={rlWeight} onChange={e => setRlWeight(e.target.value)} placeholder="cth: 65" style={inputStyle} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Diagnosis <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <textarea value={rlDiagnosis} onChange={e => setRlDiagnosis(e.target.value)} rows={2}
+                                            placeholder="Contoh: Hipertensi grade II, memerlukan evaluasi kardiologi..."
+                                            style={{ ...textareaStyle, borderColor: !rlDiagnosis.trim() ? '#fca5a5' : colors.border }} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Rujukan Ke <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <input value={rlTo} onChange={e => setRlTo(e.target.value)}
+                                            placeholder="Contoh: RSUD Kota Bogor, Poli Jantung RS XYZ..."
+                                            style={{ ...inputStyle, borderColor: !rlTo.trim() ? '#fca5a5' : colors.border }} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Spesialisasi Tujuan</label>
+                                        <input value={rlSpecialty} onChange={e => setRlSpecialty(e.target.value)}
+                                            placeholder="Contoh: Kardiologi, Orthopedi, Neurologi..." style={inputStyle} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Alasan Rujukan <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <textarea value={rlReason} onChange={e => setRlReason(e.target.value)} rows={3}
+                                            placeholder="Jelaskan alasan perujukan, riwayat pengobatan sebelumnya, dan hal penting lainnya..."
+                                            style={{ ...textareaStyle, borderColor: !rlReason.trim() ? '#fca5a5' : colors.border }} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Catatan Tambahan</label>
+                                        <textarea value={rlNotes} onChange={e => setRlNotes(e.target.value)} rows={2}
+                                            placeholder="Obat yang sedang dikonsumsi, alergi, dll..." style={textareaStyle} />
+                                    </div>
+                                </div>
+                            )}
+
+                            {isIssued && (
+                                <div style={{ fontSize: 13, color: colors.text, lineHeight: 1.7 }}>
+                                    {[
+                                        ['No. Surat',      rl.letterNumber],
+                                        ['Diagnosis',      rl.diagnosis],
+                                        ['Rujukan Ke',     rl.referralTo],
+                                        ['Spesialisasi',   rl.referralSpecialty],
+                                        ['Umur',           rl.patientAge ? rl.patientAge + ' tahun' : null],
+                                        ['Jenis Kelamin',  rl.patientGender],
+                                        ['Alasan Rujukan', rl.referralReason],
+                                        ['Catatan',        rl.notes],
+                                    ].filter(([,v]) => v).map(([label, value]) => (
+                                        <div key={label} style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
+                                            <span style={{ minWidth: 120, color: colors.muted, fontWeight: 600 }}>{label}</span>
+                                            <span style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' }}>
+                                <Btn variant="ghost" onClick={() => setRlTarget(null)}>Tutup</Btn>
+                                {!hasLetter && (
+                                    <Btn variant="primary" onClick={doSaveRl} disabled={rlSaving || !rlDiagnosis.trim() || !rlReason.trim() || !rlTo.trim()}>
+                                        {rlSaving ? '…' : '💾 Simpan Draft'}
+                                    </Btn>
+                                )}
+                                {hasLetter && !isIssued && (
+                                    <Btn variant="success" onClick={doIssueRl} disabled={rlIssuing}>
+                                        {rlIssuing ? '…' : '✅ Terbitkan Surat'}
+                                    </Btn>
+                                )}
+                                {isIssued && (
+                                    <Btn variant="outline" onClick={() => downloadRlPdf(rlTarget._id, rl.letterNumber)}>
+                                        ⬇ Download PDF
+                                    </Btn>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
         </div>
     );
 };
+
 
 export default SectionJanjiTemu;

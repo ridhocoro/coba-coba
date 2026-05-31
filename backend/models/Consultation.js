@@ -71,7 +71,8 @@ const consultationSchema = new mongoose.Schema({
     userId:    { type: String, ref: 'User',   required: true },
     doctorId:  { type: String, ref: 'Doctor', required: true },
     paymentId:  { type: String, ref: 'ManualPayment' },
-    sickLetter: { type: String, ref: 'SickLetter' },
+    sickLetter:     { type: String, ref: 'SickLetter' },
+    referralLetter: { type: String, ref: 'ReferralLetter' },
     // medicalRecord & prescriptionData disimpan sebagai embedded subdocument (lihat bawah)
     // prescriptionDoc & medicalRecord sebagai ObjectId REF dihapus untuk menghindari schema conflict
 

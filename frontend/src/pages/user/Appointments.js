@@ -467,6 +467,17 @@ const ApptCard = ({ appt, onCancel, onReschedule, onRate, showActions }) => {
                     </div>
                 )}
 
+                {/* Surat Rujukan */}
+                {appt.referralLetter && appt.referralLetter.status === 'issued' && (
+                    <div style={{ marginTop: 8, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe', fontSize: 13, color: '#1d4ed8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div><strong>🔀 Surat Rujukan</strong></div>
+                        <a href={`${API_URL}/api/appointments/${appt._id}/referral-letter/pdf`} target="_blank" rel="noreferrer"
+                            style={{ color: '#1d4ed8', fontWeight: 700, textDecoration: 'none', background: '#dbeafe', padding: '4px 10px', borderRadius: 6 }}>
+                            ⬇ Download PDF
+                        </a>
+                    </div>
+                )}
+
                 {/* Rating yang sudah diberikan */}
                 {appt.rating && (
                     <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6 }}>

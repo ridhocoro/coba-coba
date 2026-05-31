@@ -19,6 +19,7 @@ import SectionKonsultasi   from './Konsultasi';
 import SectionPasien       from './Pasien';
 import SectionResep        from './Resep';
 import SectionSuratSakit   from './SuratSakit';
+import SectionSuratRujukan from './SuratRujukan';
 import SectionAturJadwal   from './AturJadwal';
 import SectionProfile      from './Profile';
 import SectionChatAdmin    from './ChatAdmin';
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
     { key: 'pasien',     icon: '👥', label: 'Pasien'       },
     { key: 'resep',      icon: '💊', label: 'Resep Obat'   },
     { key: 'surat',      icon: '📄', label: 'Surat Sakit'  },
+    { key: 'rujukan',    icon: '🔀', label: 'Surat Rujukan' },
     { key: 'jadwal',     icon: '📅', label: 'Atur Jadwal'  },
     { key: 'chat',       icon: '💬', label: 'Chat Admin',  badge: true },
 ];
@@ -157,6 +159,7 @@ const DoctorDashboard = () => {
             case 'pasien':     return <SectionPasien />;
             case 'resep':      return <SectionResep />;
             case 'surat':      return <SectionSuratSakit />;
+            case 'rujukan':    return <SectionSuratRujukan />;
             case 'jadwal':     return <SectionAturJadwal />;
             case 'chat':       return <SectionChatAdmin socketRef={socketRef} />;
             case 'profile':    return <SectionProfile />;

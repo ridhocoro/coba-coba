@@ -16,6 +16,36 @@ const doctorAuth              = require('../middleware/doctorAuth');
 const { createNotification }  = require('../utils/notificationHelper');
 const { populateFromMySQL }   = require('../utils/hybridJoin');
 const { safeGet, safeSet }    = require('../config/redis');
+const SickLetter              = require('../models/SickLetter');
+const ReferralLetter          = require('../models/ReferralLetter');
+const PDFDocument             = require('pdfkit');
+const https                   = require('https');
+const http                    = require('http');
+
+// ── PDF Helpers for Appointment Letters ──────────────────────────────────────
+const fetchImageBufferAppt = (fileUrl) => {
+    return new Promise((resolve) => {
+        if (!fileUrl) return resolve(null);
+        try {
+            const url  = new URL(fileUrl);
+            const lib  = url.protocol === 'https:' ? https : http;
+            const chunks = [];
+            const req2 = lib.get(fileUrl, (r) => {
+                if (r.statusCode !== 200) return resolve(null);
+                r.on('data', c => chunks.push(c));
+                r.on('end',  () => resolve(Buffer.concat(chunks)));
+            });
+            req2.on('error', () => resolve(null));
+            req2.setTimeout(5000, () => { req2.destroy(); resolve(null); });
+        } catch { resolve(null); }
+    });
+};
+const parseAddressAppt = (fullAddress) => {
+    if (!fullAddress) return { street: '', city_province: '' };
+    const parts = fullAddress.split(',').map(p => p.trim()).filter(Boolean);
+    if (parts.length <= 2) return { street: fullAddress, city_province: '' };
+    return { street: parts.slice(0, -2).join(', '), city_province: parts.slice(-2).join(', ') };
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
@@ -839,7 +869,10 @@ router.get('/doctor/list', auth, doctorAuth, async (req, res) => {
             query.appointmentDate = { $gte: ds, $lt: new Date(ds.getTime() + 24*60*60*1000) };
         }
 
-        let appointments = await Appointment.find(query).sort({ scheduledAt: 1 }).lean();
+        let appointments = await Appointment.find(query).sort({ scheduledAt: 1 })
+            .populate({ path: 'sickLetter',     select: 'letterNumber diagnosis status startDate endDate issuedAt patientAge patientGender patientWeight notes' })
+            .populate({ path: 'referralLetter', select: 'letterNumber diagnosis status referralTo referralSpecialty referralReason notes issuedAt patientAge patientGender patientWeight' })
+            .lean();
         appointments = await populateFromMySQL(appointments, 'userId', 'User', 'name email phone');
 
         res.json({ success: true, appointments });
@@ -1260,4 +1293,472 @@ router.post('/:id/rating', auth, async (req, res) => {
     }
 });
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SURAT SAKIT — JANJI TEMU
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// POST /api/appointments/doctor/:id/sick-letter
+router.post('/doctor/:id/sick-letter', auth, doctorAuth, async (req, res) => {
+    try {
+        const { diagnosis, restDays, notes, patientAge, patientGender, patientWeight } = req.body;
+        if (!diagnosis || !restDays) return res.status(400).json({ message: 'Diagnosis dan hari istirahat wajib diisi' });
+
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
+
+        const appt = await Appointment.findById(req.params.id);
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+        if (appt.doctorId.toString() !== doctor.id.toString()) return res.status(403).json({ message: 'Akses ditolak' });
+        if (!['checked_in', 'completed'].includes(appt.status)) return res.status(400).json({ message: 'Janji harus dalam status check-in atau selesai' });
+
+        const existing = await SickLetter.findOne({ appointmentId: req.params.id });
+        if (existing) return res.status(400).json({ message: 'Surat sakit sudah dibuat untuk janji ini' });
+
+        const startDate = new Date();
+        const endDate   = new Date();
+        endDate.setDate(endDate.getDate() + parseInt(restDays) - 1);
+
+        const sl = new SickLetter({
+            appointmentId: req.params.id,
+            consultationId: null,
+            userId:        appt.userId,
+            doctorId:      doctor.id,
+            diagnosis,
+            notes:         notes || '',
+            patientAge:    patientAge    || '',
+            patientGender: patientGender || '',
+            patientWeight: patientWeight || '',
+            startDate,
+            endDate,
+            status: 'draft',
+        });
+        await sl.save();
+
+        appt.sickLetter = sl.id;
+        await appt.save();
+
+        await createNotification({
+            userId:  appt.userId.toString(),
+            type:    'sick_letter_draft',
+            title:   'Surat Sakit Dibuat',
+            message: 'Dokter telah membuat surat sakit untuk Anda',
+            data:    { appointmentId: appt._id },
+            io:      req.app.get('io'),
+        });
+
+        res.json({ success: true, sickLetter: sl });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// PUT /api/appointments/doctor/:id/sick-letter/issue
+router.put('/doctor/:id/sick-letter/issue', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
+
+        const appt = await Appointment.findById(req.params.id);
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+        if (appt.doctorId.toString() !== doctor.id.toString()) return res.status(403).json({ message: 'Akses ditolak' });
+
+        const sl = await SickLetter.findOne({ appointmentId: req.params.id });
+        if (!sl) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
+
+        sl.status   = 'issued';
+        sl.issuedAt = new Date();
+        await sl.save();
+
+        await createNotification({
+            userId:  appt.userId.toString(),
+            type:    'sick_letter_issued',
+            title:   'Surat Sakit Diterbitkan',
+            message: `Surat sakit Anda telah diterbitkan oleh ${fmtDoctorName(doctor)}`,
+            data:    { appointmentId: appt._id },
+            io:      req.app.get('io'),
+        });
+
+        res.json({ success: true, sickLetter: sl });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// GET /api/appointments/:id/sick-letter/pdf
+router.get('/:id/sick-letter/pdf', auth, async (req, res) => {
+    try {
+        const appt = await Appointment.findById(req.params.id).populate('sickLetter');
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        const isPatient = appt.userId.toString() === req.userId;
+        const isDoctor  = doctor && appt.doctorId.toString() === doctor.id.toString();
+        if (!isPatient && !isDoctor) return res.status(403).json({ message: 'Akses ditolak' });
+
+        await generateApptSickLetterPdf(req.params.id, res);
+    } catch (err) {
+        if (!res.headersSent) res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+async function generateApptSickLetterPdf(appointmentId, res) {
+    try {
+        const appt = await Appointment.findById(appointmentId).populate('sickLetter');
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+        const sl = appt.sickLetter;
+        if (!sl) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
+
+        const patient = await User.findByPk(appt.userId);
+        const doctor  = await Doctor.findByPk(appt.doctorId);
+
+        const ClinicSettings = require('../models/ClinicSettings');
+        const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
+        const clinicName     = clinicSettings.clinicName    || 'Klinik Pratama IPB';
+        const clinicAddress  = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+        const signLocation   = clinicSettings.signLocation  || 'Bogor';
+        const clinicPhone    = clinicSettings.clinicPhone   || '(62251) 8422094';
+
+        const logoBuf      = await fetchImageBufferAppt(clinicSettings.logoUrl);
+        const stampBuf     = await fetchImageBufferAppt(clinicSettings.stampUrl);
+        const signatureBuf = await fetchImageBufferAppt(doctor?.signatureUrl);
+
+        const doc = new PDFDocument({ margin: 70, size: 'A4' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=surat-sakit-${sl.letterNumber || 'draft'}.pdf`);
+        doc.on('error', (pdfErr) => {
+            console.error('[appt sick-letter/pdf] PDFDocument error:', pdfErr);
+            if (!res.headersSent) res.status(500).json({ message: 'Gagal generate PDF', error: pdfErr.message });
+            else res.destroy();
+        });
+        doc.pipe(res);
+
+        const tglPemeriksaan = new Date(appt.scheduledAt || appt.appointmentDate)
+            .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglSurat   = sl.issuedAt ? new Date(sl.issuedAt) : new Date();
+        const days       = Math.ceil((new Date(sl.endDate) - new Date(sl.startDate)) / (1000 * 60 * 60 * 24)) + 1;
+        const daysWord   = ['nol','satu','dua','tiga','empat','lima','enam','tujuh','delapan','sembilan','sepuluh'][days] || days.toString();
+        const tglMulai   = new Date(sl.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglSelesai = new Date(sl.endDate).toLocaleDateString('id-ID',   { day: 'numeric', month: 'long', year: 'numeric' });
+
+        const headerStartX = 50;
+        const headerStartY = doc.y;
+        const logoSize     = 55;
+
+        if (logoBuf) {
+            try { doc.image(logoBuf, headerStartX, headerStartY, { height: logoSize, width: logoSize }); }
+            catch (imgErr) { console.warn('[appt sick-letter/pdf] Failed to load logo:', imgErr.message); }
+        }
+
+        const headerTextStartY = headerStartY;
+        const addressParts     = parseAddressAppt(clinicAddress);
+
+        doc.font('Times-Bold').fontSize(14).text(clinicName, 50, headerTextStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text(addressParts.street, 50, headerTextStartY + 16, { align: 'center', width: 500 });
+        if (addressParts.city_province) {
+            doc.font('Times-Roman').fontSize(10).text(addressParts.city_province, 50, headerTextStartY + 28, { align: 'center', width: 500 });
+        }
+        doc.font('Times-Roman').fontSize(10).text(`Telp. ${clinicPhone}`, 50, headerTextStartY + 40, { align: 'center', width: 500 });
+        doc.font('Times-Bold').fontSize(10).text(`${sl.letterNumber || 'DRAFT'}`, 50, headerTextStartY + 52, { align: 'center', width: 500 });
+        doc.y = headerStartY + logoSize + 5;
+
+        doc.moveDown(0.3);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.8);
+
+        doc.font('Times-Bold').fontSize(12).text('SURAT KETERANGAN SAKIT', { align: 'center' });
+        doc.moveDown(0.8);
+
+        doc.font('Times-Roman').fontSize(11);
+        doc.text('Yang bertanda tangan di bawah ini menerangkan bahwa:', { align: 'left' });
+        doc.moveDown(0.5);
+
+        const labelX = 70;
+        const valueX = 180;
+        let currentY = doc.y;
+
+        doc.fontSize(10);
+        doc.text('Nama', labelX, currentY, { width: 100 });
+        doc.text(`: ${patient?.name || '-'}`, valueX, currentY);
+        currentY += 16;
+
+        if (sl.patientAge) {
+            doc.text('Umur', labelX, currentY, { width: 100 });
+            doc.text(`: ${sl.patientAge} tahun`, valueX, currentY);
+            currentY += 16;
+        }
+        if (sl.patientGender) {
+            doc.text('Jenis Kelamin', labelX, currentY, { width: 100 });
+            doc.text(`: ${sl.patientGender}`, valueX, currentY);
+            currentY += 16;
+        }
+
+        doc.y = currentY;
+        doc.moveDown(0.4);
+
+        doc.font('Times-Roman').fontSize(10);
+        const pemeriksaanText =
+            `Berdasarkan hasil pemeriksaan pada tanggal ${tglPemeriksaan}. ` +
+            `Pasien didiagnosis ${sl.diagnosis}, dan memerlukan istirahat ${days} (${daysWord}) hari ` +
+            `terhitung mulai tanggal ${tglMulai} sampai dengan ${tglSelesai}. ` +
+            `Demikian surat keterangan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.`;
+        doc.text(pemeriksaanText, 50, doc.y, { align: 'left', width: 500 });
+
+        doc.moveDown(1.5);
+
+        const signY  = doc.y;
+        const rightX = 360;
+        const imgSize = 52;
+
+        doc.font('Times-Roman').fontSize(10);
+        doc.text(`${signLocation}, ${tglSurat.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightX, signY, { align: 'center', width: 200 });
+        doc.moveDown(0.5);
+        doc.text('Dokter yang memeriksa', rightX, doc.y, { align: 'center', width: 200 });
+        doc.moveDown(0.7);
+
+        const sigAndStampY = doc.y;
+        const sigImgX      = rightX + (190 - imgSize) / 2;
+
+        if (signatureBuf) {
+            try { doc.image(signatureBuf, sigImgX, sigAndStampY, { width: imgSize, height: imgSize }); }
+            catch (imgErr) { console.warn('[appt sick-letter/pdf] Failed to load signature:', imgErr.message); }
+        }
+        if (stampBuf) {
+            try {
+                const stampSize = 40;
+                const stampX    = sigImgX + (imgSize - stampSize) / 2;
+                const stampY    = sigAndStampY + (imgSize * 0.45) - (stampSize / 2);
+                doc.image(stampBuf, stampX, stampY, { width: stampSize, height: stampSize });
+            } catch (imgErr) { console.warn('[appt sick-letter/pdf] Failed to load stamp:', imgErr.message); }
+        }
+
+        doc.moveDown(2.5);
+        doc.font('Times-Bold').fontSize(10).text(`${fmtDoctorName(doctor)}`, rightX, doc.y, { align: 'center', width: 200 });
+        doc.moveDown(1.2);
+        doc.font('Times-Roman').fontSize(8).fillColor('#333333')
+            .text('*Surat keterangan ini dibuat berdasarkan hasil pemeriksaan dan berlaku sesuai tanggal yang tertera.', 50, doc.y, { align: 'left', width: 500 });
+
+        doc.end();
+    } catch (err) {
+        console.error('[appt sick-letter/pdf] error:', err);
+        if (!res.headersSent) res.status(500).json({ message: 'Gagal generate PDF', error: err.message });
+        else res.destroy();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SURAT RUJUKAN — JANJI TEMU
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// POST /api/appointments/doctor/:id/referral-letter
+router.post('/doctor/:id/referral-letter', auth, doctorAuth, async (req, res) => {
+    try {
+        const { diagnosis, referralReason, referralTo, referralSpecialty, notes, patientAge, patientGender, patientWeight } = req.body;
+        if (!diagnosis || !referralReason || !referralTo) return res.status(400).json({ message: 'Diagnosis, alasan rujukan, dan tujuan rujukan wajib diisi' });
+
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
+
+        const appt = await Appointment.findById(req.params.id);
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+        if (appt.doctorId.toString() !== doctor.id.toString()) return res.status(403).json({ message: 'Akses ditolak' });
+        if (!['checked_in', 'completed'].includes(appt.status)) return res.status(400).json({ message: 'Janji harus dalam status check-in atau selesai' });
+
+        const existing = await ReferralLetter.findOne({ appointmentId: req.params.id });
+        if (existing) return res.status(400).json({ message: 'Surat rujukan sudah dibuat untuk janji ini' });
+
+        const rl = new ReferralLetter({
+            appointmentId:     req.params.id,
+            consultationId:    null,
+            userId:            appt.userId,
+            doctorId:          doctor.id,
+            diagnosis,
+            referralReason,
+            referralTo,
+            referralSpecialty: referralSpecialty || '',
+            notes:             notes || '',
+            patientAge:        patientAge    || '',
+            patientGender:     patientGender || '',
+            patientWeight:     patientWeight || '',
+            status: 'draft',
+        });
+        await rl.save();
+
+        appt.referralLetter = rl.id;
+        await appt.save();
+
+        await createNotification({
+            userId:  appt.userId.toString(),
+            type:    'referral_letter_draft',
+            title:   'Surat Rujukan Dibuat',
+            message: 'Dokter telah membuat surat rujukan untuk Anda',
+            data:    { appointmentId: appt._id },
+            io:      req.app.get('io'),
+        });
+
+        res.json({ success: true, referralLetter: rl });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// PUT /api/appointments/doctor/:id/referral-letter/issue
+router.put('/doctor/:id/referral-letter/issue', auth, doctorAuth, async (req, res) => {
+    try {
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
+
+        const appt = await Appointment.findById(req.params.id);
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+        if (appt.doctorId.toString() !== doctor.id.toString()) return res.status(403).json({ message: 'Akses ditolak' });
+
+        const rl = await ReferralLetter.findOne({ appointmentId: req.params.id });
+        if (!rl) return res.status(404).json({ message: 'Surat rujukan tidak ditemukan' });
+
+        rl.status   = 'issued';
+        rl.issuedAt = new Date();
+        await rl.save();
+
+        await createNotification({
+            userId:  appt.userId.toString(),
+            type:    'referral_letter_issued',
+            title:   'Surat Rujukan Diterbitkan',
+            message: `Surat rujukan Anda telah diterbitkan oleh ${fmtDoctorName(doctor)}`,
+            data:    { appointmentId: appt._id },
+            io:      req.app.get('io'),
+        });
+
+        res.json({ success: true, referralLetter: rl });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+// GET /api/appointments/:id/referral-letter/pdf
+router.get('/:id/referral-letter/pdf', auth, async (req, res) => {
+    try {
+        const appt = await Appointment.findById(req.params.id).populate('referralLetter');
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+
+        const doctor = await Doctor.findOne({ where: { userId: req.userId } });
+        const isPatient = appt.userId.toString() === req.userId;
+        const isDoctor  = doctor && appt.doctorId.toString() === doctor.id.toString();
+        if (!isPatient && !isDoctor) return res.status(403).json({ message: 'Akses ditolak' });
+
+        await generateApptReferralPdf(req.params.id, res);
+    } catch (err) {
+        if (!res.headersSent) res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+async function generateApptReferralPdf(appointmentId, res) {
+    try {
+        const appt = await Appointment.findById(appointmentId).populate('referralLetter');
+        if (!appt) return res.status(404).json({ message: 'Janji temu tidak ditemukan' });
+        const rl = appt.referralLetter;
+        if (!rl) return res.status(404).json({ message: 'Surat rujukan tidak ditemukan' });
+
+        const patient = await User.findByPk(appt.userId);
+        const doctor  = await Doctor.findByPk(appt.doctorId);
+
+        const ClinicSettings = require('../models/ClinicSettings');
+        const clinicSettings = await ClinicSettings.findOne({ key: 'main' }) || {};
+        const clinicName     = clinicSettings.clinicName    || 'Klinik Pratama IPB';
+        const clinicAddress  = clinicSettings.clinicAddress || 'Bogor, Jawa Barat';
+        const signLocation   = clinicSettings.signLocation  || 'Bogor';
+        const clinicPhone    = clinicSettings.clinicPhone   || '(62251) 8422094';
+
+        const logoBuf      = await fetchImageBufferAppt(clinicSettings.logoUrl);
+        const stampBuf     = await fetchImageBufferAppt(clinicSettings.stampUrl);
+        const signatureBuf = await fetchImageBufferAppt(doctor?.signatureUrl);
+
+        const doc = new PDFDocument({ margin: 70, size: 'A4' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=surat-rujukan-${rl.letterNumber || 'draft'}.pdf`);
+        doc.on('error', () => { if (!res.headersSent) res.status(500).json({ message: 'Gagal generate PDF' }); else res.destroy(); });
+        doc.pipe(res);
+
+        const tglPemeriksaan = new Date(appt.scheduledAt || appt.appointmentDate)
+            .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const tglSurat = rl.issuedAt ? new Date(rl.issuedAt) : new Date();
+
+        const hStartY = doc.y; const logoSize = 55;
+        if (logoBuf) { try { doc.image(logoBuf, 50, hStartY, { height: logoSize, width: logoSize }); } catch {} }
+
+        const addrParts = parseAddressAppt(clinicAddress);
+        doc.font('Times-Bold').fontSize(14).text(clinicName, 50, hStartY, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text(addrParts.street, 50, hStartY + 16, { align: 'center', width: 500 });
+        if (addrParts.city_province) doc.font('Times-Roman').fontSize(10).text(addrParts.city_province, 50, hStartY + 28, { align: 'center', width: 500 });
+        doc.font('Times-Roman').fontSize(10).text(`Telp. ${clinicPhone}`, 50, hStartY + 40, { align: 'center', width: 500 });
+        doc.font('Times-Bold').fontSize(10).text(rl.letterNumber || 'DRAFT', 50, hStartY + 52, { align: 'center', width: 500 });
+        doc.y = hStartY + logoSize + 5;
+        doc.moveDown(0.3);
+        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.8);
+
+        doc.font('Times-Bold').fontSize(12).text('SURAT RUJUKAN', { align: 'center' });
+        doc.moveDown(0.8);
+        doc.font('Times-Roman').fontSize(11).text('Yang bertanda tangan di bawah ini menerangkan bahwa:');
+        doc.moveDown(0.5);
+
+        const labelX = 70; const valueX = 200; let curY = doc.y;
+        doc.fontSize(10);
+        doc.text('Nama Pasien',    labelX, curY); doc.text(`: ${patient?.name || '-'}`,  valueX, curY); curY += 16;
+        if (rl.patientAge)    { doc.text('Umur',          labelX, curY); doc.text(`: ${rl.patientAge} tahun`, valueX, curY); curY += 16; }
+        if (rl.patientGender) { doc.text('Jenis Kelamin', labelX, curY); doc.text(`: ${rl.patientGender}`,    valueX, curY); curY += 16; }
+        doc.text('Diagnosis',      labelX, curY); doc.text(`: ${rl.diagnosis}`, valueX, curY, { width: 340 }); curY += 24;
+        doc.y = curY;
+        doc.moveDown(0.4);
+
+        doc.text('Dengan hormat, kami merujuk pasien tersebut di atas kepada:');
+        doc.moveDown(0.3);
+        curY = doc.y;
+        doc.text('Tujuan Rujukan', labelX, curY); doc.text(`: ${rl.referralTo}`, valueX, curY, { width: 340 }); curY += 16;
+        if (rl.referralSpecialty) { doc.text('Spesialisasi', labelX, curY); doc.text(`: ${rl.referralSpecialty}`, valueX, curY); curY += 16; }
+        doc.y = curY;
+        doc.moveDown(0.5);
+
+        doc.text('Alasan Rujukan:', 50, doc.y);
+        doc.moveDown(0.3);
+        doc.text(rl.referralReason, 70, doc.y, { align: 'left', width: 480 });
+        doc.moveDown(0.5);
+
+        if (rl.notes) {
+            doc.text('Catatan Tambahan:', 50, doc.y);
+            doc.moveDown(0.3);
+            doc.text(rl.notes, 70, doc.y, { align: 'left', width: 480 });
+            doc.moveDown(0.5);
+        }
+
+        doc.text(`Diperiksa pada tanggal ${tglPemeriksaan}. Demikian surat rujukan ini dibuat untuk dapat dipergunakan sebagaimana mestinya.`, 50, doc.y, { align: 'left', width: 500 });
+        doc.moveDown(1.5);
+
+        const signY = doc.y; const rightX = 360; const imgSize = 52;
+        doc.text(`${signLocation}, ${tglSurat.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightX, signY, { align: 'center', width: 200 });
+        doc.moveDown(0.5);
+        doc.text('Dokter Perujuk', rightX, doc.y, { align: 'center', width: 200 });
+        doc.moveDown(0.7);
+
+        const sigStampY = doc.y; const sigImgX = rightX + (190 - imgSize) / 2;
+        if (signatureBuf) { try { doc.image(signatureBuf, sigImgX, sigStampY, { width: imgSize, height: imgSize }); } catch {} }
+        if (stampBuf) {
+            try {
+                const ss = 40; const sx = sigImgX + (imgSize - ss) / 2; const sy = sigStampY + (imgSize * 0.45) - (ss / 2);
+                doc.image(stampBuf, sx, sy, { width: ss, height: ss });
+            } catch {}
+        }
+        doc.moveDown(2.5);
+        doc.font('Times-Bold').fontSize(10).text(fmtDoctorName(doctor), rightX, doc.y, { align: 'center', width: 200 });
+        doc.moveDown(1.2);
+        doc.font('Times-Roman').fontSize(8).fillColor('#333333').text('*Surat rujukan ini dibuat berdasarkan hasil pemeriksaan dan berlaku sesuai tanggal yang tertera.', 50, doc.y, { align: 'left', width: 500 });
+        doc.end();
+    } catch (err) {
+        console.error('[appt referral pdf]', err);
+        if (!res.headersSent) res.status(500).json({ message: 'Gagal generate PDF', error: err.message });
+        else res.destroy();
+    }
+}
+
+router.generateApptReferralPdf  = generateApptReferralPdf;
+router.generateApptSickLetterPdf = generateApptSickLetterPdf;
 module.exports = router;

@@ -1,13 +1,11 @@
 const mongoose = require('mongoose');
 
 const sickLetterSchema = new mongoose.Schema({
-    consultationId: { 
-        type: String, 
-        ref: 'Consultation', 
-        required: true,
-        unique: true // Satu konsultasi hanya bisa punya satu surat sakit
-    },
-    userId: { type: String, ref: 'User', required: true },
+    // Salah satu wajib diisi — konsultasi atau janji temu
+    consultationId: { type: String, ref: 'Consultation', default: null },
+    appointmentId:  { type: String, ref: 'Appointment',  default: null },
+
+    userId:   { type: String, ref: 'User',   required: true },
     doctorId: { type: String, ref: 'Doctor', required: true },
     status: {
         type: String,
@@ -20,10 +18,10 @@ const sickLetterSchema = new mongoose.Schema({
     patientGender: { type: String, default: '' },
     patientWeight: { type: String, default: '' },
     startDate: { type: Date, required: true },
-    endDate: { type: Date, required: true },
+    endDate:   { type: Date, required: true },
     letterNumber: { type: String, unique: true },
-    pdfUrl: String,
-    issuedAt: Date,
+    pdfUrl:    String,
+    issuedAt:  Date,
     createdAt: { type: Date, default: Date.now }
 });
 

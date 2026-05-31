@@ -314,6 +314,92 @@ const SickLetterModal = ({ onClose, onSave }) => {
   );
 };
 
+// ── Referral Letter Modal ─────────────────────────────────────────
+const ReferralLetterModal = ({ onClose, onSave }) => {
+  const [form, setForm] = useState({
+    diagnosis: '', referralReason: '', referralTo: '', referralSpecialty: '',
+    notes: '', patientAge: '', patientGender: '', patientWeight: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.diagnosis || !form.referralReason || !form.referralTo) return;
+    setSaving(true);
+    await onSave(form);
+    setSaving(false);
+  };
+  const inp = { width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#e6edf3', fontSize: 14, boxSizing: 'border-box' };
+  const lbl = (t) => <label style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 6 }}>{t}</label>;
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: '100%', maxWidth: 500, maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0d1117', zIndex: 1 }}>
+          <span style={{ color: '#e6edf3', fontWeight: 700 }}>🔀 Buat Surat Rujukan</span>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: 20, cursor: 'pointer' }}>×</button>
+        </div>
+        <form onSubmit={handleSave} style={{ padding: 20 }}>
+          {/* Identitas Pasien */}
+          <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Identitas Pasien</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 18 }}>
+            <div>
+              {lbl('Umur')}
+              <input value={form.patientAge} onChange={e => setForm(p => ({ ...p, patientAge: e.target.value }))} placeholder="Contoh: 21 Tahun" style={inp} />
+            </div>
+            <div>
+              {lbl('Jenis Kelamin')}
+              <select value={form.patientGender} onChange={e => setForm(p => ({ ...p, patientGender: e.target.value }))} style={{ ...inp, appearance: 'none' }}>
+                <option value="">— Pilih —</option>
+                <option value="Laki-laki">Laki-laki</option>
+                <option value="Perempuan">Perempuan</option>
+              </select>
+            </div>
+            <div>
+              {lbl('Berat Badan')}
+              <input value={form.patientWeight} onChange={e => setForm(p => ({ ...p, patientWeight: e.target.value }))} placeholder="Contoh: 60 kg" style={inp} />
+            </div>
+          </div>
+
+          {/* Data Rujukan */}
+          <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Data Rujukan</div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Diagnosis *')}
+            <textarea value={form.diagnosis} rows={2} required onChange={e => setForm(p => ({ ...p, diagnosis: e.target.value }))}
+              placeholder="Contoh: Hipertensi Grade II, Aritmia..." style={{ ...inp, resize: 'vertical' }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Dirujuk Ke (Fasilitas / Dokter Tujuan) *')}
+            <input value={form.referralTo} required onChange={e => setForm(p => ({ ...p, referralTo: e.target.value }))}
+              placeholder="Contoh: RSUD Kota Bogor, dr. Spesialis Jantung" style={inp} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Spesialisasi Tujuan')}
+            <input value={form.referralSpecialty} onChange={e => setForm(p => ({ ...p, referralSpecialty: e.target.value }))}
+              placeholder="Contoh: Kardiologi, Ortopedi (opsional)" style={inp} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Alasan Rujukan *')}
+            <textarea value={form.referralReason} rows={3} required onChange={e => setForm(p => ({ ...p, referralReason: e.target.value }))}
+              placeholder="Jelaskan alasan dan tujuan rujukan secara singkat..." style={{ ...inp, resize: 'vertical' }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            {lbl('Catatan Tambahan')}
+            <textarea value={form.notes} rows={2} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+              placeholder="Opsional: informasi tambahan untuk dokter tujuan..." style={{ ...inp, resize: 'vertical' }} />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <button type="button" onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}>Batal</button>
+            <button type="submit" disabled={saving}
+              style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
+              {saving ? 'Menyimpan...' : '✓ Buat Surat Rujukan'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // ── Rating Modal ──────────────────────────────────────────────────
 const RatingModal = ({ consultationId, onClose, onSuccess }) => {
   const [rating, setRating] = useState(0);
@@ -1477,6 +1563,7 @@ const ConsultationChat = () => {
   const [typing, setTyping]             = useState(false);
   const [showPrescription, setShowPrescription] = useState(false);
   const [showSickLetter,   setShowSickLetter]   = useState(false);
+  const [showReferralLetter, setShowReferralLetter] = useState(false);
   const [showRating,       setShowRating]       = useState(false);
   const [showVideoCall,    setShowVideoCall]     = useState(false);
   const [videoLogInfo,     setVideoLogInfo]      = useState(null);
@@ -1796,6 +1883,39 @@ const ConsultationChat = () => {
     } catch { toast.error('Gagal menerbitkan'); }
   };
 
+  const handleCreateReferralLetter = async (form) => {
+    try {
+      await api.post(`/api/consultations/${id}/referral-letter`, form);
+      toast.success('Surat rujukan dibuat');
+      setShowReferralLetter(false);
+      fetchConsultation();
+    } catch (err) { toast.error(err.response?.data?.message || 'Gagal buat surat rujukan'); }
+  };
+
+  const handleIssueReferralLetter = async () => {
+    try {
+      await api.put(`/api/consultations/${id}/referral-letter/issue`);
+      toast.success('Surat rujukan diterbitkan!');
+      fetchConsultation();
+    } catch { toast.error('Gagal menerbitkan surat rujukan'); }
+  };
+
+  const downloadReferralLetterPDF = async () => {
+    try {
+      const r = await api.get(`/api/consultations/${id}/referral-letter/pdf`, { responseType: 'blob' });
+      const contentType = r.headers?.['content-type'] || '';
+      if (!contentType.includes('application/pdf')) {
+        const errMsg = await parseBlobError(r.data);
+        toast.error(errMsg || 'Surat rujukan belum tersedia'); return;
+      }
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = `surat-rujukan-${id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Surat rujukan diunduh');
+    } catch { toast.error('Gagal unduh surat rujukan'); }
+  };
+
   // BUG-10 fix: check content-type before treating response as PDF
   const parseBlobError = async (blob) => {
     try {
@@ -1893,7 +2013,8 @@ const ConsultationChat = () => {
   );
 
   const doc        = consultation.doctorId;
-  const sickLetter = consultation.sickLetter;
+  const sickLetter     = consultation.sickLetter;
+  const referralLetter = consultation.referralLetter;
   const typeLabel  = isVideoCall ? '📹 Video Call' : '💬 Chat';
 
   // ── Dokter diblokir saat pending_payment ────────────────────────
@@ -2134,6 +2255,12 @@ const ConsultationChat = () => {
                   {sickLetter?.status === 'draft' && (
                     <button onClick={handleIssueSickLetter} style={s.actionBtn('#d97706')}>✓ Terbitkan Surat Sakit</button>
                   )}
+                  {!referralLetter && (
+                    <button onClick={() => setShowReferralLetter(true)} style={s.actionBtn('#7c3aed')}>🔀 Buat Surat Rujukan</button>
+                  )}
+                  {referralLetter?.status === 'draft' && (
+                    <button onClick={handleIssueReferralLetter} style={s.actionBtn('#6d28d9')}>✓ Terbitkan Surat Rujukan</button>
+                  )}
                   <button onClick={handleEnd}
                     style={{ ...s.actionBtn('#c0392b'), background: 'transparent', border: '1px solid #f8514940', color: '#f85149' }}>
                     ■ Akhiri Sesi
@@ -2150,6 +2277,12 @@ const ConsultationChat = () => {
                   )}
                   {sickLetter?.status === 'draft' && (
                     <button onClick={handleIssueSickLetter} style={s.actionBtn('#d97706')}>✓ Terbitkan Surat Sakit</button>
+                  )}
+                  {!referralLetter && (
+                    <button onClick={() => setShowReferralLetter(true)} style={s.actionBtn('#7c3aed')}>🔀 Buat Surat Rujukan</button>
+                  )}
+                  {referralLetter?.status === 'draft' && (
+                    <button onClick={handleIssueReferralLetter} style={s.actionBtn('#6d28d9')}>✓ Terbitkan Surat Rujukan</button>
                   )}
                 </>
               )}
@@ -2191,6 +2324,9 @@ const ConsultationChat = () => {
                   {sickLetter?.status === 'issued' && (
                     <button onClick={downloadSickLetterPDF} style={s.actionBtn('#854d0e')}>⬇ Unduh Surat Sakit PDF</button>
                   )}
+                  {referralLetter?.status === 'issued' && (
+                    <button onClick={downloadReferralLetterPDF} style={s.actionBtn('#7c3aed')}>⬇ Unduh Surat Rujukan PDF</button>
+                  )}
                 </>
               )}
 
@@ -2210,6 +2346,9 @@ const ConsultationChat = () => {
               )}
               {isLive && sickLetter?.status === 'issued' && (
                 <button onClick={downloadSickLetterPDF} style={s.actionBtn('#854d0e')}>⬇ Unduh Surat Sakit</button>
+              )}
+              {isLive && referralLetter?.status === 'issued' && (
+                <button onClick={downloadReferralLetterPDF} style={s.actionBtn('#7c3aed')}>⬇ Unduh Surat Rujukan</button>
               )}
 
               {/* Info locked state */}
@@ -2232,6 +2371,21 @@ const ConsultationChat = () => {
                 {sickLetter.startDate && <div style={{ color: '#ffffff', fontSize: 11, marginTop: 2 }}>
                   {new Date(sickLetter.startDate).toLocaleDateString('id-ID')} – {new Date(sickLetter.endDate).toLocaleDateString('id-ID')}
                 </div>}
+              </div>
+            </div>
+          )}
+
+          {referralLetter && (
+            <div style={s.sideSection}>
+              <span style={s.label}>Surat Rujukan</span>
+              <div style={{ background: referralLetter.status === 'issued' ? '#1e1b4b' : '#1a1a2e', border: `1px solid ${referralLetter.status === 'issued' ? '#7c3aed50' : '#a371f730'}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ color: referralLetter.status === 'issued' ? '#a78bfa' : '#a371f7', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                  {referralLetter.status === 'issued' ? '✓ Sudah Terbit' : '○ Draft'}
+                </div>
+                <div style={{ color: '#ffffff', fontSize: 12 }}>Tujuan: {referralLetter.referralTo}</div>
+                {referralLetter.referralSpecialty && (
+                  <div style={{ color: '#c4b5fd', fontSize: 11, marginTop: 2 }}>Spesialisasi: {referralLetter.referralSpecialty}</div>
+                )}
               </div>
             </div>
           )}
@@ -2490,6 +2644,7 @@ const ConsultationChat = () => {
       {showPrescription   && <PrescriptionModal consultation={consultation} isDoctor={isDoctor} onClose={() => setShowPrescription(false)} onSave={handleSendPrescription} />}
       {showMedicalRecord  && <MedicalRecordModal existing={consultation.medicalRecord} consultation={consultation} onClose={() => setShowMedicalRecord(false)} onSave={handleSaveMedicalRecord} />}
       {showSickLetter     && <SickLetterModal onClose={() => setShowSickLetter(false)} onSave={handleCreateSickLetter} />}
+      {showReferralLetter && <ReferralLetterModal onClose={() => setShowReferralLetter(false)} onSave={handleCreateReferralLetter} />}
       {showRating         && <RatingModal consultationId={id} onClose={() => setShowRating(false)} onSuccess={fetchConsultation} />}
       {showEndModal       && (
         <MedicalRecordModal

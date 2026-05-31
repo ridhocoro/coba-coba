@@ -484,7 +484,7 @@ const RatingModal = ({ consultationId, doctor, onClose, onSuccess }) => {
 // ── ConsultationCard ──────────────────────────────────────────────────────────
 const ConsultationCard = ({
     cons, onPay, onChat, onDownload, onDownloadPrescription,
-    onDownloadMedRecord, onRate, onRefund, onCancel, onPostCancel, onReschedule,
+    onDownloadMedRecord, onDownloadReferral, onRate, onRefund, onCancel, onPostCancel, onReschedule,
     showChat = false,
 }) => {
     const c = STATUS_CFG[cons.status] || { label: cons.status, color: '#6b7280', bg: '#f3f4f6' };
@@ -493,6 +493,7 @@ const ConsultationCard = ({
     // Rating bisa dari Riwayat
     const canRate = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(cons.status) && !cons.rating;
     const hasSickLetter = cons.sickLetter?.status === 'issued';
+    const hasReferralLetter = cons.referralLetter?.status === 'issued';
     const hasPrescription = !!(cons.prescriptionData?.prescriptionNumber || cons.prescription);
     const hasMedRecord = !!cons.medicalRecord?.isCompleted;
     const canRefund = ['cancelled_by_doctor', 'doctor_no_show'].includes(cons.status);
@@ -665,6 +666,7 @@ const ConsultationCard = ({
                 {needsPostCancelAction && onPostCancel && <button onClick={onPostCancel} style={{ background: 'linear-gradient(135deg,#1d4ed8,#2563eb)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🔄 Pilih Refund / Reschedule</button>}
                 {canRate && onRate && <button onClick={onRate} style={{ background: 'linear-gradient(135deg,#854d0e,#ca8a04)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>⭐ Beri Rating</button>}
                 {hasSickLetter && onDownload && <button onClick={onDownload} style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📄 Surat Sakit</button>}
+                {hasReferralLetter && onDownloadReferral && <button onClick={onDownloadReferral} style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🔀 Surat Rujukan</button>}
                 {hasPrescription && onDownloadPrescription && <button onClick={onDownloadPrescription} style={{ background: '#0891b2', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💊 Resep PDF</button>}
                 {hasMedRecord && onDownloadMedRecord && <button onClick={onDownloadMedRecord} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📋 Rekam Medis PDF</button>}
                 {canRefund && onRefund && <button onClick={onRefund} style={{ background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💸 Ajukan Refund</button>}
@@ -1050,6 +1052,7 @@ const Consultations = () => {
                                                 onChat={() => navigate(`/consultations/${cons._id}`)}
                                                 onRefund={() => setRefundModal(cons)}
                                                 onDownload={() => downloadFile(`/api/consultations/${cons._id}/sick-letter/pdf`, `surat-sakit-${cons._id}.pdf`)}
+                                                onDownloadReferral={() => downloadFile(`/api/consultations/${cons._id}/referral-letter/pdf`, `surat-rujukan-${cons._id}.pdf`)}
                                                 onDownloadPrescription={() => downloadFile(`/api/consultations/${cons._id}/prescription/pdf`, `resep-${cons._id}.pdf`)}
                                                 onDownloadMedRecord={() => downloadFile(`/api/consultations/${cons._id}/medical-record/pdf`, `rekam-medis-${cons._id}.pdf`)}
                                                 onRate={() => setRatingModal({ id: cons._id, doctor: cons.doctorId })}
@@ -1069,6 +1072,7 @@ const Consultations = () => {
                                                 onPay={() => setPayModal({ consultation: cons, amount: cons.doctorId?.consultationFee, deadline: cons.paymentDeadline })}
                                                 onChat={() => navigate(`/consultations/${cons._id}`)}
                                                 onDownload={() => downloadFile(`/api/consultations/${cons._id}/sick-letter/pdf`, `surat-sakit-${cons._id}.pdf`)}
+                                                onDownloadReferral={() => downloadFile(`/api/consultations/${cons._id}/referral-letter/pdf`, `surat-rujukan-${cons._id}.pdf`)}
                                                 onDownloadPrescription={() => downloadFile(`/api/consultations/${cons._id}/prescription/pdf`, `resep-${cons._id}.pdf`)}
                                                 onDownloadMedRecord={() => downloadFile(`/api/consultations/${cons._id}/medical-record/pdf`, `rekam-medis-${cons._id}.pdf`)}
                                                 onRate={() => setRatingModal({ id: cons._id, doctor: cons.doctorId })}
@@ -1229,6 +1233,7 @@ const Consultations = () => {
                                             onChat={() => navigate(`/consultations/${cons._id}`)}
                                             onRate={() => setRatingModal({ id: cons._id, doctor: cons.doctorId })}
                                             onDownload={() => downloadFile(`/api/consultations/${cons._id}/sick-letter/pdf`, `surat-sakit-${cons._id}.pdf`)}
+                                            onDownloadReferral={() => downloadFile(`/api/consultations/${cons._id}/referral-letter/pdf`, `surat-rujukan-${cons._id}.pdf`)}
                                             onDownloadPrescription={() => downloadFile(`/api/consultations/${cons._id}/prescription/pdf`, `resep-${cons._id}.pdf`)}
                                             onDownloadMedRecord={() => downloadFile(`/api/consultations/${cons._id}/medical-record/pdf`, `rekam-medis-${cons._id}.pdf`)}
                                             onRefund={() => setRefundModal(cons)}

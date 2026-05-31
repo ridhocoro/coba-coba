@@ -24,7 +24,8 @@ const { createNotification } = require('../utils/notificationHelper');
 // MongoDB models
 const Consultation = require('../models/Consultation');
 const Appointment = require('../models/Appointment');
-const SickLetter = require('../models/SickLetter');
+const SickLetter     = require('../models/SickLetter');
+const ReferralLetter = require('../models/ReferralLetter');
 const AdminChat = require('../models/AdminChat');
 const DoctorScheduleOverride = require('../models/DoctorScheduleOverride');
 const DoctorAvailability = require('../models/DoctorAvailability');
@@ -1127,7 +1128,7 @@ router.get('/sick-letters', guard, async (req, res) => {
 
         const total = await SickLetter.countDocuments(filter);
         let letters = await SickLetter.find(filter)
-            .select('letterNumber status diagnosis startDate endDate issuedAt createdAt userId doctorId pdfUrl notes patientAge patientGender patientWeight consultationId')
+            .select('letterNumber status diagnosis startDate endDate issuedAt createdAt userId doctorId pdfUrl notes patientAge patientGender patientWeight consultationId appointmentId')
             .sort('-createdAt')
             .skip((Number(page) - 1) * Number(limit))
             .limit(Number(limit))
@@ -1188,6 +1189,77 @@ router.get('/sick-letters', guard, async (req, res) => {
         res.status(500).json({ success: false, message: 'Server error', error: err.message });
     }
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// SURAT RUJUKAN (ADMIN)
+// ════════════════════════════════════════════════════════════════════════════
+
+router.get('/referral-letters', guard, async (req, res) => {
+    try {
+        const { doctorId, userId, from, to, status, page = 1, limit = 30 } = req.query;
+        const filter = {};
+        if (doctorId) filter.doctorId = doctorId;
+        if (userId)   filter.userId   = userId;
+        if (status)   filter.status   = status;
+        if (from || to) {
+            filter.createdAt = {};
+            if (from) filter.createdAt.$gte = new Date(from + 'T00:00:00');
+            if (to)   filter.createdAt.$lte = new Date(to + 'T23:59:59');
+        }
+
+        const total = await ReferralLetter.countDocuments(filter);
+        let letters = await ReferralLetter.find(filter)
+            .select('letterNumber status diagnosis referralTo referralSpecialty referralReason issuedAt createdAt userId doctorId notes patientAge patientGender patientWeight consultationId appointmentId')
+            .sort('-createdAt')
+            .skip((Number(page) - 1) * Number(limit))
+            .limit(Number(limit))
+            .lean();
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        if (letters.length > 0) {
+            const validUserIds = [...new Set(letters.map(l => l.userId).filter(id => id && uuidRegex.test(id)))];
+            if (validUserIds.length > 0) {
+                const users = await User.findAll({ where: { id: validUserIds }, attributes: ['id', 'name', 'email'], raw: true });
+                const userMap = {}; users.forEach(u => { userMap[u.id] = u; });
+                letters = letters.map(l => ({ ...l, userId: userMap[l.userId] || null }));
+            } else { letters = letters.map(l => ({ ...l, userId: null })); }
+
+            const validDoctorIds = [...new Set(letters.map(l => l.doctorId).filter(id => id && uuidRegex.test(id)))];
+            if (validDoctorIds.length > 0) {
+                const doctors = await Doctor.findAll({ where: { id: validDoctorIds }, attributes: ['id', 'name', 'specialization', 'title_prefix', 'title_suffix'], raw: true });
+                const doctorMap = {}; doctors.forEach(d => { doctorMap[d.id] = { id: d.id, name: d.name, specialization: d.specialization, titlePrefix: d.title_prefix || '', titleSuffix: d.title_suffix || '' }; });
+                letters = letters.map(l => ({ ...l, doctorId: doctorMap[l.doctorId] || null }));
+            } else { letters = letters.map(l => ({ ...l, doctorId: null })); }
+        }
+
+        res.json({ success: true, letters, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+    } catch (err) {
+        console.error('[admin] GET /referral-letters error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
+router.get('/referral-letters/:id/pdf', guard, async (req, res) => {
+    try {
+        const rl = await ReferralLetter.findById(req.params.id).lean();
+        if (!rl) return res.status(404).json({ message: 'Surat rujukan tidak ditemukan' });
+
+        if (rl.consultationId) {
+            const { generateConsReferralPdf } = require('./consultations');
+            await generateConsReferralPdf(rl.consultationId.toString(), res);
+        } else if (rl.appointmentId) {
+            const { generateApptReferralPdf } = require('./appointments');
+            await generateApptReferralPdf(rl.appointmentId.toString(), res);
+        } else {
+            res.status(400).json({ message: 'Sumber surat rujukan tidak valid' });
+        }
+    } catch (err) {
+        console.error('[admin] GET /referral-letters/:id/pdf error:', err);
+        if (!res.headersSent) res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
 
 // ════════════════════════════════════════════════════════════════════════════
 // LAPORAN & KEUANGAN
@@ -1610,13 +1682,15 @@ router.get('/sick-letters/:id/pdf', guard, async (req, res) => {
         const sickLetter = await SickLetter.findById(req.params.id).lean();
         if (!sickLetter) return res.status(404).json({ message: 'Surat sakit tidak ditemukan' });
 
-        if (!sickLetter.consultationId) {
-            return res.status(400).json({ message: 'Surat sakit tidak memiliki referensi konsultasi' });
+        if (sickLetter.consultationId) {
+            const { generateSickLetterPdf } = require('./consultations');
+            await generateSickLetterPdf(sickLetter.consultationId.toString(), res);
+        } else if (sickLetter.appointmentId) {
+            const { generateApptSickLetterPdf } = require('./appointments');
+            await generateApptSickLetterPdf(sickLetter.appointmentId.toString(), res);
+        } else {
+            res.status(400).json({ message: 'Surat sakit tidak memiliki referensi konsultasi atau janji temu' });
         }
-
-        // Gunakan fungsi yang diekspor langsung — tanpa router.handle()
-        const { generateSickLetterPdf } = require('./consultations');
-        await generateSickLetterPdf(sickLetter.consultationId.toString(), res);
     } catch (err) {
         console.error('[admin] GET /sick-letters/:id/pdf error:', err);
         if (!res.headersSent) {

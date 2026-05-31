@@ -23,6 +23,19 @@ const SectionKonsultasi = ({ socketRef }) => {
     const [consDetail, setConsDetail]   = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
 
+    // ── Surat Rujukan (konsultasi) ─────────────────────────────────
+    const [rlTarget,    setRlTarget]    = useState(null);
+    const [rlDiagnosis, setRlDiagnosis] = useState('');
+    const [rlReason,    setRlReason]    = useState('');
+    const [rlTo,        setRlTo]        = useState('');
+    const [rlSpecialty, setRlSpecialty] = useState('');
+    const [rlNotes,     setRlNotes]     = useState('');
+    const [rlAge,       setRlAge]       = useState('');
+    const [rlGender,    setRlGender]    = useState('');
+    const [rlWeight,    setRlWeight]    = useState('');
+    const [rlSaving,    setRlSaving]    = useState(false);
+    const [rlIssuing,   setRlIssuing]   = useState(false);
+
 
     const fetchAll = useCallback(async () => {
         setLoading(true);
@@ -117,6 +130,66 @@ const SectionKonsultasi = ({ socketRef }) => {
         } catch (e) { toast.error(e.response?.data?.message || 'Gagal mengakhiri'); }
         finally { setEnding(false); }
     };
+
+    // ── Surat Rujukan handlers ──────────────────────────────────────
+    const openRlModal = (cons) => {
+        const rl = cons.referralLetter;
+        setRlTarget(cons);
+        if (rl && typeof rl === 'object') {
+            setRlDiagnosis(rl.diagnosis || '');
+            setRlReason(rl.referralReason || '');
+            setRlTo(rl.referralTo || '');
+            setRlSpecialty(rl.referralSpecialty || '');
+            setRlNotes(rl.notes || '');
+            setRlAge(rl.patientAge || '');
+            setRlGender(rl.patientGender || '');
+            setRlWeight(rl.patientWeight || '');
+        } else {
+            setRlDiagnosis(cons.medicalRecord?.assessment || '');
+            setRlReason(''); setRlTo(''); setRlSpecialty(''); setRlNotes('');
+            setRlAge(''); setRlGender(''); setRlWeight('');
+        }
+    };
+    const doSaveRl = async () => {
+        if (!rlDiagnosis.trim() || !rlReason.trim() || !rlTo.trim()) {
+            toast.error('Diagnosis, alasan rujukan, dan tujuan wajib diisi'); return;
+        }
+        setRlSaving(true);
+        try {
+            await api.post(`/api/consultations/${rlTarget._id}/referral-letter`, {
+                diagnosis: rlDiagnosis, referralReason: rlReason, referralTo: rlTo,
+                referralSpecialty: rlSpecialty, notes: rlNotes,
+                patientAge: rlAge, patientGender: rlGender, patientWeight: rlWeight,
+            });
+            toast.success('Surat rujukan berhasil disimpan ✅');
+            setRlTarget(null); fetchAll();
+        } catch (e) { toast.error(e.response?.data?.message || 'Gagal menyimpan'); }
+        finally { setRlSaving(false); }
+    };
+    const doIssueRl = async () => {
+        setRlIssuing(true);
+        try {
+            await api.put(`/api/consultations/${rlTarget._id}/referral-letter/issue`);
+            toast.success('Surat rujukan diterbitkan ✅');
+            setRlTarget(null); fetchAll();
+        } catch (e) { toast.error(e.response?.data?.message || 'Gagal'); }
+        finally { setRlIssuing(false); }
+    };
+    const downloadRlPdf = async (consId, letterNum) => {
+        try {
+            const r = await api.get(`/api/consultations/${consId}/referral-letter/pdf`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+            const a = document.createElement('a'); a.href = url;
+            a.setAttribute('download', `surat-rujukan-${letterNum || consId}.pdf`);
+            document.body.appendChild(a); a.click(); a.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('PDF surat rujukan berhasil diunduh');
+        } catch { toast.error('Gagal mengunduh PDF'); }
+    };
+
+    const inputStyle = { width: '100%', padding: '9px 12px', border: `1px solid ${colors.border}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
+    const textareaStyle = { ...inputStyle, resize: 'vertical' };
+    const labelStyle = { display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: colors.text };
 
     const TABS = [
         { key: 'active', label: 'Aktif & Upcoming', count: activeList.length },
@@ -297,6 +370,23 @@ const SectionKonsultasi = ({ socketRef }) => {
                                 </div>
                             )}
 
+                            {/* Surat Rujukan — read only di detail */}
+                            {d.referralLetter && typeof d.referralLetter === 'object' && (() => {
+                                const rl = d.referralLetter;
+                                return (
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 13, color: colors.text, marginBottom: 8 }}>🔀 Surat Rujukan</div>
+                                        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
+                                            <div><strong>No:</strong> {rl.letterNumber || '—'}</div>
+                                            <div><strong>Diagnosis:</strong> {rl.diagnosis || '—'}</div>
+                                            <div><strong>Rujukan Ke:</strong> {rl.referralTo || '—'}</div>
+                                            {rl.referralSpecialty && <div><strong>Spesialisasi:</strong> {rl.referralSpecialty}</div>}
+                                            <div><strong>Status:</strong> <span style={{ color: rl.status === 'issued' ? '#1d4ed8' : '#7c3aed', fontWeight: 700 }}>{rl.status === 'issued' ? '✓ Terbit' : '📝 Draft'}</span></div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             {/* Ringkasan Chat */}
                             {msgs.length > 0 && (
                                 <div>
@@ -328,8 +418,11 @@ const SectionKonsultasi = ({ socketRef }) => {
                                 </div>
                             )}
 
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 8, borderTop: `1px solid ${colors.border}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 8, borderTop: `1px solid ${colors.border}`, flexWrap: 'wrap' }}>
                                 <Btn variant="ghost" onClick={() => setConsDetail(null)}>Tutup</Btn>
+                                {['in_progress','ongoing','completed','no_show'].includes(d.status) && (
+                                    <Btn variant="outline" onClick={() => { setConsDetail(null); openRlModal(d); }}>🔀 Surat Rujukan</Btn>
+                                )}
                                 <Btn variant="outline" onClick={() => { navigate(`/consultations/${d._id}`); setConsDetail(null); }}>💬 Buka Chat Lengkap</Btn>
                             </div>
                         </div>
@@ -384,5 +477,112 @@ const SectionKonsultasi = ({ socketRef }) => {
 };
 
 
+
+            {/* ── MODAL: Surat Rujukan (Konsultasi) ── */}
+            <Modal open={!!rlTarget} onClose={() => setRlTarget(null)} title="🔀 Surat Rujukan Konsultasi" width={560}>
+                {rlTarget && (() => {
+                    const rl = rlTarget.referralLetter;
+                    const hasLetter = rl && typeof rl === 'object';
+                    const isIssued  = hasLetter && rl.status === 'issued';
+                    return (
+                        <div>
+                            <div style={{ background: '#f8fafc', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                                Pasien: <strong>{rlTarget.userId?.name}</strong>
+                                {hasLetter && <span style={{ marginLeft: 12, color: isIssued ? '#1d4ed8' : '#7c3aed', fontWeight: 600 }}>{isIssued ? '✓ Terbit' : '📝 Draft'}</span>}
+                            </div>
+
+                            {!isIssued && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                                        <div>
+                                            <label style={labelStyle}>Umur (tahun)</label>
+                                            <input value={rlAge} onChange={e => setRlAge(e.target.value)} placeholder="cth: 32" style={inputStyle} />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Jenis Kelamin</label>
+                                            <select value={rlGender} onChange={e => setRlGender(e.target.value)} style={inputStyle}>
+                                                <option value="">—</option>
+                                                <option value="Laki-laki">Laki-laki</option>
+                                                <option value="Perempuan">Perempuan</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Berat Badan (kg)</label>
+                                            <input value={rlWeight} onChange={e => setRlWeight(e.target.value)} placeholder="cth: 65" style={inputStyle} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Diagnosis <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <textarea value={rlDiagnosis} onChange={e => setRlDiagnosis(e.target.value)} rows={2}
+                                            placeholder="Contoh: Hipertensi grade II, memerlukan evaluasi kardiologi..."
+                                            style={{ ...textareaStyle, borderColor: !rlDiagnosis.trim() ? '#fca5a5' : colors.border }} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Rujukan Ke <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <input value={rlTo} onChange={e => setRlTo(e.target.value)}
+                                            placeholder="Contoh: RSUD Kota Bogor, Poli Jantung RS XYZ..."
+                                            style={{ ...inputStyle, borderColor: !rlTo.trim() ? '#fca5a5' : colors.border }} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Spesialisasi Tujuan</label>
+                                        <input value={rlSpecialty} onChange={e => setRlSpecialty(e.target.value)}
+                                            placeholder="Contoh: Kardiologi, Orthopedi, Neurologi..." style={inputStyle} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Alasan Rujukan <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <textarea value={rlReason} onChange={e => setRlReason(e.target.value)} rows={3}
+                                            placeholder="Jelaskan alasan perujukan, riwayat pengobatan sebelumnya, dan hal penting lainnya..."
+                                            style={{ ...textareaStyle, borderColor: !rlReason.trim() ? '#fca5a5' : colors.border }} />
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>Catatan Tambahan</label>
+                                        <textarea value={rlNotes} onChange={e => setRlNotes(e.target.value)} rows={2}
+                                            placeholder="Obat yang sedang dikonsumsi, alergi, dll..." style={textareaStyle} />
+                                    </div>
+                                </div>
+                            )}
+
+                            {isIssued && (
+                                <div style={{ fontSize: 13, color: colors.text, lineHeight: 1.7 }}>
+                                    {[
+                                        ['No. Surat',      rl.letterNumber],
+                                        ['Diagnosis',      rl.diagnosis],
+                                        ['Rujukan Ke',     rl.referralTo],
+                                        ['Spesialisasi',   rl.referralSpecialty],
+                                        ['Umur',           rl.patientAge ? rl.patientAge + ' tahun' : null],
+                                        ['Jenis Kelamin',  rl.patientGender],
+                                        ['Alasan Rujukan', rl.referralReason],
+                                        ['Catatan',        rl.notes],
+                                    ].filter(([,v]) => v).map(([label, value]) => (
+                                        <div key={label} style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
+                                            <span style={{ minWidth: 120, color: colors.muted, fontWeight: 600 }}>{label}</span>
+                                            <span style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' }}>
+                                <Btn variant="ghost" onClick={() => setRlTarget(null)}>Tutup</Btn>
+                                {!hasLetter && (
+                                    <Btn variant="primary" onClick={doSaveRl} disabled={rlSaving || !rlDiagnosis.trim() || !rlReason.trim() || !rlTo.trim()}>
+                                        {rlSaving ? '…' : '💾 Simpan Draft'}
+                                    </Btn>
+                                )}
+                                {hasLetter && !isIssued && (
+                                    <Btn variant="success" onClick={doIssueRl} disabled={rlIssuing}>
+                                        {rlIssuing ? '…' : '✅ Terbitkan Surat'}
+                                    </Btn>
+                                )}
+                                {isIssued && (
+                                    <Btn variant="outline" onClick={() => downloadRlPdf(rlTarget._id, rl.letterNumber)}>
+                                        ⬇ Download PDF
+                                    </Btn>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
 
 export default SectionKonsultasi;

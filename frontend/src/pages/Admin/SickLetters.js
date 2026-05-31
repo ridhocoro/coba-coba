@@ -101,8 +101,7 @@ const SickLetterTab = () => {
             </tr></thead>
             <tbody>
               {letters.map(l => {
-                const consultId = l.consultationId;
-                const canPdf = l.status === 'issued' && consultId;
+                const canPdf = l.status === 'issued' && (l.consultationId || l.appointmentId);
                 return (
                   <tr key={l._id}>
                     <td style={S.td}><span style={{ fontFamily: 'monospace', fontSize: 12, color: '#2563eb' }}>{l.letterNumber}</span></td>
@@ -125,13 +124,13 @@ const SickLetterTab = () => {
                     <td style={S.td}>
                       {canPdf ? (
                         <button
-                          onClick={() => openPdf(`/api/consultations/${consultId}/sick-letter/pdf`)}
+                          onClick={() => openPdf(`/api/admin/sick-letters/${l._id}/pdf`)}
                           style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}>
                           ⬇ Download
                         </button>
                       ) : (
                         <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                          {!consultId ? 'ID tidak tersedia' : 'Belum diterbitkan'}
+                          {l.status !== 'issued' ? 'Belum diterbitkan' : 'ID tidak tersedia'}
                         </span>
                       )}
                     </td>
@@ -256,6 +255,108 @@ const PrescriptionTab = () => {
   );
 };
 
+// ─── Tab: Surat Rujukan ──────────────────────────────────────────────────────
+const ReferralLetterTab = () => {
+  const [letters, setLetters] = useState([]);
+  const [total, setTotal]     = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [from, setFrom]       = useState('');
+  const [to, setTo]           = useState('');
+  const [status, setStatus]   = useState('');
+  const [page, setPage]       = useState(1);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page, limit: 30 });
+      if (from)   params.set('from', from);
+      if (to)     params.set('to', to);
+      if (status) params.set('status', status);
+      const r = await api.get(`/api/admin/referral-letters?${params}`);
+      setLetters(r.data.letters || []);
+      setTotal(r.data.total || 0);
+    } catch {}
+    finally { setLoading(false); }
+  }, [from, to, status, page]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input type="date" style={S.input} value={from} onChange={e => { setFrom(e.target.value); setPage(1); }} />
+        <span style={{ fontSize: 12, color: '#64748b' }}>s/d</span>
+        <input type="date" style={S.input} value={to} onChange={e => { setTo(e.target.value); setPage(1); }} />
+        <select style={S.input} value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}>
+          <option value="">Semua Status</option>
+          <option value="draft">Draft</option>
+          <option value="issued">Diterbitkan</option>
+        </select>
+        <span style={{ fontSize: 12, color: '#64748b', marginLeft: 'auto' }}>{total} surat</span>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Memuat...</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={S.table}>
+            <thead><tr>
+              {['No. Surat', 'Pasien', 'Dokter', 'Diagnosis', 'Rujukan Ke', 'Spesialisasi', 'Status', 'Diterbitkan', 'Aksi'].map(h => (
+                <th key={h} style={S.th}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {letters.map(l => {
+                const canPdf = l.status === 'issued' && (l.consultationId || l.appointmentId);
+                return (
+                  <tr key={l._id}>
+                    <td style={S.td}><span style={{ fontFamily: 'monospace', fontSize: 12, color: '#7c3aed' }}>{l.letterNumber}</span></td>
+                    <td style={S.td}>
+                      <div style={{ fontWeight: 600 }}>{l.userId?.name || '-'}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{l.userId?.email}</div>
+                    </td>
+                    <td style={S.td}>{fmtDoctorName(l.doctorId)}</td>
+                    <td style={{ ...S.td, maxWidth: 160 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{l.diagnosis}</div>
+                    </td>
+                    <td style={{ ...S.td, maxWidth: 160 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{l.referralTo || '-'}</div>
+                    </td>
+                    <td style={S.td}><span style={{ fontSize: 12, color: '#64748b' }}>{l.referralSpecialty || '-'}</span></td>
+                    <td style={S.td}>
+                      <Badge color={l.status === 'issued' ? 'green' : 'yellow'}>
+                        {l.status === 'issued' ? 'Diterbitkan' : 'Draft'}
+                      </Badge>
+                    </td>
+                    <td style={S.td}>{fmtDate(l.issuedAt)}</td>
+                    <td style={S.td}>
+                      {canPdf ? (
+                        <button
+                          onClick={() => openPdf(`/api/admin/referral-letters/${l._id}/pdf`)}
+                          style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd' }}>
+                          ⬇ Download
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                          {l.status !== 'issued' ? 'Belum diterbitkan' : 'ID tidak tersedia'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!letters.length && (
+                <tr><td colSpan={9} style={{ ...S.td, textAlign: 'center', color: '#94a3b8', padding: 32 }}>Tidak ada surat rujukan</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Pagination page={page} pages={Math.ceil(total / 30)} setPage={setPage} />
+    </>
+  );
+};
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 const SickLetters = () => {
   const [tab, setTab] = useState('sick-letters');
@@ -263,8 +364,9 @@ const SickLetters = () => {
     <div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '2px solid #e2e8f0' }}>
         {[
-          { key: 'sick-letters',  label: '📄 Surat Sakit' },
-          { key: 'prescriptions', label: '💊 Resep Obat'  },
+          { key: 'sick-letters',     label: '📄 Surat Sakit'   },
+          { key: 'referral-letters', label: '🔀 Surat Rujukan' },
+          { key: 'prescriptions',    label: '💊 Resep Obat'    },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: '8px 18px', border: 'none',
@@ -278,8 +380,9 @@ const SickLetters = () => {
           </button>
         ))}
       </div>
-      {tab === 'sick-letters'  && <SickLetterTab />}
-      {tab === 'prescriptions' && <PrescriptionTab />}
+      {tab === 'sick-letters'     && <SickLetterTab />}
+      {tab === 'referral-letters' && <ReferralLetterTab />}
+      {tab === 'prescriptions'    && <PrescriptionTab />}
     </div>
   );
 };

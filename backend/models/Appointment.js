@@ -61,6 +61,10 @@ const appointmentSchema = new mongoose.Schema({
         completedAt       : { type: Date },
     },
 
+    // ── Surat Dokter ──────────────────────────────────────────────
+    sickLetter:     { type: String, ref: 'SickLetter' },
+    referralLetter: { type: String, ref: 'ReferralLetter' },
+
     // ── Reschedule ────────────────────────────────────────────────
     rescheduledFrom : {
         appointmentDate : Date,
