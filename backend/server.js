@@ -25,23 +25,68 @@ const { globalLimiter } = require('./middleware/rateLimiter');
 
 const app    = express();
 const server = http.createServer(app);
+
+// ── CORS: baca dari env agar mudah dikonfigurasi di Railway / Vercel ──────────
+// Tambahkan env var CORS_ORIGIN di Railway dengan nilai URL frontend,
+// pisahkan beberapa origin dengan koma.
+// Contoh: CORS_ORIGIN=https://klinik-frontend-amber.vercel.app,https://klinik.example.com
+const buildAllowedOrigins = () => {
+    const base = [
+        'http://localhost:3000',
+        'http://localhost:3001',
+    ];
+    const fromEnv = (process.env.CORS_ORIGIN || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+    return [...new Set([...base, ...fromEnv])];
+};
+
+const allowedOrigins = buildAllowedOrigins();
+console.log('✅ CORS allowed origins:', allowedOrigins);
+
+// Fungsi origin dinamis — mendukung wildcard subdomain Vercel (*.vercel.app)
+const corsOriginFn = (origin, callback) => {
+    // Izinkan request tanpa origin (Postman, server-to-server, curl)
+    if (!origin) return callback(null, true);
+    // Cek exact match
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Izinkan semua subdomain vercel.app & railway.app (preview deploy)
+    if (/https:\/\/[a-zA-Z0-9-]+-[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return callback(null, true);
+    if (/https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return callback(null, true);
+    if (/https:\/\/[a-zA-Z0-9-]+\.railway\.app$/.test(origin)) return callback(null, true);
+    // Blokir origin lain
+    console.warn('[CORS] Blocked origin:', origin);
+    return callback(new Error('Not allowed by CORS'));
+};
+
 const io     = socketIO(server, {
     cors: {
-        origin:  ['https://klinik-frontend-amber.vercel.app', 'http://localhost:3000'],
-        methods: ['GET', 'POST'],
+        origin:      corsOriginFn,
+        methods:     ['GET', 'POST'],
+        credentials: true,
     },
-    // FIX-4: Utamakan WebSocket, hindari polling yang lambat di Railway
     transports:    ['websocket', 'polling'],
-    pingTimeout:   60000,  // toleransi koneksi lambat / Railway cold start
-    pingInterval:  25000,  // kirim ping lebih sering agar koneksi tidak mati
+    pingTimeout:   60000,
+    pingInterval:  25000,
 });
 
 app.set('io', io);
 
 // ── Middleware ────────────────────────────────────────────────
 app.use(cors({
-    origin:      ['https://klinik-frontend-amber.vercel.app', 'http://localhost:3000'],
+    origin:      corsOriginFn,
     credentials: true,
+    methods:     ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+
+// Handle preflight OPTIONS untuk semua route
+app.options('*', cors({
+    origin:      corsOriginFn,
+    credentials: true,
+    methods:     ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
