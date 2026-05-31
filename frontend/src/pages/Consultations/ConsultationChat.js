@@ -426,6 +426,7 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
   const [showLogPanel, setShowLogPanel]  = useState(false);
   const canvasRef          = useRef(null);  // canvas untuk composite recording
   const canvasRafRef       = useRef(null);  // requestAnimationFrame id
+  const autoDownloadRef    = useRef(false); // trigger auto-download saat endCall
 
   // ── Bersihkan semua resource ──────────────────────────────────
   const cleanup = useCallback(() => {
@@ -445,6 +446,13 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
     // FIX: Guard agar endCall tidak dipanggil dua kali (dari tombol & dari oniceconnectionstatechange)
     if (isEndingRef.current) return;
     isEndingRef.current = true;
+    // Autosave recording jika masih berjalan saat endCall
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      autoDownloadRef.current = true; // onstop akan auto-download
+      mediaRecorderRef.current.stop();
+      // Hentikan canvas loop segera
+      if (canvasRafRef.current) { cancelAnimationFrame(canvasRafRef.current); canvasRafRef.current = null; }
+    }
     // BUG-FIX: Kirim reason agar sisi penerima bisa tahu siapa yang mengakhiri
     socket.emit('vc-end', { consultationId, reason: 'ended' });
     cleanup();
@@ -686,13 +694,13 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
 
       recorder.onstop = () => {
         // Hentikan canvas animation loop
-        if (canvasRafRef.current) cancelAnimationFrame(canvasRafRef.current);
+        if (canvasRafRef.current) { cancelAnimationFrame(canvasRafRef.current); canvasRafRef.current = null; }
         canvasRef.current = null;
         const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+        const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
         setRecordedBlob(blob);
         setShowLogPanel(true);
         try {
-          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
           const objUrl = URL.createObjectURL(blob);
           sessionStorage.setItem(`vc_recording_${consultationId}`, JSON.stringify({
             url: objUrl, ext,
@@ -700,7 +708,21 @@ const VideoCall = ({ consultationId, socket, isDoctor, initialOffer = null, onCl
             recordedAt: new Date().toISOString(),
           }));
         } catch {}
-        toast.success('Rekaman selesai. Siap diunduh atau diupload.');
+        // Auto-download jika triggered oleh endCall
+        if (autoDownloadRef.current) {
+          autoDownloadRef.current = false;
+          const url = URL.createObjectURL(blob);
+          const a   = document.createElement('a');
+          a.href     = url;
+          a.download = `rekaman-konsultasi-${consultationId}.${ext}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          toast.success('📥 Rekaman otomatis disimpan ke perangkat Anda!');
+        } else {
+          toast.success('Rekaman selesai. Siap diunduh atau diupload.');
+        }
       };
 
       recorder.start(1000);

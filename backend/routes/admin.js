@@ -1800,7 +1800,7 @@ router.get('/analytics/disease-trend', guard, async (req, res) => {
             Consultation.aggregate([
                 {
                     $match: {
-                        disease_category: { $ne: null },
+                        disease_category: { $nin: [null, 'Tidak Dikenali'] },
                         scheduledAt: { $gte: start, $lte: end },
                     }
                 },
@@ -1822,7 +1822,7 @@ router.get('/analytics/disease-trend', guard, async (req, res) => {
             Appointment.aggregate([
                 {
                     $match: {
-                        disease_category: { $ne: null },
+                        disease_category: { $nin: [null, 'Tidak Dikenali'] },
                         scheduledAt: { $gte: start, $lte: end },
                     }
                 },
@@ -1969,7 +1969,7 @@ router.get('/analytics/disease-trend-gender', guard, async (req, res) => {
 
         const buildPipeline = () => {
             const matchStage = {
-                disease_category: { $ne: null },
+                disease_category: { $nin: [null, 'Tidak Dikenali'] },
                 scheduledAt: { $gte: start, $lte: end },
             };
             if (userIdFilter) matchStage.userId = { $in: userIdFilter };

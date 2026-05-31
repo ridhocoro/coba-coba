@@ -1057,7 +1057,7 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
                 {
                     $match: {
                         doctorId: doctorIdStr,
-                        disease_category: { $ne: null },
+                        disease_category: { $nin: [null, 'Tidak Dikenali'] },
                         scheduledAt: { $gte: start, $lte: end },
                     }
                 },
@@ -1080,7 +1080,7 @@ router.get('/my/disease-trend', auth, doctorAuth, async (req, res) => {
                 {
                     $match: {
                         doctorId: doctorIdStr,
-                        disease_category: { $ne: null },
+                        disease_category: { $nin: [null, 'Tidak Dikenali'] },
                         scheduledAt: { $gte: start, $lte: end },
                     }
                 },
@@ -1157,7 +1157,7 @@ router.get('/my/disease-trend-gender', auth, doctorAuth, async (req, res) => {
         const buildPipeline = () => {
             const matchStage = {
                 doctorId: doctorIdStr,
-                disease_category: { $ne: null },
+                disease_category: { $nin: [null, 'Tidak Dikenali'] },
                 scheduledAt: { $gte: start, $lte: end },
             };
             if (userIdFilter) matchStage.userId = { $in: userIdFilter };
