@@ -472,11 +472,6 @@ const SectionKonsultasi = ({ socketRef }) => {
                     </Btn>
                 </div>
             </Modal>
-        </div>
-    );
-};
-
-
 
             {/* ── MODAL: Surat Rujukan (Konsultasi) ── */}
             <Modal open={!!rlTarget} onClose={() => setRlTarget(null)} title="🔀 Surat Rujukan Konsultasi" width={560}>
@@ -584,5 +579,9 @@ const SectionKonsultasi = ({ socketRef }) => {
                     );
                 })()}
             </Modal>
+
+        </div>
+    );
+};
 
 export default SectionKonsultasi;
