@@ -228,6 +228,34 @@ const SectionKonsultasi = ({ socketRef }) => {
                                 {d.medicalHistory && <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}><strong>Riwayat:</strong> {d.medicalHistory}</div>}
                             </div>
 
+                            {d.disease_category && (
+                                <div style={{ marginTop: 8 }}>
+                                    <div style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        background: d.disease_category === 'Tidak Dikenali' ? '#fef3c7' : '#eff6ff',
+                                        border: `1px solid ${d.disease_category === 'Tidak Dikenali' ? '#fde68a' : '#bfdbfe'}`,
+                                        borderRadius: 20, padding: '3px 12px',
+                                    }}>
+                                        <span style={{ fontSize: 11 }}>
+                                            {d.disease_category === 'Tidak Dikenali' ? '⚠️' : '🤖'}
+                                        </span>
+                                        <span style={{
+                                            fontSize: 11, fontWeight: 700,
+                                            color: d.disease_category === 'Tidak Dikenali' ? '#92400e' : '#1d4ed8',
+                                        }}>
+                                            {d.disease_category === 'Tidak Dikenali'
+                                                ? 'Keluhan tidak dikenali sistem'
+                                                : `Terdeteksi: ${d.disease_category}`}
+                                        </span>
+                                        {d.category_confidence && d.disease_category !== 'Tidak Dikenali' && (
+                                            <span style={{ fontSize: 10, color: '#64748b' }}>
+                                                ({Math.round(d.category_confidence * 100)}%)
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Rekam Medis */}
                             {mr?.isCompleted && (
                                 <div>

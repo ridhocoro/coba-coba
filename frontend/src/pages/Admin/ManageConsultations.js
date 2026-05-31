@@ -80,7 +80,7 @@ const ManageConsultations = () => {
 
       {loading ? <p style={{ color:'#64748b' }}>Memuat...</p> : (
         <table style={S.table}>
-          <thead><tr>{['Jadwal','Pasien','Dokter','Tipe','Durasi','Status','Nominal'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Jadwal','Pasien','Dokter','Tipe','Durasi','Status','Nominal','Kategori Penyakit'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
           <tbody>
             {items.map(c => {
               const cfg = STATUS_CFG[c.status] || { bg:'#f1f5f9', c:'#475569', l: c.status };
@@ -93,10 +93,24 @@ const ManageConsultations = () => {
                   <td style={S.td}>{c.durationMin != null ? `${c.durationMin} mnt` : '-'}</td>
                   <td style={S.td}><span style={{ background: cfg.bg, color: cfg.c, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>{cfg.l}</span></td>
                   <td style={S.td}>{c.amount ? `Rp ${c.amount.toLocaleString('id-ID')}` : '-'}</td>
+                  <td style={S.td}>
+                    {c.disease_category ? (
+                        <span style={{
+                            background: c.disease_category === 'Tidak Dikenali' ? '#fef3c7' : '#eff6ff',
+                            color:      c.disease_category === 'Tidak Dikenali' ? '#92400e' : '#1d4ed8',
+                            borderRadius: 20, padding: '2px 10px',
+                            fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                        }}>
+                            {c.disease_category === 'Tidak Dikenali' ? '⚠️ Tdk Dikenali' : c.disease_category}
+                        </span>
+                    ) : (
+                        <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
+                    )}
+                </td>
                 </tr>
               );
             })}
-            {!items.length && <tr><td colSpan={7} style={{ ...S.td, textAlign:'center', color:'#94a3b8' }}>Tidak ada data</td></tr>}
+            {!items.length && <tr><td colSpan={8} style={{ ...S.td, textAlign:'center', color:'#94a3b8' }}>Tidak ada data</td></tr>}
           </tbody>
         </table>
       )}

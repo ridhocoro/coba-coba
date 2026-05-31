@@ -546,6 +546,40 @@ const ConsultationCard = ({
                     <div style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.5 }}>{cons.symptoms || '—'}</div>
                 </div>
 
+                {cons.disease_category && (
+                    <div style={{ marginTop: 8 }}>
+                        {cons.disease_category === 'Tidak Dikenali' ? (
+                            <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                background: '#fef9c3', border: '1px solid #fde68a',
+                                borderRadius: 20, padding: '3px 12px',
+                            }}>
+                                <span style={{ fontSize: 11 }}>⚠️</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#92400e' }}>
+                                    Keluhan belum teridentifikasi — dokter akan mendiagnosis saat konsultasi
+                                </span>
+                            </div>
+                        ) : (
+                            <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                background: '#f0fdf4', border: '1px solid #bbf7d0',
+                                borderRadius: 20, padding: '3px 12px',
+                            }}>
+                                <span style={{ fontSize: 11 }}>🤖</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#166534' }}>
+                                    Terdeteksi: {cons.disease_category}
+                                </span>
+                                {cons.category_confidence && (
+                                    <span style={{ fontSize: 10, color: '#64748b' }}>
+                                        ({Math.round(cons.category_confidence * 100)}% akurasi)
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+
                 {needsPay && cons.paymentDeadline && (
                     <div style={{ marginBottom: 14, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span style={{ color: '#92400e', fontSize: 12, fontWeight: 600 }}>Batas bayar:</span>
