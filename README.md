@@ -8,9 +8,9 @@
 
 | Nama | NIM | Peran |
 |------|-----|-------|
-| Rifqa Nasywa Kamila | M0405241028 | <!-- Peran --> |
-| Aqila Begum Fahm Ara | M0405241029 | <!-- Peran --> |
-| Muhammad Ridho Dwi Kuncoro | M0405241030 | <!-- Peran --> |
+| Rifqa Nasywa Kamila | M0405241028 |QA |
+| Aqila Begum Fahm Ara | M0405241029 | UI/UX |
+| Muhammad Ridho Dwi Kuncoro | M0405241030 | Fullstack |
 
 ---
 
@@ -25,9 +25,14 @@
 
 ## 📌 Apa itu Klinik Pratama IPB?
 
-**Klinik Pratama IPB** adalah platform manajemen klinik berbasis web yang dirancang khusus untuk civitas akademika IPB. Platform ini menghadirkan layanan kesehatan digital yang terintegrasi — mulai dari konsultasi dokter secara real-time, pemesanan janji temu, pembelian obat di apotek online, hingga pengecekan kesehatan mandiri berbasis kamera (rPPG). Sistem ini dibangun dengan arsitektur hybrid database (MongoDB + MySQL) dan mendukung komunikasi real-time via Socket.IO.
+**Klinik Pratama IPB** merupakan platform layanan kesehatan kampus yang dirancang untuk mempermudah akses medis bagi warga IPB. Aplikasi ini berfungsi sebagai klinik digital yang mempertemukan pasien dengan dokter secara langsung melalui fitur chat konsultasi. Pengguna juga tidak perlu mengantre lama di lokasi karena bisa memesan jadwal pertemuan (janji temu) dan membeli kebutuhan obat secara online. Sebagai tambahan, terdapat fitur asisten kesehatan pintar yang dapat mendeteksi kondisi fisik pengguna cukup lewat pemindaian wajah di kamera.
 
 ---
+## Class Diagram
+<img width="1743" height="1556" alt="Untitled Diagram (2)" src="https://github.com/user-attachments/assets/b74d9737-ec13-495d-888c-e1484a4c16d3" />
+
+
+
 
 ## 🛠️ Tech Stack
 
