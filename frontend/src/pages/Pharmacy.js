@@ -960,7 +960,7 @@ const Pharmacy = () => {
                                                     <div key={idx} style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                                                         <div style={{display:'flex',alignItems:'center',gap:12}}>
                                                             <div style={{width:48,height:48,background:'#f8fafc',borderRadius:10,padding:6,border:'1px solid #f1f5f9'}}>
-                                                                <ProductImage src={item.image?resolveImg(item.image):null} alt={item.name} isGrid={false} />
+                                                                <ProductImage src={item.medicineId?.image?resolveImg(item.medicineId.image):null} alt={item.name} isGrid={false} />
                                                             </div>
                                                             <div>
                                                                 <div style={{fontWeight:700,fontSize:14,color:'#0f172a',marginBottom:2}}>
