@@ -178,12 +178,22 @@ const PrescriptionModal = ({ consultation, onClose, onSave, isDoctor }) => {
           {/* Identitas pasien */}
           <div style={{ color: '#8b949e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', marginBottom: 10 }}>Identitas Pasien</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 18 }}>
-            {[['Umur', patientAge, setPatientAge, 'Contoh: 25 tahun'], ['Jenis Kelamin', patientGender, setPatientGender, 'Laki-laki / Perempuan'], ['Berat Badan', patientWeight, setPatientWeight, 'Contoh: 60 kg']].map(([label, val, setter, ph]) => (
-              <div key={label}>
-                <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 4 }}>{label}</label>
-                <input value={val} onChange={e => setter(e.target.value)} placeholder={ph} style={inp} />
-              </div>
-            ))}
+            <div>
+              <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 4 }}>Umur</label>
+              <input value={patientAge} onChange={e => setPatientAge(e.target.value)} placeholder="Contoh: 25 tahun" style={inp} />
+            </div>
+            <div>
+              <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 4 }}>Jenis Kelamin</label>
+              <select value={patientGender} onChange={e => setPatientGender(e.target.value)} style={{...inp, appearance: 'none'}}>
+                <option value="">— Pilih —</option>
+                <option value="Laki-laki">Laki-laki</option>
+                <option value="Perempuan">Perempuan</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 4 }}>Berat Badan</label>
+              <input value={patientWeight} onChange={e => setPatientWeight(e.target.value)} placeholder="Contoh: 60 kg" style={inp} />
+            </div>
           </div>
 
           {/* Daftar obat */}

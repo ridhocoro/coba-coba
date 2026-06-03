@@ -284,12 +284,6 @@ const SectionJanjiTemu = ({ socketRef }) => {
                                 {appointments.map((a, i) => {
                                     const proc = processing[a._id];
                                     let isTime = true;
-                                    if (a.appointmentDate && a.appointmentTime) {
-                                        const dt = new Date(a.appointmentDate);
-                                        const [h, m] = a.appointmentTime.split(':').map(Number);
-                                        dt.setHours(h, m, 0, 0);
-                                        if ((dt.getTime() - Date.now()) > 30 * 60000) isTime = false;
-                                    }
                                     const canCI    = a.status === 'scheduled';
                                     const canComp  = a.status === 'checked_in';
                                     const canCancl = a.status === 'scheduled' && (new Date(a.scheduledAt || a.appointmentDate).getTime() - Date.now() > 24 * 3600000);

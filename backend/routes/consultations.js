@@ -526,6 +526,8 @@ router.put('/:id/start', auth, async (req, res) => {
         const EARLY_GRACE_MS = 5 * 60 * 1000;
         if (consultation.scheduledAt) {
             const earliest = new Date(consultation.scheduledAt.getTime() - EARLY_GRACE_MS);
+            // Bypassed for presentation:
+            /*
             if (now < earliest) {
                 const menit = Math.ceil((earliest - now) / 60000);
                 return res.status(400).json({
@@ -537,6 +539,7 @@ router.put('/:id/start', auth, async (req, res) => {
             if (consultation.scheduledEnd && now > consultation.scheduledEnd) {
                 return res.status(400).json({ message: 'Waktu konsultasi sudah habis. Sesi tidak bisa dimulai.' });
             }
+            */
         }
 
         const updated = await Consultation.findOneAndUpdate(
