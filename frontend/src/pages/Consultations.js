@@ -551,12 +551,12 @@ const ConsultationCard = ({
                     <div style={{ marginTop: 8 }}>
                         {cons.disease_category === 'Tidak Dikenali' ? (
                             <div style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                display: 'flex', alignItems: 'flex-start', gap: 8,
                                 background: '#fef9c3', border: '1px solid #fde68a',
-                                borderRadius: 20, padding: '3px 12px',
+                                borderRadius: 8, padding: '8px 12px',
                             }}>
-                                <span style={{ fontSize: 11 }}>⚠️</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: '#92400e' }}>
+                                <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#92400e', lineHeight: 1.5 }}>
                                     Keluhan belum teridentifikasi — dokter akan mendiagnosis saat konsultasi
                                 </span>
                             </div>
@@ -837,7 +837,7 @@ const Consultations = () => {
                 setConsultations(r.data || []);
             }
         } catch { if (!background) toast.error('Gagal memuat data'); }
-        finally { setLoading(false); }
+        finally { if (!background) setLoading(false); }
     }, [user]);
 
     useEffect(() => {
@@ -856,7 +856,7 @@ const Consultations = () => {
 
     useEffect(() => {
         if (!user) return;
-        const onFocus = () => loadData();
+        const onFocus = () => loadData(true);
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
     }, [loadData, user]);

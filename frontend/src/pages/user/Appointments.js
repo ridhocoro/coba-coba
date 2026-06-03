@@ -584,7 +584,7 @@ const Appointments = () => {
         } catch {
             if (!background) toast.error('Gagal memuat data');
         } finally {
-            setLoading(false);
+            if (!background) setLoading(false);
         }
     }, [user]);
 
@@ -607,7 +607,7 @@ const Appointments = () => {
     // Refresh saat window fokus
     useEffect(() => {
         if (!user) return;
-        const onFocus = () => loadData();
+        const onFocus = () => loadData(true);
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
     }, [loadData, user]);
@@ -1154,7 +1154,7 @@ const Appointments = () => {
                             background: (!bookDate || !bookTime || !bookComplaint.trim() || booking) ? '#9ca3af' : 'linear-gradient(135deg,#1d4ed8,#2563eb)',
                             color: '#fff', cursor: (!bookDate || !bookTime || !bookComplaint.trim() || booking) ? 'not-allowed' : 'pointer',
                         }}>
-                        {booking ? 'Memproses...' : 'Konfirmasi Janji Temu ✓'}
+                        {booking ? 'Memproses...' : 'Konfirmasi Janji Temu'}
                     </button>
                 </Modal>
             )}
