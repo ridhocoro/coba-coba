@@ -827,15 +827,21 @@ const Consultations = () => {
     const loadData = useCallback(async (background = false) => {
         if (!background) setLoading(true);
         try {
-            const docRes = await api.get('/api/doctors');
-            const docs = docRes.data || [];
+            let docs = [];
+            if (user) {
+                const [docRes, r] = await Promise.all([
+                    api.get('/api/doctors'),
+                    api.get('/api/consultations/my-consultations')
+                ]);
+                docs = docRes.data || [];
+                setConsultations(r.data || []);
+            } else {
+                const docRes = await api.get('/api/doctors');
+                docs = docRes.data || [];
+            }
             setDoctors(docs);
             // Simpan ke sessionStorage agar next visit langsung tampil
             try { sessionStorage.setItem('cache:doctors-list', JSON.stringify(docs)); } catch (_) {}
-            if (user) {
-                const r = await api.get('/api/consultations/my-consultations');
-                setConsultations(r.data || []);
-            }
         } catch { if (!background) toast.error('Gagal memuat data'); }
         finally { if (!background) setLoading(false); }
     }, [user]);

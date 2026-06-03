@@ -571,16 +571,21 @@ const Appointments = () => {
         // Jika background refresh, tidak tampilkan loading spinner
         if (!background) setLoading(true);
         try {
-            const docRes = await api.get('/api/appointments/doctors-with-slots');
-            const docs = docRes.data.doctors || [];
+            let docs = [];
+            if (user) {
+                const [docRes, apptRes] = await Promise.all([
+                    api.get('/api/appointments/doctors-with-slots'),
+                    api.get('/api/appointments/my')
+                ]);
+                docs = docRes.data.doctors || [];
+                setAppointments(apptRes.data.appointments || []);
+            } else {
+                const docRes = await api.get('/api/appointments/doctors-with-slots');
+                docs = docRes.data.doctors || [];
+            }
             setDoctors(docs);
             // Simpan ke sessionStorage agar next visit langsung tampil
             try { sessionStorage.setItem('cache:doctors-with-slots', JSON.stringify(docs)); } catch (_) {}
-
-            if (user) {
-                const apptRes = await api.get('/api/appointments/my');
-                setAppointments(apptRes.data.appointments || []);
-            }
         } catch {
             if (!background) toast.error('Gagal memuat data');
         } finally {
