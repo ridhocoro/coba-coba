@@ -2507,7 +2507,7 @@ async function generateConsReferralPdf(consultationId, res) {
         doc.y = curY;
         doc.moveDown(0.4);
 
-        doc.text('Dengan hormat, kami merujuk pasien tersebut di atas kepada:');
+        doc.text('Dengan hormat, kami merujuk pasien tersebut di atas kepada:', 50, doc.y);
         doc.moveDown(0.3);
         curY = doc.y;
         doc.text('Tujuan Rujukan', labelX, curY); doc.text(`: ${rl.referralTo}`, valueX, curY, { width: 340 }); curY += 16;
