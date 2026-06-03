@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import io from 'socket.io-client';
 import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
 import { fmtDoctorName } from '../../utils/format';
-import { apptCache } from '../../utils/dataCache';
+import { apptCache } from '../../utils/cache';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
