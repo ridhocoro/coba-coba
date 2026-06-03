@@ -1766,7 +1766,6 @@ const ConsultationChat = () => {
       const saved = res.data.message;
       // BUG-FIX: gunakan senderName dari server (bukan optimistic) agar konsisten
       setMessages(prev => prev.map(m => m._localId === localId ? { ...saved, senderName: saved.senderName || optimistic.senderName, _pending: false } : m));
-      socket?.emit('send-message', { consultationId: id, _id: saved._id, senderId: myId, senderName: saved.senderName || optimistic.senderName, senderRole: user.role, message: text, timestamp: saved.timestamp || new Date() });
     } catch {
       setMessages(prev => prev.filter(m => m._localId !== localId));
       setNewMessage(text);
@@ -2294,15 +2293,7 @@ const ConsultationChat = () => {
             <div style={s.sideSection}>
               <span style={s.label}>Aksi</span>
 
-              {/* Video call button untuk user — hanya saat live */}
-              {isVideoCall && isLive && (
-                <button onClick={() => {
-                  socket?.emit('join-consultation', consultation._id);
-                  setShowVideoCall(true);
-                }} style={s.actionBtn('#7c3aed')}>
-                  📹 Gabung Video Call
-                </button>
-              )}
+
 
               {/* Dokumen — tersedia setelah konsultasi selesai */}
               {isCompleted && (

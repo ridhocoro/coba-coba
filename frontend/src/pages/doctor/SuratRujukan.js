@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 import {
     API_URL, colors, fmtDate, fmtDT, toMin, toHHMM,
     CONS_SLOTS, APPT_SLOTS, DAYS_INFO, makeEmptySchedule, DEF_CONS, DEF_APPT,
@@ -14,8 +15,8 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════════
 const SectionSuratRujukan = () => {
     const [tab, setTab]         = useState('all');
-    const [items, setItems]     = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [items, setItems]     = useState(() => getCache('doctor:suratrujukan:items', []));
+    const [loading, setLoading] = useState(() => !hasCache('doctor:suratrujukan:items'));
     const [detail, setDetail]   = useState(null);
 
     // ── Edit modal state ──────────────────────────────────────────────────────
@@ -31,8 +32,8 @@ const SectionSuratRujukan = () => {
     const [rlSaving,      setRlSaving]      = useState(false);
     const [rlIssuing,     setRlIssuing]     = useState(false);
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
+    const fetchData = useCallback(async (background = false) => {
+        if (!background) setLoading(!hasCache('doctor:suratrujukan:items'));
         try {
             const [consRes, apptRes] = await Promise.all([
                 api.get('/api/consultations/doctor/all').catch(() => ({ data: { consultations: [] } })),
@@ -65,11 +66,15 @@ const SectionSuratRujukan = () => {
 
             const merged = [...cons, ...appts].sort((a, b) => new Date(b.date) - new Date(a.date));
             setItems(merged);
+            setCache('doctor:suratrujukan:items', merged);
         } catch { toast.error('Gagal memuat data'); }
-        finally { setLoading(false); }
+        finally { if (!background) setLoading(false); }
     }, []);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { 
+        const isBg = hasCache('doctor:suratrujukan:items');
+        fetchData(isBg); 
+    }, [fetchData]);
 
     // ── Download PDF ──────────────────────────────────────────────────────────
     const downloadPDF = async (item) => {

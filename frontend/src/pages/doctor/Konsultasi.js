@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 import {
     API_URL, colors, fmtDate, fmtDT, toMin, toHHMM,
     CONS_SLOTS, APPT_SLOTS, DAYS_INFO, makeEmptySchedule, DEF_CONS, DEF_APPT,
@@ -16,8 +17,8 @@ import {
 const SectionKonsultasi = ({ socketRef }) => {
     const navigate = useNavigate();
     const [tab, setTab]           = useState('active');
-    const [consultations, setConsultations] = useState([]);
-    const [loading, setLoading]   = useState(true);
+    const [consultations, setConsultations] = useState(() => getCache('doctor:consultations:data', []));
+    const [loading, setLoading]   = useState(() => !hasCache('doctor:consultations:data'));
     const [processing, setProcessing] = useState({});
     // ── Detail riwayat konsultasi ──
     const [consDetail, setConsDetail]   = useState(null);
@@ -37,8 +38,8 @@ const SectionKonsultasi = ({ socketRef }) => {
     const [rlIssuing,   setRlIssuing]   = useState(false);
 
 
-    const fetchAll = useCallback(async () => {
-        setLoading(true);
+    const fetchAll = useCallback(async (background = false) => {
+        if (!background) setLoading(!hasCache('doctor:consultations:data'));
         try {
             const [ar, hr] = await Promise.all([
                 api.get('/api/consultations/doctor/pending'),
@@ -48,9 +49,11 @@ const SectionKonsultasi = ({ socketRef }) => {
             // active status) wins on duplicate _id — prevents active consultations disappearing
             const map = new Map();
             [...(hr.data?.consultations || []), ...(ar.data?.consultations || [])].forEach(c => map.set(c._id, c));
-            setConsultations(Array.from(map.values()));
+            const arr = Array.from(map.values());
+            setConsultations(arr);
+            setCache('doctor:consultations:data', arr);
         } catch { toast.error('Gagal memuat konsultasi'); }
-        finally { setLoading(false); }
+        finally { if (!background) setLoading(false); }
     }, []);
     // Socket realtime
     useEffect(() => {
@@ -75,7 +78,10 @@ const SectionKonsultasi = ({ socketRef }) => {
 
 
 
-    useEffect(() => { fetchAll(); }, [fetchAll]);
+    useEffect(() => { 
+        const isBg = hasCache('doctor:consultations:data');
+        fetchAll(isBg); 
+    }, [fetchAll]);
 
     const activeList = consultations.filter(c =>
         ['confirmed', 'in_progress', 'ongoing', 'paid', 'scheduled',

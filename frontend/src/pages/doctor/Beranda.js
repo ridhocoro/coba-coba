@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
 import { fmtDoctorName } from '../../utils/format';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 import {
     colors,
     CONS_STATUS, APPT_STATUS,
@@ -102,9 +103,9 @@ const GENDER_OPTS = [
 const SectionBeranda = () => {
     const { user, doctorProfile } = useAuth();
     const navigate   = useNavigate();
-    const [stats,    setStats]    = useState(null);
-    const [allItems, setAllItems] = useState([]);
-    const [loading,  setLoading]  = useState(true);
+    const [stats,    setStats]    = useState(() => getCache('doctor:beranda:stats', null));
+    const [allItems, setAllItems] = useState(() => getCache('doctor:beranda:allItems', []));
+    const [loading,  setLoading]  = useState(() => !hasCache('doctor:beranda:stats'));
     const [time,     setTime]     = useState(new Date());
     const [tab,      setTab]      = useState('today');
 
@@ -131,8 +132,8 @@ const SectionBeranda = () => {
     }, []);
 
     // ── Fetch jadwal ─────────────────────────────────────────────────────────
-    const fetchData = useCallback(async () => {
-        setLoading(true);
+    const fetchData = useCallback(async (background = false) => {
+        if (!background) setLoading(!hasCache('doctor:beranda:stats'));
         try {
             const [statsRes, apptRes, consRes] = await Promise.allSettled([
                 api.get('/api/doctors/my/stats'),
@@ -140,7 +141,11 @@ const SectionBeranda = () => {
                 api.get('/api/consultations/doctor/all'),
             ]);
 
-            if (statsRes.status === 'fulfilled') setStats(statsRes.value.data.stats);
+            let newStats = stats;
+            if (statsRes.status === 'fulfilled') {
+                newStats = statsRes.value.data.stats;
+                setStats(newStats);
+            }
 
             const appts = (apptRes.status === 'fulfilled'
                 ? apptRes.value.data.appointments || [] : []
@@ -177,12 +182,18 @@ const SectionBeranda = () => {
             const cancelledStatuses = ['cancelled','cancelled_by_user','cancelled_by_doctor','cancelled_by_admin','expired','refunded','refund_failed','doctor_no_show'];
             setCancelledConsultations(merged.filter(i => i.type === 'consultation' && cancelledStatuses.includes(i.status)));
             setCancelledAppointments( merged.filter(i => i.type === 'appointment'  && cancelledStatuses.includes(i.status)));
+
+            setCache('doctor:beranda:stats', newStats);
+            setCache('doctor:beranda:allItems', merged);
         } catch (err) {
             toast.error('Gagal memuat data beranda');
-        } finally { setLoading(false); }
-    }, []);
+        } finally { if (!background) setLoading(false); }
+    }, [stats]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { 
+        const isBg = hasCache('doctor:beranda:stats');
+        fetchData(isBg); 
+    }, [fetchData]);
 
     // ── Fetch tren penyakit ──────────────────────────────────────────────────
     const fetchDiseaseTrend = useCallback(async () => {

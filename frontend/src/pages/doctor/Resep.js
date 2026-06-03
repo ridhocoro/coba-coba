@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 import {
     API_URL, colors, fmtDate, fmtDT, toMin, toHHMM,
     CONS_SLOTS, APPT_SLOTS, DAYS_INFO, makeEmptySchedule, DEF_CONS, DEF_APPT,
@@ -13,24 +14,29 @@ import {
 // SECTION: RESEP OBAT (READ-ONLY)
 // ═══════════════════════════════════════════════════════════════════════════════
 const SectionResep = () => {
-    const [consultations, setConsultations] = useState([]);
-    const [loading, setLoading]   = useState(true);
+    const [consultations, setConsultations] = useState(() => getCache('doctor:resep:consultations', []));
+    const [loading, setLoading]   = useState(() => !hasCache('doctor:resep:consultations'));
     const [detail, setDetail]     = useState(null);
     // ── Filter riwayat resep ──
     const [rxSearch, setRxSearch] = useState('');
     const [rxDate,   setRxDate]   = useState('');
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
+    const fetchData = useCallback(async (background = false) => {
+        if (!background) setLoading(!hasCache('doctor:resep:consultations'));
         try {
             const r = await api.get('/api/consultations/doctor/all');
             const all = r.data.consultations || r.data || [];
-            setConsultations(all.filter(c => ['in_progress','ongoing','completed','confirmed','paid','scheduled','no_show'].includes(c.status)));
+            const filtered = all.filter(c => ['in_progress','ongoing','completed','confirmed','paid','scheduled','no_show'].includes(c.status));
+            setConsultations(filtered);
+            setCache('doctor:resep:consultations', filtered);
         } catch { toast.error('Gagal memuat data konsultasi'); }
-        finally { setLoading(false); }
+        finally { if (!background) setLoading(false); }
     }, []);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { 
+        const isBg = hasCache('doctor:resep:consultations');
+        fetchData(isBg); 
+    }, [fetchData]);
 
     const downloadPDF = async (consultationId, rxNum) => {
         try {

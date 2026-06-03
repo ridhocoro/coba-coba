@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 import {
     API_URL, colors, fmtDate, fmtDT, toMin, toHHMM,
     CONS_SLOTS, APPT_SLOTS, DAYS_INFO, makeEmptySchedule, DEF_CONS, DEF_APPT,
@@ -16,26 +17,41 @@ import {
 const SectionPasien = () => {
     const navigate = useNavigate();
     const [patientTab, setPatientTab] = useState('konsultasi');
-    const [consultations, setConsultations] = useState([]);
-    const [appointments, setAppointments]   = useState([]);
-    const [loading, setLoading]   = useState(true);
+    const [consultations, setConsultations] = useState(() => getCache('doctor:pasien:consultations', []));
+    const [appointments, setAppointments]   = useState(() => getCache('doctor:pasien:appointments', []));
+    const [loading, setLoading]   = useState(() => !hasCache('doctor:pasien:consultations'));
     const [search, setSearch]     = useState('');
     const [selected, setSelected] = useState(null);
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    const loadData = useCallback(async (background = false) => {
+        if (!background) setLoading(!hasCache('doctor:pasien:consultations'));
         try {
             const [cr, ar] = await Promise.allSettled([
                 api.get('/api/consultations/doctor/all'),
                 api.get('/api/appointments/doctor/list'),
             ]);
-            if (cr.status === 'fulfilled') setConsultations(cr.value.data.consultations || cr.value.data || []);
-            if (ar.status === 'fulfilled') setAppointments((ar.value.data.appointments || []).filter(a => a.status === 'completed'));
+            let consData = consultations;
+            let apptData = appointments;
+            
+            if (cr.status === 'fulfilled') {
+                consData = cr.value.data.consultations || cr.value.data || [];
+                setConsultations(consData);
+            }
+            if (ar.status === 'fulfilled') {
+                apptData = (ar.value.data.appointments || []).filter(a => a.status === 'completed');
+                setAppointments(apptData);
+            }
+            
+            setCache('doctor:pasien:consultations', consData);
+            setCache('doctor:pasien:appointments', apptData);
         } catch { toast.error('Gagal memuat data pasien'); }
-        finally { setLoading(false); }
-    }, []);
+        finally { if (!background) setLoading(false); }
+    }, [consultations, appointments]);
 
-    useEffect(() => { loadData(); }, [loadData]);
+    useEffect(() => { 
+        const isBg = hasCache('doctor:pasien:consultations');
+        loadData(isBg); 
+    }, [loadData]);
 
     const filteredCons = consultations.filter(c => {
         const q = search.toLowerCase();

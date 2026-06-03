@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 import {
     API_URL, colors, fmtDate, fmtDT, toMin, toHHMM,
     CONS_SLOTS, APPT_SLOTS, DAYS_INFO, makeEmptySchedule, DEF_CONS, DEF_APPT,
@@ -13,8 +14,8 @@ import {
 // SECTION: JANJI TEMU
 // ═══════════════════════════════════════════════════════════════════════════════
 const SectionJanjiTemu = ({ socketRef }) => {
-    const [appointments, setAppointments] = useState([]);
-    const [loading, setLoading]   = useState(true);
+    const [appointments, setAppointments] = useState(() => getCache('doctor:appointments:data', []));
+    const [loading, setLoading]   = useState(() => !hasCache('doctor:appointments:data'));
     const [dateFilter, setDateFilter]   = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [processing, setProcessing] = useState({});
@@ -51,19 +52,25 @@ const SectionJanjiTemu = ({ socketRef }) => {
     const [rlSaving,       setRlSaving]       = useState(false);
     const [rlIssuing,      setRlIssuing]      = useState(false);
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
+    const fetchData = useCallback(async (background = false) => {
+        if (!background) setLoading(!hasCache('doctor:appointments:data'));
         try {
             const params = {};
             if (dateFilter) params.date = dateFilter;
             if (statusFilter !== 'all') params.status = statusFilter;
             const r = await api.get('/api/appointments/doctor/list', { params });
             setAppointments(r.data.appointments || []);
+            if (!dateFilter && statusFilter === 'all') {
+                setCache('doctor:appointments:data', r.data.appointments || []);
+            }
         } catch { toast.error('Gagal memuat janji temu'); }
-        finally { setLoading(false); }
+        finally { if (!background) setLoading(false); }
     }, [dateFilter, statusFilter]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { 
+        const isBg = !dateFilter && statusFilter === 'all' && hasCache('doctor:appointments:data');
+        fetchData(isBg); 
+    }, [fetchData]);
 
     // Socket: realtime new appointment
     useEffect(() => {

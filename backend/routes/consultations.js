@@ -1139,6 +1139,7 @@ router.post('/:id/messages', auth, async (req, res) => {
         };
 
         consultation.messages.push(msg);
+        const savedMsg = consultation.messages[consultation.messages.length - 1];
         await consultation.save();
 
         const recipientId = isUser ? doctor.userId : patient.id;
@@ -1151,7 +1152,15 @@ router.post('/:id/messages', auth, async (req, res) => {
             io: req.app.get('io')
         });
 
-        res.json({ success: true, message: msg });
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`consultation-${consultation.id}`).emit('receive-message', {
+                ...savedMsg.toObject(),
+                senderId: req.userId
+            });
+        }
+
+        res.json({ success: true, message: savedMsg });
     } catch (err) {
         res.status(500).json({ message: 'Server error' });
     }
