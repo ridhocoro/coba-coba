@@ -3,6 +3,7 @@ import api from '../../utils/api';
 
 import { toast } from 'react-hot-toast';
 import { fmtDoctorName } from '../../utils/format';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 
 const STATUS_CFG = {
   scheduled:          { bg:'#dbeafe', c:'#1e40af', l:'Terjadwal' },
@@ -17,9 +18,9 @@ const STATUS_CFG = {
 const PERIOD_OPTS = [{ v:'today', l:'Hari Ini' },{ v:'7d', l:'7 Hari' },{ v:'30d', l:'30 Hari' },{ v:'custom', l:'Pilih Tanggal' }];
 
 const ManageAppointments = () => {
-  const [items, setItems]     = useState([]);
-  const [total, setTotal]     = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems]     = useState(() => getCache('admin:appointments:data', []));
+  const [total, setTotal]     = useState(() => getCache('admin:appointments:total', 0));
+  const [loading, setLoading] = useState(() => !hasCache('admin:appointments:data'));
   const [period, setPeriod]   = useState('7d');
   const [from, setFrom]       = useState('');
   const [to, setTo]           = useState('');
@@ -30,8 +31,8 @@ const ManageAppointments = () => {
   const [cancelFor, setCancelFor] = useState('admin');
   const [cancelling, setCancelling] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 30 });
       if (period !== 'custom') params.set('period', period);
@@ -40,14 +41,21 @@ const ManageAppointments = () => {
       const r = await api.get(`/api/admin/appointments?${params}`);
       setItems(r.data.appointments || []);
       setTotal(r.data.total || 0);
+      if (page === 1 && period === '7d' && !status) {
+        setCache('admin:appointments:data', r.data.appointments || []);
+        setCache('admin:appointments:total', r.data.total || 0);
+      }
     } catch (err) {
       console.error('Gagal memuat janji temu:', err);
-      toast.error('Gagal memuat data janji temu');
+      if (!background) toast.error('Gagal memuat data janji temu');
     }
-    finally { setLoading(false); }
+    finally { if (!background) setLoading(false); }
   }, [period, from, to, status, page]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { 
+    const isBg = page === 1 && period === '7d' && !status && hasCache('admin:appointments:data');
+    fetchData(isBg); 
+  }, [fetchData]);
 
   const handleCheckIn = async (id) => {
     try {

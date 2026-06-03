@@ -3,10 +3,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
 import { fmtDoctorName } from '../../utils/format';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 
 const ManageDoctors = () => {
-  const [doctors, setDoctors]     = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [doctors, setDoctors]     = useState(() => getCache('admin:doctors:list', []));
+  const [loading, setLoading]     = useState(() => !hasCache('admin:doctors:list'));
   const [search, setSearch]       = useState('');
   const [spec, setSpec]           = useState('');
   const [selected, setSelected]   = useState(null);
@@ -26,19 +27,23 @@ const ManageDoctors = () => {
   });
   const [addSaving, setAddSaving] = useState(false);
 
-  const fetchDoctors = useCallback(async () => {
-    setLoading(true);
+  const fetchDoctors = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const r = await api.get(`/api/admin/doctors${spec ? `?specialization=${spec}` : ''}`);
       setDoctors(r.data.doctors || []);
+      if (!spec) setCache('admin:doctors:list', r.data.doctors || []);
     } catch { 
-      toast.error('Gagal memuat dokter'); 
+      if (!background) toast.error('Gagal memuat dokter'); 
     } finally { 
-      setLoading(false); 
+      if (!background) setLoading(false); 
     }
   }, [spec]);
 
-  useEffect(() => { fetchDoctors(); }, [fetchDoctors]);
+  useEffect(() => { 
+    const isBg = !spec && hasCache('admin:doctors:list');
+    fetchDoctors(isBg); 
+  }, [fetchDoctors]);
 
   const openDetail = async (doc) => {
     try {

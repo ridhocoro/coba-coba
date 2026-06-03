@@ -18,6 +18,7 @@ import { toast } from 'react-hot-toast';
 import io from 'socket.io-client';
 import { FaStar, FaStarHalfAlt, FaRegStar, FaImage } from 'react-icons/fa';
 import { fmtDoctorName } from '../utils/format';
+import { consultCache } from '../utils/cache';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
@@ -551,12 +552,12 @@ const ConsultationCard = ({
                     <div style={{ marginTop: 8 }}>
                         {cons.disease_category === 'Tidak Dikenali' ? (
                             <div style={{
-                                display: 'flex', alignItems: 'flex-start', gap: 8,
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
                                 background: '#fef9c3', border: '1px solid #fde68a',
-                                borderRadius: 8, padding: '8px 12px',
+                                borderRadius: 20, padding: '3px 12px',
                             }}>
-                                <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>⚠️</span>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: '#92400e', lineHeight: 1.5 }}>
+                                <span style={{ fontSize: 11 }}>⚠️</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#92400e' }}>
                                     Keluhan belum teridentifikasi — dokter akan mendiagnosis saat konsultasi
                                 </span>
                             </div>
@@ -770,18 +771,10 @@ const Consultations = () => {
     const navigate = useNavigate();
 
     const [activeTab, setActiveTab] = useState('aktif');
-    const [consultations, setConsultations] = useState([]);
-    // Preload dari sessionStorage agar list dokter langsung muncul
-    const [doctors, setDoctors] = useState(() => {
-        try {
-            const c = sessionStorage.getItem('cache:doctors-list');
-            return c ? JSON.parse(c) : [];
-        } catch { return []; }
-    });
-    const [loading, setLoading] = useState(() => {
-        try { return !sessionStorage.getItem('cache:doctors-list'); }
-        catch { return true; }
-    });
+    const [consultations, setConsultations] = useState(() => consultCache.get().consultations || []);
+    // Preload dari in-memory cache agar list dokter langsung muncul saat kembali ke halaman ini
+    const [doctors, setDoctors] = useState(() => consultCache.get().doctors || []);
+    const [loading, setLoading] = useState(() => consultCache.get().doctors === null);
 
     const [modalLogin, setModalLogin] = useState(false);
     const [doctorProfileModal, setDoctorProfileModal] = useState(null); // doc yang diklik
@@ -827,21 +820,22 @@ const Consultations = () => {
     const loadData = useCallback(async (background = false) => {
         if (!background) setLoading(true);
         try {
-            let docs = [];
             if (user) {
                 const [docRes, r] = await Promise.all([
                     api.get('/api/doctors'),
-                    api.get('/api/consultations/my-consultations')
+                    api.get('/api/consultations/my-consultations'),
                 ]);
-                docs = docRes.data || [];
-                setConsultations(r.data || []);
+                const docs = docRes.data || [];
+                const cons = r.data || [];
+                setDoctors(docs);
+                setConsultations(cons);
+                consultCache.set(docs, cons);
             } else {
                 const docRes = await api.get('/api/doctors');
-                docs = docRes.data || [];
+                const docs = docRes.data || [];
+                setDoctors(docs);
+                consultCache.set(docs, null);
             }
-            setDoctors(docs);
-            // Simpan ke sessionStorage agar next visit langsung tampil
-            try { sessionStorage.setItem('cache:doctors-list', JSON.stringify(docs)); } catch (_) {}
         } catch { if (!background) toast.error('Gagal memuat data'); }
         finally { if (!background) setLoading(false); }
     }, [user]);
@@ -849,8 +843,8 @@ const Consultations = () => {
     useEffect(() => {
         if (!user) setActiveTab('buat_janji');
         else setActiveTab('aktif');
-        const hasCache = (() => { try { return !!sessionStorage.getItem('cache:doctors-list'); } catch { return false; } })();
-        loadData(hasCache);
+        // Jika cache masih fresh (< 30 detik), skip fetch — data sudah ada dari navigasi sebelumnya
+        loadData(consultCache.isFresh());
     }, [user, loadData]);
 
     useEffect(() => {
@@ -862,7 +856,7 @@ const Consultations = () => {
 
     useEffect(() => {
         if (!user) return;
-        const onFocus = () => loadData(true);
+        const onFocus = () => loadData();
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
     }, [loadData, user]);

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import api, { API_URL } from '../../utils/api';
 import { Row, Col, Spinner, Modal, Form } from 'react-bootstrap';
 import { toast } from 'react-hot-toast';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 import {
     FaPills, FaSearch, FaPlus, FaEdit, FaBoxOpen, FaShoppingCart,
     FaUpload, FaClock, FaExclamationTriangle, FaCheckCircle,
@@ -66,9 +67,9 @@ const getShipping = (o) => {
 };
 
 const ManagePharmacy = () => {
-    const [medicines, setMedicines] = useState([]);
-    const [orders, setOrders] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [medicines, setMedicines] = useState(() => getCache('admin:pharmacy:medicines', []));
+    const [orders, setOrders] = useState(() => getCache('admin:pharmacy:orders', []));
+    const [loading, setLoading] = useState(() => !hasCache('admin:pharmacy:medicines'));
     const [search, setSearch] = useState('');
     const [orderSearch, setOrderSearch] = useState('');
     const [orderStatus, setOrderStatus] = useState('all');
@@ -110,7 +111,8 @@ const ManagePharmacy = () => {
     const [expandedOrders, setExpandedOrders] = useState(new Set());
 
     useEffect(() => {
-        fetchData();
+        const isBg = hasCache('admin:pharmacy:medicines');
+        fetchData(isBg);
         // Ambil daftar bank dari endpoint baru
         api.get('/api/pharmacy/refund-banks')
             .then(r => setBankList(r.data.banks || []))
@@ -130,8 +132,8 @@ const ManagePharmacy = () => {
             });
     }, []);
 
-    const fetchData = async () => {
-        setLoading(true);
+    const fetchData = async (background = false) => {
+        if (!background) setLoading(true);
         try {
             const [medsRes, ordersRes, refundRes] = await Promise.all([
                 api.get('/api/pharmacy/admin/medicines?limit=200'),
@@ -141,9 +143,11 @@ const ManagePharmacy = () => {
             setMedicines(medsRes.data.medicines || []);
             setOrders(ordersRes.data.orders || []);
             setRefundOrders(refundRes.data.orders || []);
+            setCache('admin:pharmacy:medicines', medsRes.data.medicines || []);
+            setCache('admin:pharmacy:orders', ordersRes.data.orders || []);
         } catch {
-            toast.error('Gagal memuat data');
-        } finally { setLoading(false); }
+            if (!background) toast.error('Gagal memuat data');
+        } finally { if (!background) setLoading(false); }
     };
 
     const openMedModal = (med = null) => {

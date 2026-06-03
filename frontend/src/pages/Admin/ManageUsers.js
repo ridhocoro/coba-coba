@@ -3,12 +3,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
 import { fmtDoctorName } from '../../utils/format';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 
 const ManageUsers = () => {
-  const [users, setUsers]     = useState([]);
-  const [total, setTotal]     = useState(0);
+  const [users, setUsers]     = useState(() => getCache('admin:users:data', []));
+  const [total, setTotal]     = useState(() => getCache('admin:users:total', 0));
   const [page, setPage]       = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !hasCache('admin:users:data'));
   const [search, setSearch]   = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [detail, setDetail]   = useState(null);
@@ -31,8 +32,8 @@ const ManageUsers = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
+  const fetchUsers = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({ 
@@ -48,6 +49,11 @@ const ManageUsers = () => {
       if (response.data && response.data.success !== false) {
         setUsers(response.data.users || []);
         setTotal(response.data.total || 0);
+        // Only cache page 1 without filters to act as quick-load on tab switch
+        if (page === 1 && !search && !roleFilter) {
+          setCache('admin:users:data', response.data.users || []);
+          setCache('admin:users:total', response.data.total || 0);
+        }
       } else {
         throw new Error(response.data?.message || 'Gagal memuat data');
       }
@@ -59,12 +65,13 @@ const ManageUsers = () => {
       setUsers([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [page, search, roleFilter]);
 
   useEffect(() => {
-    fetchUsers();
+    const isInitialBg = page === 1 && !search && !roleFilter && hasCache('admin:users:data');
+    fetchUsers(isInitialBg);
   }, [fetchUsers]);
 
   const openDetail = async (user) => {

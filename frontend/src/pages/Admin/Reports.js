@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
 import { FaInfoCircle } from 'react-icons/fa';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 
 const PERIOD_OPTS = [
   { v: 'today', l: 'Hari Ini' },
@@ -20,8 +21,8 @@ const Reports = () => {
   const [period, setPeriod] = useState('30d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState(null);
+  const [preview, setPreview] = useState(() => getCache('admin:reports:preview', null));
+  const [loading, setLoading] = useState(() => !hasCache('admin:reports:preview'));
   const [error, setError] = useState(null);
 
   const getParams = useCallback(() => {
@@ -38,8 +39,8 @@ const Reports = () => {
     return p.toString();
   }, [period, from, to, tab, subTab]);
 
-  const handlePreview = useCallback(async () => {
-    setLoading(true);
+  const handlePreview = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     setError(null);
     try {
       const endpoint = tab === 'revenue'
@@ -59,6 +60,9 @@ const Reports = () => {
           );
         }
         setPreview(response.data);
+        if (tab === 'revenue' && period === '30d') {
+          setCache('admin:reports:preview', response.data);
+        }
       } else {
         throw new Error(response.data?.message || 'Gagal memuat laporan');
       }
@@ -66,15 +70,16 @@ const Reports = () => {
       console.error('Report fetch error:', err);
       const errorMsg = err.response?.data?.message || err.message || 'Gagal memuat laporan';
       setError(errorMsg);
-      toast.error(errorMsg);
+      if (!background) toast.error(errorMsg);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
-  }, [tab, getParams]);
+  }, [tab, getParams, period]);
 
   useEffect(() => {
     if (period === 'custom' && (!from || !to)) return;
-    handlePreview();
+    const isBg = tab === 'revenue' && period === '30d' && hasCache('admin:reports:preview');
+    handlePreview(isBg);
   }, [tab, period, from, to, subTab, handlePreview]);
 
   const handleExportCSV = () => {

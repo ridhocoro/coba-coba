@@ -614,6 +614,8 @@ const getMyAppointments = async (req, res) => {
     try {
         let appointments = await Appointment.find({ userId: req.userId })
             .sort({ scheduledAt: -1 })
+            .populate({ path: 'sickLetter',     select: 'letterNumber diagnosis status startDate endDate issuedAt notes' })
+            .populate({ path: 'referralLetter', select: 'letterNumber diagnosis status referralTo referralSpecialty referralReason notes issuedAt' })
             .lean();
 
         appointments = await populateFromMySQL(

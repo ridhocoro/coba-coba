@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api, { API_URL } from '../../utils/api';
 import { fmtDoctorName } from '../../utils/format';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 
 const fmtDate = d =>
   d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : '-';
@@ -51,16 +52,16 @@ const S = {
 
 // ─── Tab: Surat Sakit ────────────────────────────────────────────────────────
 const SickLetterTab = () => {
-  const [letters, setLetters] = useState([]);
-  const [total, setTotal]     = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [letters, setLetters] = useState(() => getCache('admin:sick-letters:data', []));
+  const [total, setTotal]     = useState(() => getCache('admin:sick-letters:total', 0));
+  const [loading, setLoading] = useState(() => !hasCache('admin:sick-letters:data'));
   const [from, setFrom]       = useState('');
   const [to, setTo]           = useState('');
   const [status, setStatus]   = useState('');
   const [page, setPage]       = useState(1);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 30 });
       if (from)   params.set('from', from);
@@ -69,11 +70,18 @@ const SickLetterTab = () => {
       const r = await api.get(`/api/admin/sick-letters?${params}`);
       setLetters(r.data.letters || []);
       setTotal(r.data.total || 0);
+      if (page === 1 && !from && !to && !status) {
+        setCache('admin:sick-letters:data', r.data.letters || []);
+        setCache('admin:sick-letters:total', r.data.total || 0);
+      }
     } catch {}
-    finally { setLoading(false); }
+    finally { if (!background) setLoading(false); }
   }, [from, to, status, page]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { 
+    const isBg = page === 1 && !from && !to && !status && hasCache('admin:sick-letters:data');
+    loadData(isBg); 
+  }, [loadData]);
 
   return (
     <>
@@ -151,15 +159,15 @@ const SickLetterTab = () => {
 
 // ─── Tab: Resep Obat ─────────────────────────────────────────────────────────
 const PrescriptionTab = () => {
-  const [prescriptions, setPrescriptions] = useState([]);
-  const [total, setTotal]                 = useState(0);
-  const [loading, setLoading]             = useState(true);
+  const [prescriptions, setPrescriptions] = useState(() => getCache('admin:prescriptions:data', []));
+  const [total, setTotal]                 = useState(() => getCache('admin:prescriptions:total', 0));
+  const [loading, setLoading]             = useState(() => !hasCache('admin:prescriptions:data'));
   const [from, setFrom]                   = useState('');
   const [to, setTo]                       = useState('');
   const [page, setPage]                   = useState(1);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 30 });
       if (from) params.set('from', from);
@@ -167,11 +175,18 @@ const PrescriptionTab = () => {
       const r = await api.get(`/api/admin/prescriptions?${params}`);
       setPrescriptions(r.data.prescriptions || []);
       setTotal(r.data.total || 0);
+      if (page === 1 && !from && !to) {
+        setCache('admin:prescriptions:data', r.data.prescriptions || []);
+        setCache('admin:prescriptions:total', r.data.total || 0);
+      }
     } catch {}
-    finally { setLoading(false); }
+    finally { if (!background) setLoading(false); }
   }, [from, to, page]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { 
+    const isBg = page === 1 && !from && !to && hasCache('admin:prescriptions:data');
+    loadData(isBg); 
+  }, [loadData]);
 
   // Cek apakah resep sudah kedaluwarsa berdasarkan validUntil
   const rxStatus = (rx) => {
@@ -257,16 +272,16 @@ const PrescriptionTab = () => {
 
 // ─── Tab: Surat Rujukan ──────────────────────────────────────────────────────
 const ReferralLetterTab = () => {
-  const [letters, setLetters] = useState([]);
-  const [total, setTotal]     = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [letters, setLetters] = useState(() => getCache('admin:referral-letters:data', []));
+  const [total, setTotal]     = useState(() => getCache('admin:referral-letters:total', 0));
+  const [loading, setLoading] = useState(() => !hasCache('admin:referral-letters:data'));
   const [from, setFrom]       = useState('');
   const [to, setTo]           = useState('');
   const [status, setStatus]   = useState('');
   const [page, setPage]       = useState(1);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 30 });
       if (from)   params.set('from', from);
@@ -275,11 +290,18 @@ const ReferralLetterTab = () => {
       const r = await api.get(`/api/admin/referral-letters?${params}`);
       setLetters(r.data.letters || []);
       setTotal(r.data.total || 0);
+      if (page === 1 && !from && !to && !status) {
+        setCache('admin:referral-letters:data', r.data.letters || []);
+        setCache('admin:referral-letters:total', r.data.total || 0);
+      }
     } catch {}
-    finally { setLoading(false); }
+    finally { if (!background) setLoading(false); }
   }, [from, to, status, page]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { 
+    const isBg = page === 1 && !from && !to && !status && hasCache('admin:referral-letters:data');
+    loadData(isBg); 
+  }, [loadData]);
 
   return (
     <>

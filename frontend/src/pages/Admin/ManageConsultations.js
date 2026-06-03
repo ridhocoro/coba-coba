@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../utils/api';
 import { fmtDoctorName } from '../../utils/format';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 
 
 const STATUS_CFG = {
@@ -22,17 +23,17 @@ const PERIOD_OPTS = [
 ];
 
 const ManageConsultations = () => {
-  const [items, setItems]     = useState([]);
-  const [total, setTotal]     = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems]     = useState(() => getCache('admin:consultations:data', []));
+  const [total, setTotal]     = useState(() => getCache('admin:consultations:total', 0));
+  const [loading, setLoading] = useState(() => !hasCache('admin:consultations:data'));
   const [period, setPeriod]   = useState('7d');
   const [from, setFrom]       = useState('');
   const [to, setTo]           = useState('');
   const [status, setStatus]   = useState('');
   const [page, setPage]       = useState(1);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 30 });
       if (period !== 'custom') params.set('period', period);
@@ -41,11 +42,18 @@ const ManageConsultations = () => {
       const r = await api.get(`/api/admin/consultations?${params}`);
       setItems(r.data.consultations || []);
       setTotal(r.data.total || 0);
+      if (page === 1 && period === '7d' && !status) {
+        setCache('admin:consultations:data', r.data.consultations || []);
+        setCache('admin:consultations:total', r.data.total || 0);
+      }
     } catch { }
-    finally { setLoading(false); }
+    finally { if (!background) setLoading(false); }
   }, [period, from, to, status, page]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { 
+    const isBg = page === 1 && period === '7d' && !status && hasCache('admin:consultations:data');
+    loadData(isBg); 
+  }, [loadData]);
 
   const S = {
     periodBar: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' },

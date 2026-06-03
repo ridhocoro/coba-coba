@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import io from 'socket.io-client';
 import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
 import { fmtDoctorName } from '../../utils/format';
+import { apptCache } from '../../utils/dataCache';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
@@ -377,7 +378,7 @@ const RatingModal = ({ appointmentId, doctor, onClose, onSuccess }) => {
 };
 
 // ── ApptCard ──────────────────────────────────────────────────────────────────
-const ApptCard = ({ appt, onCancel, onReschedule, onRate, showActions }) => {
+const ApptCard = ({ appt, onCancel, onReschedule, onRate, onDownloadSickLetter, onDownloadReferral, showActions }) => {
     const c = STATUS_CFG[appt.status] || { label: appt.status, color: '#6b7280', bg: '#f3f4f6' };
     const canAct         = appt.status === 'scheduled';
     const showDeadline   = appt.status === 'scheduled' && appt.scheduledAt;
@@ -385,6 +386,8 @@ const ApptCard = ({ appt, onCancel, onReschedule, onRate, showActions }) => {
     
     // Rating terbuka untuk Selesai dan pembatalan sepihak (dokter/admin/no show)
     const canRate = ['completed', 'doctor_no_show', 'cancelled_by_doctor', 'cancelled_by_admin'].includes(appt.status) && !appt.rating;
+    const hasSickLetter     = appt.sickLetter?.status === 'issued';
+    const hasReferralLetter = appt.referralLetter?.status === 'issued';
 
     return (
         <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e5e7eb', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -457,24 +460,24 @@ const ApptCard = ({ appt, onCancel, onReschedule, onRate, showActions }) => {
                 )}
 
                 {/* Surat Sakit */}
-                {appt.sickLetter && (
+                {hasSickLetter && (
                     <div style={{ marginTop: 12, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 13, color: '#166534', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div><strong>📄 Surat Keterangan Sakit</strong></div>
-                        <a href={`${API_URL}/api/appointments/${appt._id}/sick-letter/pdf`} target="_blank" rel="noreferrer"
-                            style={{ color: '#15803d', fontWeight: 700, textDecoration: 'none', background: '#dcfce7', padding: '4px 10px', borderRadius: 6 }}>
+                        <button onClick={onDownloadSickLetter}
+                            style={{ color: '#15803d', fontWeight: 700, textDecoration: 'none', background: '#dcfce7', padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13 }}>
                             ⬇ Download PDF
-                        </a>
+                        </button>
                     </div>
                 )}
 
                 {/* Surat Rujukan */}
-                {appt.referralLetter && appt.referralLetter.status === 'issued' && (
+                {hasReferralLetter && (
                     <div style={{ marginTop: 8, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe', fontSize: 13, color: '#1d4ed8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div><strong>🔀 Surat Rujukan</strong></div>
-                        <a href={`${API_URL}/api/appointments/${appt._id}/referral-letter/pdf`} target="_blank" rel="noreferrer"
-                            style={{ color: '#1d4ed8', fontWeight: 700, textDecoration: 'none', background: '#dbeafe', padding: '4px 10px', borderRadius: 6 }}>
+                        <button onClick={onDownloadReferral}
+                            style={{ color: '#1d4ed8', fontWeight: 700, textDecoration: 'none', background: '#dbeafe', padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13 }}>
                             ⬇ Download PDF
-                        </a>
+                        </button>
                     </div>
                 )}
 
@@ -521,19 +524,11 @@ const Appointments = () => {
 
     const [activeTab, setActiveTab] = useState('aktif');
 
-    // Preload dari sessionStorage agar list dokter langsung muncul tanpa loading
-    const [doctors, setDoctors]           = useState(() => {
-        try {
-            const c = sessionStorage.getItem('cache:doctors-with-slots');
-            return c ? JSON.parse(c) : [];
-        } catch { return []; }
-    });
-    const [appointments, setAppointments] = useState([]);
+    // Preload dari in-memory cache agar list dokter langsung muncul saat kembali ke halaman ini
+    const [doctors, setDoctors]           = useState(() => apptCache.get().doctors || []);
+    const [appointments, setAppointments] = useState(() => apptCache.get().appointments || []);
     // Loading false jika sudah ada cache, true jika belum
-    const [loading, setLoading]           = useState(() => {
-        try { return !sessionStorage.getItem('cache:doctors-with-slots'); }
-        catch { return true; }
-    });
+    const [loading, setLoading]           = useState(() => apptCache.get().doctors === null);
 
     // Modal states
     const [modalLogin, setModalLogin]   = useState(false);
@@ -571,21 +566,22 @@ const Appointments = () => {
         // Jika background refresh, tidak tampilkan loading spinner
         if (!background) setLoading(true);
         try {
-            let docs = [];
             if (user) {
                 const [docRes, apptRes] = await Promise.all([
                     api.get('/api/appointments/doctors-with-slots'),
-                    api.get('/api/appointments/my')
+                    api.get('/api/appointments/my'),
                 ]);
-                docs = docRes.data.doctors || [];
-                setAppointments(apptRes.data.appointments || []);
+                const docs = docRes.data.doctors || [];
+                const appts = apptRes.data.appointments || [];
+                setDoctors(docs);
+                setAppointments(appts);
+                apptCache.set(docs, appts);
             } else {
                 const docRes = await api.get('/api/appointments/doctors-with-slots');
-                docs = docRes.data.doctors || [];
+                const docs = docRes.data.doctors || [];
+                setDoctors(docs);
+                apptCache.set(docs, null);
             }
-            setDoctors(docs);
-            // Simpan ke sessionStorage agar next visit langsung tampil
-            try { sessionStorage.setItem('cache:doctors-with-slots', JSON.stringify(docs)); } catch (_) {}
         } catch {
             if (!background) toast.error('Gagal memuat data');
         } finally {
@@ -596,9 +592,8 @@ const Appointments = () => {
     useEffect(() => {
         if (!user) setActiveTab('buat_janji');
         else setActiveTab('aktif');
-        // Jika sudah ada cache (loading=false), lakukan background refresh
-        const hasCache = (() => { try { return !!sessionStorage.getItem('cache:doctors-with-slots'); } catch { return false; } })();
-        loadData(hasCache);
+        // Jika cache masih fresh (< 30 detik), skip fetch — data sudah ada dari navigasi sebelumnya
+        loadData(apptCache.isFresh());
     }, [user, loadData]);
 
     // Auto-refresh 10 detik saat ada appointment scheduled
@@ -641,6 +636,19 @@ const Appointments = () => {
         sock.on('appointment-status-update', () => loadData());
         return () => sock.close();
     }, [user, loadData]);
+
+    // ── Download helper (pakai axios agar token JWT ikut terkirim) ────────────
+    const downloadFile = async (url, filename) => {
+        try {
+            const r = await api.get(url, { responseType: 'blob' });
+            const blobUrl = window.URL.createObjectURL(new Blob([r.data]));
+            const a = document.createElement('a');
+            a.href = blobUrl; a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            window.URL.revokeObjectURL(blobUrl);
+            toast.success('Berhasil diunduh');
+        } catch { toast.error('Gagal mengunduh file'); }
+    };
 
     // ── Slot helpers ──────────────────────────────────────────────────────────
     const fetchSlots = async (docId) => {
@@ -827,6 +835,8 @@ const Appointments = () => {
                                                 onCancel={() => handleCancelStart(a)}
                                                 onReschedule={() => handleRescheduleStart(a)}
                                                 onRate={() => setRatingModal({ id: a._id, doctor: a.doctorId })}
+                                                onDownloadSickLetter={() => downloadFile(`/api/appointments/${a._id}/sick-letter/pdf`, `surat-sakit-${a._id}.pdf`)}
+                                                onDownloadReferral={() => downloadFile(`/api/appointments/${a._id}/referral-letter/pdf`, `surat-rujukan-${a._id}.pdf`)}
                                             />
                                         ))}
                                     </div>
@@ -979,6 +989,8 @@ const Appointments = () => {
                                         <ApptCard key={a._id} appt={a}
                                             showActions={false}
                                             onRate={() => setRatingModal({ id: a._id, doctor: a.doctorId })}
+                                            onDownloadSickLetter={() => downloadFile(`/api/appointments/${a._id}/sick-letter/pdf`, `surat-sakit-${a._id}.pdf`)}
+                                            onDownloadReferral={() => downloadFile(`/api/appointments/${a._id}/referral-letter/pdf`, `surat-rujukan-${a._id}.pdf`)}
                                         />
                                     ))}
                                 </div>
@@ -1159,7 +1171,7 @@ const Appointments = () => {
                             background: (!bookDate || !bookTime || !bookComplaint.trim() || booking) ? '#9ca3af' : 'linear-gradient(135deg,#1d4ed8,#2563eb)',
                             color: '#fff', cursor: (!bookDate || !bookTime || !bookComplaint.trim() || booking) ? 'not-allowed' : 'pointer',
                         }}>
-                        {booking ? 'Memproses...' : 'Konfirmasi Janji Temu'}
+                        {booking ? 'Memproses...' : 'Konfirmasi Janji Temu ✓'}
                     </button>
                 </Modal>
             )}

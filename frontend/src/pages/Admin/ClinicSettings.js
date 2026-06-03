@@ -7,17 +7,29 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge } from 'react-bootstrap';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { getCache, setCache, hasCache } from '../../utils/cache';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const ClinicSettings = () => {
-    const [settings, setSettings]   = useState(null);
-    const [loading, setLoading]     = useState(true);
+    const [settings, setSettings]   = useState(() => getCache('admin:clinic-settings:data', null));
+    const [loading, setLoading]     = useState(() => !hasCache('admin:clinic-settings:data'));
     const [saving, setSaving]       = useState(false);
     const [uploadingLogo,  setUploadingLogo]  = useState(false);
     const [uploadingStamp, setUploadingStamp] = useState(false);
 
-    const [form, setForm] = useState({ clinicName: '', clinicAddress: '', clinicPhone: '', signLocation: '' });
+    const [form, setForm] = useState(() => {
+        const s = getCache('admin:clinic-settings:data', null);
+        if (s) {
+            return {
+                clinicName:    s.clinicName    || '',
+                clinicAddress: s.clinicAddress || '',
+                clinicPhone:   s.clinicPhone   || '',
+                signLocation:  s.signLocation  || 'Bogor',
+            };
+        }
+        return { clinicName: '', clinicAddress: '', clinicPhone: '', signLocation: '' };
+    });
 
     const logoRef  = useRef(null);
     const stampRef = useRef(null);
@@ -26,7 +38,8 @@ const ClinicSettings = () => {
         ? (url.startsWith('http') ? url : `${API_URL}${url}`)
         : null;
 
-    const fetchSettings = async () => {
+    const fetchSettings = async (background = false) => {
+        if (!background) setLoading(true);
         try {
             const r = await api.get('/api/clinic-settings');
             const s = r.data.settings;
@@ -37,14 +50,18 @@ const ClinicSettings = () => {
                 clinicPhone:   s.clinicPhone   || '',
                 signLocation:  s.signLocation  || 'Bogor',
             });
+            setCache('admin:clinic-settings:data', s);
         } catch {
-            toast.error('Gagal memuat pengaturan klinik');
+            if (!background) toast.error('Gagal memuat pengaturan klinik');
         } finally {
-            setLoading(false);
+            if (!background) setLoading(false);
         }
     };
 
-    useEffect(() => { fetchSettings(); }, []);
+    useEffect(() => { 
+        const isBg = hasCache('admin:clinic-settings:data');
+        fetchSettings(isBg); 
+    }, []);
 
     const handleSaveInfo = async (e) => {
         e.preventDefault();
