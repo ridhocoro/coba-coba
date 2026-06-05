@@ -284,43 +284,36 @@ def rule_based_classify(text: str, gender: str = None):
 # ════════════════════════════════════════════════════════════════════
 #  MODEL LOADING
 # ════════════════════════════════════════════════════════════════════
-_char_ngram_model = None
-_svm_model       = None
-_svm_vectorizer  = None
+_unified_model = None
 
 def _load_models():
-    global _char_ngram_model, _svm_model, _svm_vectorizer
+    """Load model_unified.pkl (saat dipanggil manual atau via lifespan)"""
+    global _unified_model
     base = os.path.dirname(os.path.abspath(__file__))
-
-    # Char N-gram + SGD (mensimulasi FastText, ~100MB RAM)
-    ft_path = os.path.join(base, "model_char_ngram.pkl")
-    if os.path.exists(ft_path):
-        with open(ft_path, "rb") as f:
-            _char_ngram_model = pickle.load(f)
-
-    # SVM
-    svm_path = os.path.join(base, "model_svm.pkl")
-    if os.path.exists(svm_path):
-        with open(svm_path, "rb") as f:
-            b = pickle.load(f)
-            _svm_model, _svm_vectorizer = b["model"], b["vectorizer"]
+    model_path = os.path.join(base, "model_unified.pkl")
+    if os.path.exists(model_path):
+        with open(model_path, "rb") as f:
+            _unified_model = pickle.load(f)
+            
+def load_models_sync():
+    """Fungsi public untuk dipanggil di app.py lifespan"""
+    _load_models()
 
 # ════════════════════════════════════════════════════════════════════
-#  LAPIS 2 — CHAR N-GRAM + SGD  (mensimulasi FastText)
-#  char_wb n-gram (2,5) paham subkata Indonesia:
-#  "terlambat" ~ "lambat" ~ "belum bisa", "kurus" ~ "bb rendah"
+#  LAPIS 2 — UNIFIED ML PIPELINE (Char + Word N-gram)
 # ════════════════════════════════════════════════════════════════════
-def char_ngram_classify(text: str, gender: str = None):
-    global _char_ngram_model
-    if _char_ngram_model is None:
+def unified_classify(text: str, gender: str = None):
+    global _unified_model
+    if _unified_model is None:
         _load_models()
-    if _char_ngram_model is None:
+    if _unified_model is None:
         return None, 0.0
 
     clean = preprocess(text)
     try:
-        proba = _char_ngram_model.predict_proba([clean])[0].copy()
-        classes = list(_char_ngram_model.classes_)
+        # Pipeline FeatureUnion mengurus tfidf & SGD langsung
+        proba = _unified_model.predict_proba([clean])[0].copy()
+        classes = list(_unified_model.classes_)
 
         # Gender bias
         if gender and gender.lower() in GENDER_BIAS:
@@ -333,48 +326,17 @@ def char_ngram_classify(text: str, gender: str = None):
         return classes[idx], round(float(proba[idx]), 4)
     except Exception:
         return None, 0.0
-
-# ════════════════════════════════════════════════════════════════════
-#  LAPIS 3 — SVM + TF-IDF
-# ════════════════════════════════════════════════════════════════════
-def svm_classify(text: str, gender: str = None):
-    global _svm_model, _svm_vectorizer
-    if _svm_model is None:
-        _load_models()
-    if _svm_model is None:
-        return "Lainnya", 0.35
-
-    clean = preprocess(text)
-    try:
-        X     = _svm_vectorizer.transform([clean])
-        proba = _svm_model.predict_proba(X)[0].copy()
-        classes = list(_svm_model.classes_)
-
-        # Gender bias
-        if gender and gender.lower() in GENDER_BIAS:
-            for kat, bonus in GENDER_BIAS[gender.lower()].items():
-                if kat in classes:
-                    idx = classes.index(kat)
-                    proba[idx] = min(1.0, proba[idx] + bonus * 0.05)
-
-        idx = proba.argmax()
-        return classes[idx], round(float(proba[idx]), 4)
-    except Exception:
-        return "Lainnya", 0.35
 
 # ════════════════════════════════════════════════════════════════════
 #  MAIN CLASSIFIER
-#  Alur: Rule-Based → Char N-gram + SGD → SVM + TF-IDF
+#  Alur: Rule-Based → Unified ML Pipeline
 # ════════════════════════════════════════════════════════════════════
 def classify(text: str, gender: str = None) -> dict:
     """
-    Klasifikasi keluhan 3 lapis:
+    Klasifikasi keluhan 2 lapis (v4.0):
       Lapis 1 → Rule-Based + Context Booster (keyword eksak + konteks)
-      Lapis 2 → Char N-gram + SGD (mensimulasi FastText, paham subkata)
-      Lapis 3 → SVM + TF-IDF (fallback statistik)
-      Fallback → "Tidak Dikenali" jika semua lapis ragu
-
-    gender: 'male' | 'female' | None
+      Lapis 2 → Unified Pipeline ML (SGDClassifier dengan Char + Word N-Gram)
+      Fallback → "Tidak Dikenali" jika ML ragu
     """
     # ── Lapis 1: Rule-Based ─────────────────────────────────────
     kategori, conf = rule_based_classify(text, gender)
@@ -386,31 +348,21 @@ def classify(text: str, gender: str = None) -> dict:
             "gender":     gender,
         }
 
-    # ── Lapis 2: Char N-gram + SGD ──────────────────────────────
-    kategori, conf = char_ngram_classify(text, gender)
-    if kategori and conf >= CHAR_NGRAM_THRESHOLD:
+    # ── Lapis 2: Unified ML ──────────────────────────────
+    kategori, conf = unified_classify(text, gender)
+    if kategori and conf >= 0.50: # Threshold lebih rendah sedikit karena gabungan
         return {
             "kategori":   kategori,
             "confidence": conf,
-            "metode":     "char-ngram",
+            "metode":     "unified-ml",
             "gender":     gender,
         }
 
-    # ── Lapis 3: SVM + TF-IDF ───────────────────────────────────
-    kategori, conf = svm_classify(text, gender)
-    if conf >= SVM_THRESHOLD:
-        return {
-            "kategori":   kategori,
-            "confidence": conf,
-            "metode":     "svm",
-            "gender":     gender,
-        }
-
-    # ── Fallback: semua lapis ragu ───────────────────────────────
+    # ── Fallback: ragu ───────────────────────────────
     return {
         "kategori":   "Tidak Dikenali",
         "confidence": conf,
-        "metode":     "svm-low-confidence",
+        "metode":     "ml-low-confidence",
         "gender":     gender,
         "pesan":      "Keluhan tidak dikenali sistem. Silakan konsultasi langsung ke klinik.",
-    }
+    }

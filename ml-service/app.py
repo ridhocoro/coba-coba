@@ -5,10 +5,19 @@ Cara menjalankan: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from classifier import classify
+from classifier import classify, load_models_sync
 from typing import List, Optional
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Klinik ML Service", version="2.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("🚀 [ML-Service] Memuat model ke memori...")
+    load_models_sync()
+    print("✅ [ML-Service] Model siap melayani request!")
+    yield
+    print("🛑 [ML-Service] Shutting down...")
+
+app = FastAPI(title="Klinik ML Service", version="4.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class KeluhanInput(BaseModel):

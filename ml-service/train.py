@@ -1,5 +1,5 @@
 """
-train.py — Latih FastText (Lapis 2) + SVM + TF-IDF (Lapis 3)
+train.py — Latih Unified Pipeline (Char + Word) dengan Simulasi Pasien Nyata
 ─────────────────────────────────────────────────────────────────────
 Cara pakai:
   python train.py                        → pakai dataset.csv (default)
@@ -7,15 +7,7 @@ Cara pakai:
   python train.py --data dataset.csv --data dataset_baru.csv  → gabung
 
 Output:
-  model_char_ngram.pkl → Lapis 2 (Char N-gram + SGD, mensimulasi FastText)
-  model_svm.pkl        → Lapis 3 (SVM + TF-IDF)
-─────────────────────────────────────────────────────────────────────
-Catatan teknis Lapis 2:
-  Menggunakan SGDClassifier + TF-IDF char_wb n-gram (2,5) yang mensimulasi
-  kemampuan FastText (subkata, typo-toleran, ringan di CPU ~100MB).
-  Bukan library fasttext asli — dipilih karena fasttext asli membutuhkan
-  ~300-500MB RAM dan compile C++, tidak cocok untuk Railway free (512MB).
-  Akurasi setara untuk teks pendek 3-10 kata bahasa Indonesia.
+  model_unified.pkl → Unified Pipeline (TF-IDF Char + Word + SGDClassifier)
 ─────────────────────────────────────────────────────────────────────
 """
 
@@ -28,42 +20,75 @@ import random
 from collections import Counter
 
 from sklearn.linear_model import SGDClassifier
-from sklearn.svm import SVC
-from sklearn.feature_extraction.text import TfidfVectorizer, HashingVectorizer
-from sklearn.pipeline import Pipeline
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import classification_report
-from sklearn.utils import resample
 import numpy as np
 
-# ── Augmentasi sinonim sederhana ─────────────────────────────────────
+# ── Augmentasi Sinonim & Slang ───────────────────────────────────────
 AUGMENT_SYNONYMS = {
     "anak":    ["si kecil", "buah hati", "balita", "bocah"],
     "bayi":    ["newborn", "si bayi", "anak bayi"],
-    "tidak":   ["gak", "nggak", "ga", "tak"],
-    "susah":   ["sulit", "kesulitan", "tidak bisa"],
-    "sakit":   ["nyeri", "tidak enak", "terasa sakit"],
-    "belum":   ["tidak", "masih belum"],
+    "tidak":   ["gak", "nggak", "ga", "tak", "ndak"],
+    "susah":   ["sulit", "kesulitan", "tidak bisa", "payah"],
+    "sakit":   ["nyeri", "tidak enak", "terasa sakit", "sakit banget"],
+    "belum":   ["tidak", "masih belum", "blom", "belom"],
     "bicara":  ["ngomong", "berbicara", "berkata"],
     "kurus":   ["kering", "langsing sekali", "bb rendah", "kurang berat badan"],
-    "demam":   ["panas badan", "badan panas", "suhu tinggi", "febris"],
-    "mual":    ["ingin muntah", "eneg", "ingin mual"],
-    "gatal":   ["gatal-gatal", "terasa gatal", "rasa gatal"],
-    "pusing":  ["kepala berputar", "kepala berat", "pening"],
+    "demam":   ["panas badan", "badan panas", "suhu tinggi", "febris", "meriang"],
+    "mual":    ["ingin muntah", "eneg", "ingin mual", "enek"],
+    "gatal":   ["gatal-gatal", "terasa gatal", "rasa gatal", "gatel"],
+    "pusing":  ["kepala berputar", "kepala berat", "pening", "puyeng"],
+    "sudah":   ["udah", "dah", "sdh"],
+    "sangat":  ["banget", "bgt", "sekali"],
 }
 
+SLANG_SUFFIXES = [" nih", " dok", " ya", " sih", " dong", " banget"]
+SLANG_PREFIXES = ["dok ", "hallo dok ", "tolong ", "gimana ya "]
+
+def inject_typo(text: str) -> str:
+    """Mensimulasikan salah ketik (typo) secara acak pada teks."""
+    if len(text) < 5 or random.random() > 0.4:
+        return text # 60% chance tidak diubah
+        
+    chars = list(text)
+    idx = random.randint(0, len(chars)-2)
+    
+    # 3 jenis typo: hapus huruf, tukar huruf, atau duplikasi huruf
+    typo_type = random.choice(['drop', 'swap', 'double'])
+    if typo_type == 'drop' and chars[idx] != ' ':
+        chars.pop(idx)
+    elif typo_type == 'swap' and chars[idx] != ' ' and chars[idx+1] != ' ':
+        chars[idx], chars[idx+1] = chars[idx+1], chars[idx]
+    elif typo_type == 'double' and chars[idx] != ' ':
+        chars.insert(idx, chars[idx])
+        
+    return "".join(chars)
+
 def augment_text(text: str, n: int = 2) -> list:
-    """Generate n variasi teks dengan penggantian sinonim secara random."""
+    """Generate n variasi teks dengan sinonim, slang, dan typo."""
     results = []
     words   = text.lower().split()
     for _ in range(n):
         new_words = []
         for w in words:
-            if w in AUGMENT_SYNONYMS and random.random() < 0.4:
+            if w in AUGMENT_SYNONYMS and random.random() < 0.5:
                 new_words.append(random.choice(AUGMENT_SYNONYMS[w]))
             else:
                 new_words.append(w)
-        results.append(" ".join(new_words))
+        
+        sentence = " ".join(new_words)
+        
+        # Tambah slang
+        if random.random() < 0.3:
+            sentence = random.choice(SLANG_PREFIXES) + sentence
+        if random.random() < 0.3:
+            sentence = sentence + random.choice(SLANG_SUFFIXES)
+            
+        # Tambah typo
+        sentence = inject_typo(sentence)
+        results.append(sentence)
     return results
 
 def preprocess(text: str) -> str:
@@ -91,10 +116,10 @@ def load_dataset(paths: list) -> tuple:
     return texts, labels
 
 # ── Oversample kelas minoritas + augmentasi ───────────────────────────
-def balance_dataset(texts: list, labels: list, min_samples: int = 25) -> tuple:
+def balance_dataset(texts: list, labels: list, target_samples: int = 150) -> tuple:
     """
-    Pastikan setiap kategori punya minimal min_samples sampel.
-    Kelas yang kurang → oversample + augmentasi sinonim.
+    Semua kelas di-augmentasi hingga mencapai target_samples (termasuk kelas besar seperti ISPA).
+    Ini memastikan SEMUA penyakit mendapat porsi latihan bahasa informal dan typo.
     """
     from collections import defaultdict
     buckets = defaultdict(list)
@@ -104,23 +129,27 @@ def balance_dataset(texts: list, labels: list, min_samples: int = 25) -> tuple:
     new_texts, new_labels = list(texts), list(labels)
 
     for label, items in buckets.items():
-        if len(items) < min_samples:
-            needed = min_samples - len(items)
-            # Augmentasi dulu
+        if len(items) < target_samples:
+            needed = target_samples - len(items)
             augmented = []
+            # Augmentasi setiap item beberapa kali untuk mendapatkan variasi slang/typo
             for item in items:
-                augmented.extend(augment_text(item, n=3))
-            # Ambil secukupnya
+                augmented.extend(augment_text(item, n=max(2, needed // len(items) + 1)))
+            
+            # Ambil acak sesuai kebutuhan
             extras = random.choices(augmented, k=needed)
             new_texts.extend(extras)
             new_labels.extend([label] * needed)
 
-    return new_texts, new_labels
+    # Shuffle
+    combined = list(zip(new_texts, new_labels))
+    random.shuffle(combined)
+    return [t for t, l in combined], [l for t, l in combined]
 
 def train(data_paths: list):
     print("\n" + "═" * 58)
-    print("  TRAINING ML SERVICE v3.0")
-    print("  Layer 2: FastText-style  |  Layer 3: SVM + TF-IDF")
+    print("  TRAINING ML SERVICE v4.0")
+    print("  Unified Pipeline: Char + Word TF-IDF + SGD")
     print("═" * 58)
 
     # ── Load data ─────────────────────────────────────────────────
@@ -133,14 +162,15 @@ def train(data_paths: list):
     print(f"   Total data mentah: {len(texts)} baris")
 
     # ── Balance & augmentasi ──────────────────────────────────────
-    print("\n⚖️  Menyeimbangkan dataset...")
-    texts, labels = balance_dataset(texts, labels, min_samples=30)
+    print("\n⚖️  Menyeimbangkan dataset dan menyuntikkan pasien sintetis...")
+    # Target ke 150 sampel agar semua kelas (bahkan kelas terbanyak seperti ISPA) mendapat porsi typo/slang
+    texts, labels = balance_dataset(texts, labels, target_samples=150)
     print(f"   Total setelah balancing: {len(texts)} baris")
 
     dist = Counter(labels)
     print("\n📋 Distribusi per kategori (setelah balancing):")
     for k, v in sorted(dist.items()):
-        bar = "█" * (v // 2)
+        bar = "█" * (v // 5)
         print(f"   {k:30s}: {v:3d}  {bar}")
 
     # ── Split ─────────────────────────────────────────────────────
@@ -154,100 +184,79 @@ def train(data_paths: list):
     base = os.path.dirname(os.path.abspath(__file__))
 
     # ════════════════════════════════════════════════════════════════
-    #  LAPIS 2 — FastText-style (SGD + HashingVectorizer + char n-gram)
-    #  Mensimulasikan FastText:
-    #    - char n-gram (2,5) → paham subkata, typo, imbuhan
-    #    - word n-gram (1,2) → konteks frasa
-    #    - SGDClassifier     → cepat, ringan, cocok untuk teks
+    #  UNIFIED PIPELINE
+    #  Gabungan Char N-Gram (untuk toleransi Typo) + Word N-gram (Konteks)
     # ════════════════════════════════════════════════════════════════
-    print("\n🤖 Melatih Char N-gram + SGD (Lapis 2, mensimulasi FastText)...")
+    print("\n🤖 Melatih Unified Pipeline (TF-IDF Char + Word) ...")
 
-    char_ngram_pipeline = Pipeline([
-        # Gabungan char n-gram + word n-gram melalui TF-IDF
-        ("tfidf", TfidfVectorizer(
-            analyzer     = "char_wb",  # char n-gram dengan word boundary
-            ngram_range  = (2, 5),     # subkata 2–5 karakter
-            min_df       = 1,
-            sublinear_tf = True,
-            max_features = 80000,
-        )),
+    pipeline = Pipeline([
+        ('features', FeatureUnion([
+            ('char_tfidf', TfidfVectorizer(
+                analyzer     = "char_wb",
+                ngram_range  = (2, 5),
+                min_df       = 1,
+                sublinear_tf = True,
+                max_features = 40000,
+            )),
+            ('word_tfidf', TfidfVectorizer(
+                analyzer     = "word",
+                ngram_range  = (1, 3),
+                min_df       = 1,
+                sublinear_tf = True,
+                max_features = 20000,
+            ))
+        ])),
         ("clf", SGDClassifier(
-            loss             = "modified_huber",  # wajib untuk predict_proba
+            loss             = "modified_huber",
             penalty          = "l2",
             alpha            = 1e-4,
-            max_iter         = 200,
+            max_iter         = 250,
             tol              = 1e-4,
             random_state     = 42,
-            class_weight     = "balanced",        # handle imbalance otomatis
+            class_weight     = "balanced", 
             n_jobs           = -1,
         )),
     ])
 
-    char_ngram_pipeline.fit(X_train, y_train)
+    pipeline.fit(X_train, y_train)
 
-    char_ngram_preds = char_ngram_pipeline.predict(X_test)
-    print("\n📊 Evaluasi Char N-gram + SGD:")
-    print(classification_report(y_test, char_ngram_preds, zero_division=0))
+    preds = pipeline.predict(X_test)
+    print("\n📊 Evaluasi Model Unified:")
+    print(classification_report(y_test, preds, zero_division=0))
 
     # Cross-val 5-fold
-    cv_scores = cross_val_score(char_ngram_pipeline, texts, labels, cv=5, scoring='f1_macro', n_jobs=-1)
+    cv_scores = cross_val_score(pipeline, texts, labels, cv=5, scoring='f1_macro', n_jobs=-1)
     print(f"   Cross-val F1 (5-fold): {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
 
-    char_ngram_path = os.path.join(base, "model_char_ngram.pkl")
-    with open(char_ngram_path, "wb") as f:
-        pickle.dump(char_ngram_pipeline, f)
-    print(f"✅ Char N-gram disimpan: {char_ngram_path}")
-
-    # ════════════════════════════════════════════════════════════════
-    #  LAPIS 3 — SVM + TF-IDF (word n-gram, fallback)
-    # ════════════════════════════════════════════════════════════════
-    print("\n🤖 Melatih SVM + TF-IDF (Lapis 3)...")
-
-    vectorizer = TfidfVectorizer(
-        ngram_range  = (1, 2),
-        min_df       = 1,
-        sublinear_tf = True,
-        max_features = 50000,
-    )
-    X_train_vec = vectorizer.fit_transform(X_train)
-    X_test_vec  = vectorizer.transform(X_test)
-
-    svm = SVC(
-        kernel       = "linear",
-        C            = 1.0,
-        probability  = True,
-        random_state = 42,
-        class_weight = "balanced",
-    )
-    svm.fit(X_train_vec, y_train)
-
-    svm_preds = svm.predict(X_test_vec)
-    print("\n📊 Evaluasi SVM:")
-    print(classification_report(y_test, svm_preds, zero_division=0))
-
-    svm_path = os.path.join(base, "model_svm.pkl")
-    with open(svm_path, "wb") as f:
-        pickle.dump({"model": svm, "vectorizer": vectorizer}, f)
-    print(f"✅ SVM disimpan: {svm_path}")
+    model_path = os.path.join(base, "model_unified.pkl")
+    with open(model_path, "wb") as f:
+        pickle.dump(pipeline, f)
+    print(f"✅ Model disimpan: {model_path}")
+    
+    # Hapus model lama agar tidak pusing
+    for old_file in ["model_char_ngram.pkl", "model_svm.pkl"]:
+        old_path = os.path.join(base, old_file)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+            print(f"🗑️  Menghapus model lama: {old_file}")
 
     # ── Summary ───────────────────────────────────────────────────
     print("\n" + "═" * 58)
     print("🎉 Training selesai!")
-    print(f"   model_char_ngram.pkl → Lapis 2 (Char N-gram + SGD, ~100MB RAM)")
-    print(f"   model_svm.pkl      → Lapis 3 (SVM + TF-IDF, fallback)")
+    print(f"   model_unified.pkl → Pipeline Tunggal (~80-150MB RAM)")
     print("═" * 58)
 
     # ── Quick sanity test ─────────────────────────────────────────
-    print("\n🧪 Sanity test kasus yang sebelumnya salah:")
+    print("\n🧪 Sanity test kasus dengan typo dan slang:")
     test_cases = [
-        ("anak kurus",                     "Tumbuh Kembang Anak / Malnutrisi"),
-        ("anak belum bisa bicara",         "Tumbuh Kembang Anak"),
-        ("anak terlambat bicara",          "Tumbuh Kembang Anak"),
-        ("bayi tidak naik berat badan",    "Tumbuh Kembang Anak"),
-        ("batuk dan pilek sudah 3 hari",   "ISPA"),
-        ("tekanan darah tinggi",           "Hipertensi"),
-        ("gigi berlubang dan sakit",       "Karies Gigi"),
-        ("hamil 8 minggu mual pagi hari",  "Kehamilan"),
+        ("anak kurus bgt",                     "Tumbuh Kembang Anak / Malnutrisi"),
+        ("anak blom bisa ngomong dok",         "Tumbuh Kembang Anak"),
+        ("byi ga naik bb nya",                 "Tumbuh Kembang Anak"),
+        ("batuk sm pilek udah 3 hri",          "ISPA"),
+        ("kepala puyeng mual",                 "Hipertensi / Kehamilan / ISPA"),
+        ("gigi lobang sakitttt bgt",           "Gangguan Gigi & Mulut / Karies Gigi"),
+        ("telat mens mual mual pagi hari",     "Kehamilan"),
+        ("badan gatel gatel bentol",           "Penyakit Kulit"),
     ]
     # Reload classifier setelah model baru tersimpan
     import importlib, classifier as clf_module
@@ -264,7 +273,7 @@ def train(data_paths: list):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train ML Service v3.0")
+    parser = argparse.ArgumentParser(description="Train ML Service v4.0")
     parser.add_argument(
         "--data", action="append", default=None,
         help="Path ke file CSV dataset. Bisa diulang untuk merge beberapa file."
