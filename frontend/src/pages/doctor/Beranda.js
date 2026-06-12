@@ -123,6 +123,7 @@ const SectionBeranda = () => {
     // AI Insight state
     const [aiInsight,        setAiInsight]        = useState(null);
     const [aiInsightLoading, setAiInsightLoading] = useState(false);
+    const [aiFromCache,      setAiFromCache]      = useState(false);
     const lastInsightKeyRef = useRef(null); // guard: hindari re-fetch data identik
 
     // Jam berjalan
@@ -236,6 +237,7 @@ const SectionBeranda = () => {
             const stored = sessionStorage.getItem(sessionKey);
             if (stored) {
                 setAiInsight(stored);
+                setAiFromCache(true);
                 lastInsightKeyRef.current = fingerprint;
                 return;
             }
@@ -252,6 +254,7 @@ const SectionBeranda = () => {
             });
             const insight = res.data?.insight || null;
             setAiInsight(insight);
+            setAiFromCache(res.data?.fromCache || false);
             if (insight) {
                 try { sessionStorage.setItem(sessionKey, insight); } catch (_) {}
             }
@@ -577,7 +580,10 @@ const SectionBeranda = () => {
                                             {aiInsightLoading ? (
                                                 <div style={{ fontSize: 13, color: '#64748b' }}>⏳ Menganalisis data...</div>
                                             ) : aiInsight ? (
-                                                <div style={{ fontSize: 13, color: '#1e293b', lineHeight: 1.7 }}>{aiInsight}</div>
+                                                <div>
+                                                    <div style={{ fontSize: 13, color: '#1e293b', lineHeight: 1.7 }}>{aiInsight}</div>
+                                                    {aiFromCache && <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>⚡ Diperbarui dari cache (6 jam terakhir)</div>}
+                                                </div>
                                             ) : (
                                                 <div style={{ fontSize: 13, color: '#94a3b8' }}>Insight belum tersedia.</div>
                                             )}

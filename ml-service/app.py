@@ -8,12 +8,28 @@ from pydantic import BaseModel
 from classifier import classify, load_models_sync
 from typing import List, Optional
 from contextlib import asynccontextmanager
+import os
+from datetime import datetime
+from pymongo import MongoClient
+
+# Initialize MongoDB Client
+MONGO_URI = os.getenv("MONGO_URI", "")
+db_client = None
+if MONGO_URI:
+    try:
+        # Use a short timeout so it doesn't block startup if DB is down
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        db_client = client.get_default_database()
+    except Exception as e:
+        print(f"⚠ [ML-Service] Gagal setup MongoDB: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 [ML-Service] Memuat model ke memori...")
     load_models_sync()
     print("✅ [ML-Service] Model siap melayani request!")
+    if db_client is not None:
+        print("✅ [ML-Service] Terhubung ke MongoDB untuk logging")
     yield
     print("🛑 [ML-Service] Shutting down...")
 
@@ -57,4 +73,26 @@ def classify_batch(body: KeluhanBatchInput):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "klinik-ml", "version": "2.0.0"}
+    return {"status": "ok", "service": "klinik-ml", "version": "4.0.0"}
+
+class FeedbackInput(BaseModel):
+    keluhan: str
+    prediksi_sistem: str
+    koreksi_dokter: str
+
+@app.post("/feedback")
+def submit_feedback(body: FeedbackInput):
+    if db_client is not None:
+        try:
+            db_client.prediction_logs.insert_one({
+                "keluhan": body.keluhan,
+                "prediksi_sistem": body.prediksi_sistem,
+                "koreksi_dokter": body.koreksi_dokter,
+                "timestamp": datetime.utcnow()
+            })
+            return {"success": True, "message": "Feedback saved to MongoDB"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    else:
+        print(f"Feedback received (No DB): {body.dict()}")
+        return {"success": True, "message": "Feedback received but DB not configured"}

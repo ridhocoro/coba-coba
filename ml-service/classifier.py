@@ -1,33 +1,20 @@
 """
 classifier.py
 ─────────────────────────────────────────────────────────────────────
-Sistem klasifikasi keluhan pasien TIGA LAPIS (v3.1):
-  Lapis 1 → Rule-Based + Context Booster
-  Lapis 2 → Char N-gram + SGD  (mensimulasi FastText, ringan ~100MB)
-  Lapis 3 → SVM + TF-IDF (fallback terakhir)
-
-Catatan teknis Lapis 2:
-  Bukan FastText asli (fasttext library), melainkan SGDClassifier
-  dengan TF-IDF char_wb n-gram (2,5) yang mensimulasi kemampuan
-  FastText: paham subkata, tidak sensitif typo, ringan di CPU.
-  Dipilih karena fasttext asli ~300-500MB RAM (OOM di Railway 0.5GB),
-  sedangkan implementasi ini hanya ~100MB.
-
-Perubahan dari v3.0 (revisi DeepSeek):
-  - CONFIDENCE_RULE: multi-hit=1.0, single-hit=0.95 (lebih akurat)
-  - CHAR_NGRAM_THRESHOLD: 0.60 → 0.70 (lebih aman untuk klinik)
-  - SVM fallback: jika conf < SVM_THRESHOLD → "Tidak Dikenali"
-  - Rename ft_pipeline → char_ngram_pipeline (jujur secara akademik)
-  - Rename _fasttext_model → _char_ngram_model
+Sistem klasifikasi keluhan pasien (v4.0):
+  - Prior Booster: Rule-based + Context digabung dengan probabilitas ML
+  - Unified Pipeline: TF-IDF Char + Word + SGDClassifier
+  - Gender di-inject sebagai fitur eksplisit (__gender_female__, dll)
 ─────────────────────────────────────────────────────────────────────
 """
 
 import re
 import pickle
 import os
+import numpy as np
 
 # ════════════════════════════════════════════════════════════════════
-#  LAPIS 1 — RULES (diperluas dengan sinonim & variasi frasa)
+#  LAPIS 1 — RULES (sebagai Prior Booster)
 # ════════════════════════════════════════════════════════════════════
 RULES = {
     # ── Poli Umum ─────────────────────────────────────────────────
@@ -39,7 +26,6 @@ RULES = {
         "tenggorokan gatal", "suara hilang", "batuk berdahak", "batuk kering",
         "hidung gatal", "hidung berair", "tenggorokan kering",
         "batuk terus", "batuk tidak berhenti",
-        # dari Gangguan Paru
         "sesak napas", "sesak nafas", "asma", "nafas berbunyi",
         "mengi", "napas pendek", "sulit bernapas", "napas ngos ngosan",
     ],
@@ -73,10 +59,9 @@ RULES = {
         "dada sakit", "jantung berdegup", "nyeri dada menjalar",
         "dada berdebar", "keringat dingin tiba tiba", "jantung tidak teratur",
     ],
-    # Gangguan Paru tidak ada di dataset v2 — keyword dipindah ke ISPA & Gangguan Jantung
     "Gangguan Saraf": [
         "kesemutan", "migrain", "kepala berdenyut", "wajah kaku", "tangan gemetar",
-        "kaki kebas", "vertigo", "kepala berputar", "kebas",
+        "kaki kebas", "vertigo", "kepala berputar", "kebas", "berputar",
         "kaki seperti ditusuk jarum", "migrain sebelah", "tangan kebas",
         "badan kesemutan", "pusing berputar",
     ],
@@ -92,38 +77,27 @@ RULES = {
         "urin merah", "urin berbusa", "batu ginjal", "pipis nyeri",
         "kencing nyeri", "kencing berdarah",
     ],
-    # Gangguan Mental tidak ada di dataset v2 — dihapus dari RULES
-    # Jika ingin ditambahkan kembali, tambah data training terlebih dahulu
-    # ── Poli Gigi ─────────────────────────────────────────────────
     "Gangguan Gigi & Mulut": [
-        # Karies & nyeri gigi
         "sakit gigi", "gigi berlubang", "gigi bolong", "gigi ngilu",
         "nyeri gigi", "gigi hitam", "gigi geraham sakit",
         "gigi sakit saat minum", "gigi sakit saat makan",
         "bau mulut gigi berlubang", "gigi nyut nyutan", "gigi sakit berdenyut",
-        # Gusi
         "gusi bengkak", "gusi berdarah", "gusi merah", "gusi sakit",
         "gusi nyeri", "gusi sensitif", "gusi perih", "gusi membengkak",
-        # Abses & infeksi
         "abses gigi", "benjolan di gusi", "gusi bernanah", "nanah gigi",
         "pipi bengkak gigi", "infeksi gigi", "rahang bengkak",
-        # Gigi sensitif
         "gigi sensitif", "ngilu gigi panas dingin", "saraf gigi sensitif",
         "gigi ngilu minum es", "gigi ngilu kena angin",
-        # Gigi bungsu
         "gigi bungsu", "gigi geraham belakang tumbuh",
         "gigi bungsu miring", "gigi paling belakang sakit",
-        # Mulut & sariawan
         "sariawan", "luka di mulut", "mulut perih", "bibir pecah pecah",
         "mulut kering gigi", "bau mulut", "napas berbau",
     ],
-    # ── Poli Gizi ─────────────────────────────────────────────────
     "Malnutrisi": [
         "berat badan kurang", "tubuh kurus", "kekurangan gizi",
         "badan kurus drastis", "makan sedikit tidak bertenaga",
         "kurang makan lemas", "anak susah makan berat badan",
         "gizi kurang", "rambut rontok gizi", "kuku rapuh gizi",
-        # ── TAMBAHAN SINONIM ──
         "kurus", "badannya kurus", "sangat kurus", "terlalu kurus",
         "kurang gizi", "gizi buruk", "bb rendah", "berat badan rendah",
         "tidak gemuk", "susah gemuk", "berat badan kurang ideal",
@@ -152,7 +126,6 @@ RULES = {
         "kekurangan zat besi", "imun lemah vitamin",
         "sariawan kurang vitamin c", "tulang keropos kalsium",
     ],
-    # ── Poli KIA ──────────────────────────────────────────────────
     "Kehamilan": [
         "hamil", "morning sickness", "mual pagi hamil",
         "kontrol kehamilan", "trimester", "janin", "kehamilan",
@@ -164,7 +137,7 @@ RULES = {
         "darah haid banyak", "haid telat", "kram haid",
         "menstruasi sedikit", "haid tidak berhenti",
         "siklus haid tidak teratur", "menstruasi terlambat",
-        "haid tidak datang", "mens tidak lancar",
+        "haid tidak datang", "mens tidak lancar", "haid", "mens",
     ],
     "Kontrasepsi": [
         "kb", "kontrasepsi", "iud", "pil kb", "suntik kb",
@@ -176,7 +149,6 @@ RULES = {
         "pertumbuhan anak lambat", "anak sering sakit",
         "bayi tidak naik berat badan", "anak demam rewel",
         "balita berat badan", "anak susah makan",
-        # ── TAMBAHAN SINONIM KRITIS ──
         "anak belum bisa bicara", "anak belum bicara",
         "belum bisa bicara", "belum lancar bicara",
         "anak lambat bicara", "telat bicara",
@@ -197,37 +169,23 @@ RULES = {
     ],
 }
 
-# ════════════════════════════════════════════════════════════════════
-#  CONTEXT BOOSTERS
-#  Jika teks mengandung kata trigger → naikkan skor kategori tertentu
-#  SEBELUM pengecekan RULES, agar intent anak/bayi/balita diprioritaskan
-# ════════════════════════════════════════════════════════════════════
+# Hapus tumpang tindih dengan menyatukan ke RULES. 
+# Jika ada konteks khusus seperti "anak", kita distribusikan bobotnya secara eksplisit.
 CONTEXT_BOOSTERS = {
-    # Kata konteks → {kategori: bonus_score}
     "anak":   {"Tumbuh Kembang Anak": 2, "Imunisasi": 1},
     "bayi":   {"Tumbuh Kembang Anak": 2, "Imunisasi": 2},
     "balita": {"Tumbuh Kembang Anak": 2, "Imunisasi": 1},
-    "hamil":  {"Kehamilan": 3},
-    "haid":   {"Gangguan Menstruasi": 2},
-    "mens":   {"Gangguan Menstruasi": 2},
-    "kb":     {"Kontrasepsi": 3},
 }
 
-# Gender bias scores
-GENDER_BIAS = {
-    "female": {
-        "Kehamilan":           3,
-        "Gangguan Menstruasi": 3,
-        "Kontrasepsi":         3,
-        "Anemia":              1,
-    },
-    "male": {},
+SLANG_MAP = {
+    'bgt': 'sangat', 'lemes': 'lemas', 'puyeng': 'pusing',
+    'gak': 'tidak', 'ga': 'tidak', 'blm': 'belum', 'blom': 'belum', 'belom': 'belum',
+    'sm': 'sama', 'hri': 'hari', 'udah': 'sudah', 'sdh': 'sudah',
+    'dah': 'sudah', 'bnyk': 'banyak', 'gatel': 'gatal', 'bb': 'berat badan',
+    'byi': 'bayi', 'dok': ''
 }
 
-CONFIDENCE_RULE_MULTI   = 1.00   # Rule-Based: >=2 keyword cocok -> sangat yakin
-CONFIDENCE_RULE_SINGLE  = 0.95   # Rule-Based: 1 keyword cocok -> hampir pasti
-CHAR_NGRAM_THRESHOLD    = 0.70   # Char N-gram: dinaikkan dari 0.60 (lebih aman klinik)
-SVM_THRESHOLD           = 0.50   # SVM: di bawah ini -> 'Tidak Dikenali'
+ALPHA_PRIOR = 0.3
 
 # ════════════════════════════════════════════════════════════════════
 #  PREPROCESSING
@@ -235,51 +193,33 @@ SVM_THRESHOLD           = 0.50   # SVM: di bawah ini -> 'Tidak Dikenali'
 def preprocess(text: str) -> str:
     text = text.lower()
     text = re.sub(r'[^a-z\s]', ' ', text)
+    
+    # Normalize slang
+    words = text.split()
+    normalized = [SLANG_MAP.get(w, w) for w in words]
+    text = " ".join(normalized)
+    
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 # ════════════════════════════════════════════════════════════════════
-#  LAPIS 1 — RULE-BASED + CONTEXT BOOSTER
+#  LAPIS 1 — GET RULE SCORES
 # ════════════════════════════════════════════════════════════════════
-def rule_based_classify(text: str, gender: str = None):
+def get_rule_scores(text: str):
     clean = preprocess(text)
     scores = {}
 
-    # 1a. Context booster terlebih dahulu
     for trigger, boosts in CONTEXT_BOOSTERS.items():
         if re.search(rf'\b{trigger}\b', clean):
             for kat, bonus in boosts.items():
                 scores[kat] = scores.get(kat, 0) + bonus
 
-    # 1b. Keyword matching
     for kategori, keywords in RULES.items():
         hit = sum(1 for kw in keywords if kw in clean)
         if hit > 0:
             scores[kategori] = scores.get(kategori, 0) + hit
 
-    if not scores:
-        return None, 0.0
-
-    # 1c. Gender bias
-    if gender and gender.lower() in GENDER_BIAS:
-        for kat, bonus in GENDER_BIAS[gender.lower()].items():
-            if kat in scores:
-                scores[kat] += bonus
-
-    best = max(scores, key=scores.get)
-    top  = scores[best]
-
-    # 1d. Tie-breaking: hindari Gangguan Pencernaan menang karena "mual" saja
-    #     jika ada kontestan lain
-    tied = [k for k, v in scores.items() if v == top]
-    if len(tied) > 1 and "Gangguan Pencernaan" in tied:
-        tied.remove("Gangguan Pencernaan")
-        best = tied[0]
-
-    # Confidence berbeda tergantung jumlah keyword yang cocok
-    raw_hits = scores[best]
-    conf = CONFIDENCE_RULE_MULTI if raw_hits >= 2 else CONFIDENCE_RULE_SINGLE
-    return best, conf
+    return scores
 
 # ════════════════════════════════════════════════════════════════════
 #  MODEL LOADING
@@ -300,69 +240,69 @@ def load_models_sync():
     _load_models()
 
 # ════════════════════════════════════════════════════════════════════
-#  LAPIS 2 — UNIFIED ML PIPELINE (Char + Word N-gram)
+#  MAIN CLASSIFIER (Gabungan ML + Rule Prior Booster)
 # ════════════════════════════════════════════════════════════════════
-def unified_classify(text: str, gender: str = None):
+def classify(text: str, gender: str = None) -> dict:
     global _unified_model
     if _unified_model is None:
         _load_models()
-    if _unified_model is None:
-        return None, 0.0
-
+        
     clean = preprocess(text)
+    
+    # 1. Hitung rule-based scores
+    rule_scores = get_rule_scores(text)
+    
+    if _unified_model is None:
+        # Fallback jika model gagal diload
+        if not rule_scores:
+            return {"kategori": "Tidak Dikenali", "confidence": 0.0, "metode": "fallback", "gender": gender}
+        best = max(rule_scores, key=rule_scores.get)
+        return {"kategori": best, "confidence": 0.8, "metode": "rule-only-fallback", "gender": gender}
+
+    # 2. Inject gender token konsisten
+    if gender == "female":
+        clean += " __gender_female__"
+    elif gender == "male":
+        clean += " __gender_male__"
+    else:
+        clean += " __gender_unknown__"
+
+    # 3. Prediksi ML
     try:
-        # Pipeline FeatureUnion mengurus tfidf & SGD langsung
-        proba = _unified_model.predict_proba([clean])[0].copy()
+        ml_proba = _unified_model.predict_proba([clean])[0].copy()
         classes = list(_unified_model.classes_)
-
-        # Gender bias
-        if gender and gender.lower() in GENDER_BIAS:
-            for kat, bonus in GENDER_BIAS[gender.lower()].items():
-                if kat in classes:
-                    idx = classes.index(kat)
-                    proba[idx] = min(1.0, proba[idx] + bonus * 0.05)
-
-        idx = proba.argmax()
-        return classes[idx], round(float(proba[idx]), 4)
-    except Exception:
-        return None, 0.0
-
-# ════════════════════════════════════════════════════════════════════
-#  MAIN CLASSIFIER
-#  Alur: Rule-Based → Unified ML Pipeline
-# ════════════════════════════════════════════════════════════════════
-def classify(text: str, gender: str = None) -> dict:
-    """
-    Klasifikasi keluhan 2 lapis (v4.0):
-      Lapis 1 → Rule-Based + Context Booster (keyword eksak + konteks)
-      Lapis 2 → Unified Pipeline ML (SGDClassifier dengan Char + Word N-Gram)
-      Fallback → "Tidak Dikenali" jika ML ragu
-    """
-    # ── Lapis 1: Rule-Based ─────────────────────────────────────
-    kategori, conf = rule_based_classify(text, gender)
-    if kategori:
+        
+        # 4. Terapkan Prior Booster
+        # combine = ml_proba + alpha * rule_vector
+        combined_proba = ml_proba.copy()
+        for idx, cls_name in enumerate(classes):
+            if cls_name in rule_scores:
+                combined_proba[idx] += ALPHA_PRIOR * rule_scores[cls_name]
+                
+        # Normalisasi softmax sederhana atau ambil max langsung
+        best_idx = combined_proba.argmax()
+        best_cat = classes[best_idx]
+        
+        # Estimasi confidence yang wajar
+        # Karena kita menambah skor, confidence asli (ml_proba) bisa jadi representasi terbaik
+        # Atau bisa menggunakan probabilitas baru setelah dinormalisasi
+        final_conf = combined_proba[best_idx] / combined_proba.sum()
+        
+        if final_conf < 0.35 and max(rule_scores.values() or [0]) == 0:
+            return {
+                "kategori": "Tidak Dikenali",
+                "confidence": round(float(final_conf), 4),
+                "metode": "ml-low-confidence",
+                "gender": gender,
+                "pesan": "Keluhan tidak dikenali sistem."
+            }
+            
         return {
-            "kategori":   kategori,
-            "confidence": conf,
-            "metode":     "rule-based",
-            "gender":     gender,
+            "kategori": best_cat,
+            "confidence": round(float(final_conf), 4),
+            "metode": "unified-prior-booster",
+            "gender": gender,
         }
-
-    # ── Lapis 2: Unified ML ──────────────────────────────
-    kategori, conf = unified_classify(text, gender)
-    if kategori and conf >= 0.50: # Threshold lebih rendah sedikit karena gabungan
-        return {
-            "kategori":   kategori,
-            "confidence": conf,
-            "metode":     "unified-ml",
-            "gender":     gender,
-        }
-
-    # ── Fallback: ragu ───────────────────────────────
-    return {
-        "kategori":   "Tidak Dikenali",
-        "confidence": conf,
-        "metode":     "ml-low-confidence",
-        "gender":     gender,
-        "pesan":      "Keluhan tidak dikenali sistem. Silakan konsultasi langsung ke klinik.",
-    }
+        
+    except Exception as e:
+        return {"kategori": "Error", "confidence": 0.0, "metode": "error", "pesan": str(e), "gender": gender}

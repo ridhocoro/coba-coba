@@ -91,9 +91,23 @@ def augment_text(text: str, n: int = 2) -> list:
         results.append(sentence)
     return results
 
+SLANG_MAP = {
+    'bgt': 'sangat', 'lemes': 'lemas', 'puyeng': 'pusing',
+    'gak': 'tidak', 'ga': 'tidak', 'blm': 'belum', 'blom': 'belum', 'belom': 'belum',
+    'sm': 'sama', 'hri': 'hari', 'udah': 'sudah', 'sdh': 'sudah',
+    'dah': 'sudah', 'bnyk': 'banyak', 'gatel': 'gatal', 'bb': 'berat badan',
+    'byi': 'bayi', 'dok': ''
+}
+
 def preprocess(text: str) -> str:
     text = text.lower()
     text = re.sub(r'[^a-z\s]', ' ', text)
+    
+    # Normalize slang
+    words = text.split()
+    normalized = [SLANG_MAP.get(w, w) for w in words]
+    text = " ".join(normalized)
+    
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -116,6 +130,15 @@ def load_dataset(paths: list) -> tuple:
     return texts, labels
 
 # ── Oversample kelas minoritas + augmentasi ───────────────────────────
+FEMALE_CLASSES = ["Kehamilan", "Gangguan Menstruasi", "Kontrasepsi"]
+
+def inject_gender_token(text, label):
+    if label in FEMALE_CLASSES:
+        token = "__gender_female__"
+    else:
+        token = random.choice(["__gender_female__", "__gender_male__", "__gender_unknown__"])
+    return text + " " + token
+
 def balance_dataset(texts: list, labels: list, target_samples: int = 150) -> tuple:
     """
     Semua kelas di-augmentasi hingga mencapai target_samples (termasuk kelas besar seperti ISPA).
@@ -136,15 +159,18 @@ def balance_dataset(texts: list, labels: list, target_samples: int = 150) -> tup
             for item in items:
                 augmented.extend(augment_text(item, n=max(2, needed // len(items) + 1)))
             
-            # Ambil acak sesuai kebutuhan
+    # Ambil acak sesuai kebutuhan
             extras = random.choices(augmented, k=needed)
             new_texts.extend(extras)
             new_labels.extend([label] * needed)
 
-    # Shuffle
+    # Shuffle and inject gender tokens
     combined = list(zip(new_texts, new_labels))
     random.shuffle(combined)
-    return [t for t, l in combined], [l for t, l in combined]
+    
+    final_texts = [inject_gender_token(t, l) for t, l in combined]
+    final_labels = [l for t, l in combined]
+    return final_texts, final_labels
 
 def train(data_paths: list):
     print("\n" + "═" * 58)
@@ -161,25 +187,30 @@ def train(data_paths: list):
 
     print(f"   Total data mentah: {len(texts)} baris")
 
-    # ── Balance & augmentasi ──────────────────────────────────────
-    print("\n⚖️  Menyeimbangkan dataset dan menyuntikkan pasien sintetis...")
-    # Target ke 150 sampel agar semua kelas (bahkan kelas terbanyak seperti ISPA) mendapat porsi typo/slang
-    texts, labels = balance_dataset(texts, labels, target_samples=150)
-    print(f"   Total setelah balancing: {len(texts)} baris")
-
+    # ── Split Dulu ────────────────────────────────────────────────
     dist = Counter(labels)
-    print("\n📋 Distribusi per kategori (setelah balancing):")
-    for k, v in sorted(dist.items()):
+    min_count = min(dist.values())
+    stratify  = labels if min_count >= 2 else None
+    
+    X_train_raw, X_test_raw, y_train_raw, y_test_raw = train_test_split(
+        texts, labels, test_size=0.2, random_state=42, stratify=stratify
+    )
+    print(f"\n✂️  Train raw: {len(X_train_raw)}  |  Test raw: {len(X_test_raw)}")
+
+    # ── Balance & augmentasi HANYA pada Train Set ────────────────
+    print("\n⚖️  Menyeimbangkan train set dan menyuntikkan pasien sintetis...")
+    X_train, y_train = balance_dataset(X_train_raw, y_train_raw, target_samples=150)
+    print(f"   Total Train setelah balancing: {len(X_train)} baris")
+    
+    dist_train = Counter(y_train)
+    print("\n📋 Distribusi per kategori di Train Set (setelah balancing):")
+    for k, v in sorted(dist_train.items()):
         bar = "█" * (v // 5)
         print(f"   {k:30s}: {v:3d}  {bar}")
 
-    # ── Split ─────────────────────────────────────────────────────
-    min_count = min(dist.values())
-    stratify  = labels if min_count >= 2 else None
-    X_train, X_test, y_train, y_test = train_test_split(
-        texts, labels, test_size=0.2, random_state=42, stratify=stratify
-    )
-    print(f"\n✂️  Train: {len(X_train)}  |  Test: {len(X_test)}")
+    # ── Inject token gender pada Test Set (Tanpa augmentasi) ───────
+    X_test = [inject_gender_token(t, l) for t, l in zip(X_test_raw, y_test_raw)]
+    y_test = y_test_raw
 
     base = os.path.dirname(os.path.abspath(__file__))
 
@@ -207,7 +238,7 @@ def train(data_paths: list):
             ))
         ])),
         ("clf", SGDClassifier(
-            loss             = "modified_huber",
+            loss             = "log_loss",
             penalty          = "l2",
             alpha            = 1e-4,
             max_iter         = 250,
@@ -224,9 +255,10 @@ def train(data_paths: list):
     print("\n📊 Evaluasi Model Unified:")
     print(classification_report(y_test, preds, zero_division=0))
 
-    # Cross-val 5-fold
-    cv_scores = cross_val_score(pipeline, texts, labels, cv=5, scoring='f1_macro', n_jobs=-1)
-    print(f"   Cross-val F1 (5-fold): {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
+    # Cross-val 5-fold pada data RAW (sebelum augmentasi, tapi dengan gender token)
+    cv_texts = [inject_gender_token(t, l) for t, l in zip(texts, labels)]
+    cv_scores = cross_val_score(pipeline, cv_texts, labels, cv=5, scoring='f1_macro', n_jobs=-1)
+    print(f"   Cross-val F1 (5-fold raw data): {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
 
     model_path = os.path.join(base, "model_unified.pkl")
     with open(model_path, "wb") as f:

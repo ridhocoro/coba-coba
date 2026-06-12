@@ -2103,10 +2103,25 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
         const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
         const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
         const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
-        const prompt = `Kamu adalah analis kesehatan klinik. Berikan insight singkat (3-4 kalimat) dalam Bahasa Indonesia untuk admin klinik berdasarkan data berikut:\n\nPeriode: ${periodLabel}\nFilter: ${genderLabel}\nTotal kasus: ${totalKasus}\n\nTop kategori penyakit:\n${summary}\n\nBerikan pola yang terlihat dan rekomendasi praktis. Jawab langsung tanpa pembuka formal.`;
+        const prompt = `Kamu adalah analis kesehatan klinik. Analisis data berikut dan berikan insight untuk admin.
+
+Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${totalKasus}
+
+Top kategori:
+${summary}
+
+Tulis TEPAT 3 kalimat dalam Bahasa Indonesia:
+1. Kalimat 1: Pola dominan yang terlihat dari data (sebutkan angka spesifik).
+2. Kalimat 2: Perbandingan atau anomali yang perlu diperhatikan.
+3. Kalimat 3: Satu rekomendasi operasional konkret untuk klinik.
+Tanpa bullet, tanpa heading, tanpa pembuka.`;
+
         const completion = await _groqAdmin.chat.completions.create({
             model: GROQ_ADMIN_MODEL, max_tokens: 300,
-            messages: [{ role: 'user', content: prompt }],
+            messages: [
+                { role: 'system', content: 'Kamu adalah analis kesehatan klinik yang ringkas dan faktual. Hanya berikan analisis berdasarkan data yang diberikan. Jangan mengarang data.' },
+                { role: 'user', content: prompt }
+            ],
         });
         const insight = completion.choices?.[0]?.message?.content?.trim() || null;
 

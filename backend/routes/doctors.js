@@ -1186,14 +1186,18 @@ router.get('/my/disease-trend-gender', auth, doctorAuth, async (req, res) => {
     }
 });
 
+const Groq = require('groq-sdk');
+let _groqDoc = null;
+if (process.env.GROQ_API_KEY) {
+    _groqDoc = new Groq({ apiKey: process.env.GROQ_API_KEY });
+}
+
 // ── AI Insight khusus dokter (Groq) ─────────────────────────────────────────
 router.post('/my/ai-insight', auth, doctorAuth, async (req, res) => {
     try {
-        if (!process.env.GROQ_API_KEY) {
+        if (!_groqDoc) {
             return res.status(503).json({ success: false, message: 'GROQ_API_KEY belum di-set' });
         }
-        const Groq = require('groq-sdk');
-        const groqDoc = new Groq({ apiKey: process.env.GROQ_API_KEY });
         const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
         const { safeGet, safeSet } = require('../config/redis');
 
@@ -1218,10 +1222,26 @@ router.post('/my/ai-insight', auth, doctorAuth, async (req, res) => {
         const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
         const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
         const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
-        const prompt = `Kamu adalah analis kesehatan. Berikan insight singkat (3-4 kalimat) dalam Bahasa Indonesia untuk dokter berdasarkan data pasiennya:\n\nPeriode: ${periodLabel}\nFilter: ${genderLabel}\nTotal kasus: ${totalKasus}\n\nTop kategori penyakit:\n${summary}\n\nBerikan pola keluhan dan saran tindakan untuk dokter. Jawab langsung tanpa pembuka formal.`;
-        const completion = await groqDoc.chat.completions.create({
+        
+        const prompt = `Kamu adalah asisten klinis. Analisis data pasien dokter berikut.
+
+Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${totalKasus}
+
+Top kategori keluhan:
+${summary}
+
+Tulis TEPAT 3 kalimat dalam Bahasa Indonesia:
+1. Kalimat 1: Keluhan yang paling dominan dan polanya.
+2. Kalimat 2: Keluhan yang mungkin memerlukan perhatian lebih (kenaikan atau proporsi besar).
+3. Kalimat 3: Satu saran tindakan preventif atau persiapan praktis untuk dokter.
+Tanpa bullet, tanpa heading, tanpa pembuka.`;
+
+        const completion = await _groqDoc.chat.completions.create({
             model: GROQ_MODEL, max_tokens: 300,
-            messages: [{ role: 'user', content: prompt }],
+            messages: [
+                { role: 'system', content: 'Kamu adalah analis kesehatan klinik yang ringkas dan faktual. Hanya berikan analisis berdasarkan data yang diberikan. Jangan mengarang data.' },
+                { role: 'user', content: prompt }
+            ],
         });
         const insight = completion.choices?.[0]?.message?.content?.trim() || null;
 
