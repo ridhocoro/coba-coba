@@ -47,10 +47,11 @@ function getRandomDisease() {
     return 'Lainnya';
 }
 
-function getRandomDateWithinDays(daysAgo) {
+function getDateBetween(minDays, maxDays) {
     const now = new Date();
-    const past = new Date(now.getTime() - (daysAgo * 24 * 60 * 60 * 1000));
-    return new Date(past.getTime() + Math.random() * (now.getTime() - past.getTime()));
+    const pastMin = new Date(now.getTime() - (minDays * 24 * 60 * 60 * 1000));
+    const pastMax = new Date(now.getTime() - (maxDays * 24 * 60 * 60 * 1000));
+    return new Date(pastMax.getTime() + Math.random() * (pastMin.getTime() - pastMax.getTime()));
 }
 
 async function seedDisease() {
@@ -108,17 +109,21 @@ async function seedDisease() {
             
             const disease = getRandomDisease();
             
-            // Custom distribusi waktu agar grafik tidak rata:
-            // 15% di 7 hari terakhir
-            // 25% di 8-30 hari terakhir
-            // 30% di 31-90 hari terakhir
-            // 30% di 91-180 hari terakhir
-            const timeRand = Math.random();
+            // Algoritma Musim Penyakit (Trend Waves) agar grafik memiliki puncak yang logis
             let date;
-            if (timeRand < 0.15) date = getRandomDateWithinDays(7);
-            else if (timeRand < 0.40) date = getRandomDateWithinDays(30);
-            else if (timeRand < 0.70) date = getRandomDateWithinDays(90);
-            else date = getRandomDateWithinDays(180);
+            if (disease === 'ISPA') {
+                // Memuncak di 30-60 hari lalu (musim pancaroba)
+                date = Math.random() < 0.65 ? getDateBetween(25, 65) : getDateBetween(0, 180);
+            } else if (disease === 'Penyakit Kulit') {
+                // Memuncak di 90-120 hari lalu (musim kemarau panjang)
+                date = Math.random() < 0.65 ? getDateBetween(85, 125) : getDateBetween(0, 180);
+            } else if (disease === 'Gangguan Pencernaan') {
+                // Memuncak di 7-30 hari lalu (pasca liburan/lebaran)
+                date = Math.random() < 0.65 ? getDateBetween(5, 35) : getDateBetween(0, 180);
+            } else {
+                // Penyakit kronis (Hipertensi, Diabetes) tersebar merata sepanjang waktu
+                date = getDateBetween(0, 180);
+            }
             
             // 60% Offline (Appointment), 40% Online (Consultation)
             const isOffline = Math.random() < 0.6;
