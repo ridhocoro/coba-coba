@@ -107,7 +107,14 @@ async function seedDisease() {
             const targetUsers = isMale ? maleUsers : femaleUsers;
             const randomUser = targetUsers[Math.floor(Math.random() * targetUsers.length)].id;
             
-            const disease = getRandomDisease();
+            let disease = getRandomDisease();
+            if (!isMale && Math.random() < 0.35) {
+                // 35% peluang khusus pasien wanita diarahkan ke label spesifik wanita
+                const fRand = Math.random();
+                if (fRand < 0.43) disease = 'Gangguan Menstruasi';  // ~15%
+                else if (fRand < 0.71) disease = 'Anemia';          // ~10%
+                else disease = 'Gangguan Pencernaan';               // ~10% tambahan
+            }
             
             // Algoritma Musim Penyakit (Trend Waves) agar grafik memiliki puncak yang logis
             let date;
@@ -120,6 +127,9 @@ async function seedDisease() {
             } else if (disease === 'Gangguan Pencernaan') {
                 // Memuncak di 7-30 hari lalu (pasca liburan/lebaran)
                 date = Math.random() < 0.65 ? getDateBetween(5, 35) : getDateBetween(0, 180);
+            } else if (disease === 'Gangguan Menstruasi') {
+                // Memuncak sedikit di 45-75 hari lalu untuk membentuk trend wave yang berbeda
+                date = Math.random() < 0.5 ? getDateBetween(45, 75) : getDateBetween(0, 180);
             } else {
                 // Penyakit kronis (Hipertensi, Diabetes) tersebar merata sepanjang waktu
                 date = getDateBetween(0, 180);

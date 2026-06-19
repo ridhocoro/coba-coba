@@ -2103,15 +2103,37 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
         const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
         const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
         const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
+        
+        let trendText = "";
+        const allDatesStr = [...new Set(Object.values(diseaseData).flat().map(r => r.tanggal))].sort();
+        if (allDatesStr.length > 1) {
+            const midIndex = Math.floor(allDatesStr.length / 2);
+            const pastHalfDates = allDatesStr.slice(0, midIndex);
+            const recentHalfDates = allDatesStr.slice(midIndex);
+            
+            const trendArr = [];
+            topKategori.slice(0, 3).forEach(kItem => {
+                const k = kItem.k;
+                const dataK = diseaseData[k] || [];
+                const pastSum = dataK.filter(d => pastHalfDates.includes(d.tanggal)).reduce((s, d) => s + d.jumlah, 0);
+                const recentSum = dataK.filter(d => recentHalfDates.includes(d.tanggal)).reduce((s, d) => s + d.jumlah, 0);
+                if (recentSum > pastSum) trendArr.push(`${k} NAIK dari ${pastSum} menjadi ${recentSum} kasus`);
+                else if (recentSum < pastSum) trendArr.push(`${k} TURUN dari ${pastSum} menjadi ${recentSum} kasus`);
+            });
+            if (trendArr.length > 0) {
+                trendText = `\nTren temporal paruh waktu awal vs paruh waktu akhir:\n- ${trendArr.join('\n- ')}\n`;
+            }
+        }
+
         const prompt = `Kamu adalah analis kesehatan klinik. Analisis data berikut dan berikan insight untuk admin.
 
 Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${totalKasus}
 
 Top kategori:
 ${summary}
-
+${trendText}
 Tulis TEPAT 3 kalimat dalam Bahasa Indonesia:
-1. Kalimat 1: Pola dominan yang terlihat dari data (sebutkan angka spesifik).
+1. Kalimat 1: Pola dominan yang terlihat dari data (sebutkan angka spesifik atau kenaikan/penurunan jika ada).
 2. Kalimat 2: Perbandingan atau anomali yang perlu diperhatikan.
 3. Kalimat 3: Satu rekomendasi operasional konkret untuk klinik.
 Tanpa bullet, tanpa heading, tanpa pembuka.`;
