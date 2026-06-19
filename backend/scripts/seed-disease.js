@@ -68,8 +68,9 @@ async function seedDisease() {
         console.log(`${c.green}✅ MongoDB Connected${c.reset}`);
 
         // 3. Fetch Doctors & Users
+        const { Op } = require('sequelize');
         const doctors = await Doctor.findAll({ attributes: ['id'] });
-        const users = await User.findAll({ attributes: ['id'], where: { role: 'user' } });
+        const users = await User.findAll({ attributes: ['id'], where: { role: { [Op.in]: ['user', 'mahasiswa'] } } });
 
         if (doctors.length === 0) throw new Error("Tidak ada dokter di database. Silakan buat dokter terlebih dahulu.");
         if (users.length === 0) throw new Error("Tidak ada user (pasien) di database. Silakan buat user terlebih dahulu.");
