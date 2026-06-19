@@ -182,7 +182,16 @@ async function seedDisease() {
             console.log(`${c.green}✅ Berhasil insert ${createdConsultations.length} Consultations (Online)${c.reset}`);
         }
 
-        console.log(`\n${c.bold}${c.green}🎉 Selesai! Data Disease Trend berhasil dimasukkan.${c.reset}`);
+        // Bersihkan cache agar data baru langsung muncul di dashboard
+        try {
+            const { invalidatePattern } = require('../utils/cache');
+            await invalidatePattern('cache:disease-trend*');
+            console.log(`${c.green}✅ Berhasil menghapus cache analitik lama${c.reset}`);
+        } catch (e) {
+            console.log(`${c.yellow}⚠️ Gagal menghapus cache (Abaikan jika Redis tidak aktif)${c.reset}`);
+        }
+
+        console.log(`\n🎉 ${c.bold}Selesai! Data Disease Trend berhasil dimasukkan.${c.reset}`);
         console.log(`${c.yellow}Silakan cek Dasbor Admin atau Beranda Dokter untuk melihat grafik.${c.reset}\n`);
 
     } catch (e) {
