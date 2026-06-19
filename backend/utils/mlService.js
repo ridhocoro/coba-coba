@@ -56,4 +56,19 @@ const classifyBatch = async (items) => {
   }
 };
 
-module.exports = { classifyKeluhan, classifyBatch };
+/**
+ * Mendapatkan metrik evaluasi model terbaru
+ * @returns {Object|null}
+ */
+const getMetrics = async () => {
+  if (!ML_SERVICE_URL) return null;
+  try {
+    const response = await axios.get(`${ML_SERVICE_URL}/metrics`, { timeout: 5000 });
+    return response.data?.data || null;
+  } catch (err) {
+    console.error('[mlService] getMetrics error:', err.message);
+    return null;
+  }
+};
+
+module.exports = { classifyKeluhan, classifyBatch, getMetrics };

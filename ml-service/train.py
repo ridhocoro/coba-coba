@@ -23,7 +23,9 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, accuracy_score, precision_recall_fscore_support, log_loss
+from sklearn.dummy import DummyClassifier
+import json
 import numpy as np
 
 # ── Augmentasi Sinonim & Slang ───────────────────────────────────────
@@ -259,6 +261,36 @@ def train(data_paths: list):
     cv_texts = [inject_gender_token(t, l) for t, l in zip(texts, labels)]
     cv_scores = cross_val_score(pipeline, cv_texts, labels, cv=5, scoring='f1_macro', n_jobs=-1)
     print(f"   Cross-val F1 (5-fold raw data): {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
+
+    # Kalkulasi Metrik Lengkap & Pseudo R2
+    print("\n📈 Mengkalkulasi Metrik (Accuracy, F1, Pseudo R²)...")
+    acc = accuracy_score(y_test, preds)
+    prec, rec, f1, _ = precision_recall_fscore_support(y_test, preds, average='macro', zero_division=0)
+    
+    # Pseudo R2 (McFadden): 1 - (LogLoss_Model / LogLoss_Null)
+    probs_test = pipeline.predict_proba(X_test)
+    ll_model = log_loss(y_test, probs_test)
+    
+    dummy = DummyClassifier(strategy='prior')
+    dummy.fit(X_train, y_train)
+    probs_null = dummy.predict_proba(X_test)
+    ll_null = log_loss(y_test, probs_null)
+    
+    pseudo_r2 = 1 - (ll_model / ll_null) if ll_null > 0 else 0
+
+    metrics_dict = {
+        "accuracy": float(acc),
+        "precision": float(prec),
+        "recall": float(rec),
+        "f1_score": float(f1),
+        "r2_pseudo": float(pseudo_r2),
+        "cross_val_f1": float(cv_scores.mean())
+    }
+
+    metrics_path = os.path.join(base, "metrics.json")
+    with open(metrics_path, "w", encoding="utf-8") as mf:
+        json.dump(metrics_dict, mf, indent=2)
+    print(f"✅ Metrik disimpan: {metrics_path}")
 
     model_path = os.path.join(base, "model_unified.pkl")
     with open(model_path, "wb") as f:

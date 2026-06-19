@@ -126,6 +126,10 @@ const SectionBeranda = () => {
     const [aiFromCache,      setAiFromCache]      = useState(false);
     const lastInsightKeyRef = useRef(null); // guard: hindari re-fetch data identik
 
+    // ML Metrics state
+    const [mlMetrics,        setMlMetrics]        = useState(null);
+    const [mlMetricsLoading, setMlMetricsLoading] = useState(true);
+
     // Jam berjalan
     useEffect(() => {
         const t = setInterval(() => setTime(new Date()), 1000);
@@ -268,6 +272,21 @@ const SectionBeranda = () => {
     useEffect(() => {
         if (diseaseData) fetchAiInsight(diseaseData);
     }, [diseaseData, fetchAiInsight]);
+
+    // ── Fetch ML Metrics ─────────────────────────────────────────────────────
+    const fetchMlMetrics = useCallback(async () => {
+        setMlMetricsLoading(true);
+        try {
+            const res = await api.get('/api/doctors/my/ml-metrics');
+            if (res.data?.success) setMlMetrics(res.data.data);
+        } catch (e) {
+            console.error('[Beranda] ML metrics error:', e);
+        } finally {
+            setMlMetricsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchMlMetrics(); }, [fetchMlMetrics]);
 
     // ── Reminder ─────────────────────────────────────────────────────────────
     const reminders = allItems.filter(s => {
@@ -565,6 +584,39 @@ const SectionBeranda = () => {
                                 <Empty icon="📊" text="Belum ada data klasifikasi penyakit. Data akan muncul setelah pasien submit keluhan." />
                             ) : (
                                 <>
+                                    {/* ML Metrics Box */}
+                                    <div style={{ marginBottom: 16 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>📊 Evaluasi Performa Unified Pipeline (ML)</div>
+                                        {mlMetricsLoading ? (
+                                            <div style={{ fontSize: 13, color: '#64748b' }}>⏳ Memuat metrik...</div>
+                                        ) : mlMetrics ? (
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                                                <Card style={{ padding: '12px 16px', background: 'linear-gradient(to right, #f8fafc, #fff)', borderLeft: '4px solid #3b82f6' }}>
+                                                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Akurasi</div>
+                                                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{(mlMetrics.accuracy * 100).toFixed(1)}%</div>
+                                                </Card>
+                                                <Card style={{ padding: '12px 16px', background: 'linear-gradient(to right, #f8fafc, #fff)', borderLeft: '4px solid #10b981' }}>
+                                                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>F1-Score</div>
+                                                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{(mlMetrics.f1_score * 100).toFixed(1)}%</div>
+                                                </Card>
+                                                <Card style={{ padding: '12px 16px', background: 'linear-gradient(to right, #f8fafc, #fff)', borderLeft: '4px solid #8b5cf6' }}>
+                                                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Precision</div>
+                                                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{(mlMetrics.precision * 100).toFixed(1)}%</div>
+                                                </Card>
+                                                <Card style={{ padding: '12px 16px', background: 'linear-gradient(to right, #f8fafc, #fff)', borderLeft: '4px solid #f59e0b' }}>
+                                                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Recall</div>
+                                                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{(mlMetrics.recall * 100).toFixed(1)}%</div>
+                                                </Card>
+                                                <Card style={{ padding: '12px 16px', background: 'linear-gradient(to right, #f8fafc, #fff)', borderLeft: '4px solid #ec4899' }}>
+                                                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Pseudo R²</div>
+                                                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{(mlMetrics.r2_pseudo * 100).toFixed(1)}%</div>
+                                                </Card>
+                                            </div>
+                                        ) : (
+                                            <div style={{ fontSize: 13, color: '#94a3b8' }}>Metrik belum tersedia.</div>
+                                        )}
+                                    </div>
+
                                     {/* AI Insight Box */}
                                     <div style={{
                                         background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
@@ -595,7 +647,7 @@ const SectionBeranda = () => {
                                         {/* Horizontal Bar: Kategori Terbanyak */}
                                         <div>
                                             <div style={{ fontSize: 12, fontWeight: 700, color: colors.muted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                                📊 Kategori Terbanyak
+                                                Kategori Terbanyak
                                             </div>
                                             <div style={{ height: 220 }}>
                                                 <Bar data={chartData.hBarData} options={{
@@ -616,7 +668,7 @@ const SectionBeranda = () => {
                                         {/* Line Chart: Tren Waktu */}
                                         <div>
                                             <div style={{ fontSize: 12, fontWeight: 700, color: colors.muted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                                📈 Tren dari Waktu ke Waktu (Top 5)
+                                                Tren dari Waktu ke Waktu (Top 5)
                                             </div>
                                             <div style={{ height: 220 }}>
                                                 <Line data={{ labels: chartData.lineLabels, datasets: chartData.lineDatasets }} options={{

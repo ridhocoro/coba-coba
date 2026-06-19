@@ -75,6 +75,18 @@ def classify_batch(body: KeluhanBatchInput):
 def health():
     return {"status": "ok", "service": "klinik-ml", "version": "4.0.0"}
 
+@app.get("/metrics")
+def get_metrics():
+    import json
+    base = os.path.dirname(os.path.abspath(__file__))
+    metrics_path = os.path.join(base, "metrics.json")
+    if os.path.exists(metrics_path):
+        with open(metrics_path, "r", encoding="utf-8") as f:
+            metrics = json.load(f)
+        return {"success": True, "data": metrics}
+    else:
+        return {"success": False, "message": "Metrics not found"}
+
 class FeedbackInput(BaseModel):
     keluhan: str
     prediksi_sistem: str

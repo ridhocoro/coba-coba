@@ -424,6 +424,22 @@ router.put('/my/settings', auth, doctorAuth, async (req, res) => {
     }
 });
 
+// ── Analytics: ML Metrics (Doctor) ───────────────────────────────────────────
+router.get('/my/ml-metrics', auth, doctorAuth, async (req, res) => {
+    try {
+        const { getMetrics } = require('../utils/mlService');
+        const metrics = await getMetrics();
+        if (metrics) {
+            res.json({ success: true, data: metrics });
+        } else {
+            res.status(503).json({ success: false, message: 'ML metrics not available' });
+        }
+    } catch (err) {
+        console.error('[doctors] GET /my/ml-metrics error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
 // ══════════════════════════════════════════════════════════════════
 // ADMIN — STATIC ROUTES (sebelum /:id)
 // ══════════════════════════════════════════════════════════════════

@@ -2135,4 +2135,20 @@ Tanpa bullet, tanpa heading, tanpa pembuka.`;
     }
 });
 
+// ── Analytics: ML Metrics ────────────────────────────────────────────────────
+router.get('/analytics/ml-metrics', guard, async (req, res) => {
+    try {
+        const { getMetrics } = require('../utils/mlService');
+        const metrics = await getMetrics();
+        if (metrics) {
+            res.json({ success: true, data: metrics });
+        } else {
+            res.status(503).json({ success: false, message: 'ML metrics not available' });
+        }
+    } catch (err) {
+        console.error('[admin] GET /analytics/ml-metrics error:', err);
+        res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+});
+
 module.exports = router;
