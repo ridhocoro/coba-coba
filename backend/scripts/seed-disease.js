@@ -20,8 +20,8 @@ const Consultation = require('../models/Consultation');
 // Warna terminal
 const c = { reset: '\x1b[0m', green: '\x1b[32m', cyan: '\x1b[36m', bold: '\x1b[1m', yellow: '\x1b[33m' };
 
-const TOTAL_RECORDS = 250;
-const DAYS_BACK = 30;
+const TOTAL_RECORDS = 500;
+const DAYS_BACK = 180; // 6 bulan
 
 // Proporsi Penyakit Natural (Total 100)
 const DISEASE_DISTRIBUTION = [
@@ -70,10 +70,28 @@ async function seedDisease() {
         // 3. Fetch Doctors & Users
         const { Op } = require('sequelize');
         const doctors = await Doctor.findAll({ attributes: ['id'] });
-        const users = await User.findAll({ attributes: ['id'], where: { role: { [Op.in]: ['user', 'mahasiswa'] } } });
-
+        
         if (doctors.length === 0) throw new Error("Tidak ada dokter di database. Silakan buat dokter terlebih dahulu.");
-        if (users.length === 0) throw new Error("Tidak ada user (pasien) di database. Silakan buat user terlebih dahulu.");
+
+        // Pastikan ada Laki-laki dan Perempuan untuk kebutuhan filter
+        let maleUsers = await User.findAll({ attributes: ['id'], where: { role: { [Op.in]: ['user', 'mahasiswa'] }, gender: 'laki-laki' } });
+        let femaleUsers = await User.findAll({ attributes: ['id'], where: { role: { [Op.in]: ['user', 'mahasiswa'] }, gender: 'perempuan' } });
+
+        const bcrypt = require('bcryptjs');
+        const hashedPw = await bcrypt.hash('password123', 10);
+
+        if (maleUsers.length === 0) {
+            console.log(`${c.yellow}ℹ  Tidak ada user Laki-laki. Membuat user dummy...${c.reset}`);
+            const dummyMale = await User.create({ name: 'Dummy Laki-laki', email: `malepasien_${Date.now()}@klinik.com`, password: hashedPw, phone: '08123456789', gender: 'laki-laki', role: 'user' });
+            maleUsers = [dummyMale];
+        }
+        if (femaleUsers.length === 0) {
+            console.log(`${c.yellow}ℹ  Tidak ada user Perempuan. Membuat user dummy...${c.reset}`);
+            const dummyFemale = await User.create({ name: 'Dummy Perempuan', email: `femalepasien_${Date.now()}@klinik.com`, password: hashedPw, phone: '08123456789', gender: 'perempuan', role: 'user' });
+            femaleUsers = [dummyFemale];
+        }
+
+        const allUsers = [...maleUsers, ...femaleUsers];
 
         console.log(`${c.cyan}ℹ  Mempersiapkan ${TOTAL_RECORDS} data...${c.reset}`);
 
@@ -82,9 +100,25 @@ async function seedDisease() {
 
         for (let i = 0; i < TOTAL_RECORDS; i++) {
             const randomDoc = doctors[Math.floor(Math.random() * doctors.length)].id;
-            const randomUser = users[Math.floor(Math.random() * users.length)].id;
+            
+            // Distribusi 50% Laki-laki, 50% Perempuan agar imbang
+            const isMale = Math.random() < 0.5;
+            const targetUsers = isMale ? maleUsers : femaleUsers;
+            const randomUser = targetUsers[Math.floor(Math.random() * targetUsers.length)].id;
+            
             const disease = getRandomDisease();
-            const date = getRandomDateWithinDays(DAYS_BACK);
+            
+            // Custom distribusi waktu agar grafik tidak rata:
+            // 15% di 7 hari terakhir
+            // 25% di 8-30 hari terakhir
+            // 30% di 31-90 hari terakhir
+            // 30% di 91-180 hari terakhir
+            const timeRand = Math.random();
+            let date;
+            if (timeRand < 0.15) date = getRandomDateWithinDays(7);
+            else if (timeRand < 0.40) date = getRandomDateWithinDays(30);
+            else if (timeRand < 0.70) date = getRandomDateWithinDays(90);
+            else date = getRandomDateWithinDays(180);
             
             // 60% Offline (Appointment), 40% Online (Consultation)
             const isOffline = Math.random() < 0.6;
