@@ -165,8 +165,17 @@ app.use((err, req, res, next) => {
 
 // ── Start ─────────────────────────────────────────────────────
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    
+    // Auto-clear cache di environment production saat server restart (sangat berguna untuk development/seeding)
+    try {
+        const { invalidatePattern } = require('./utils/cache');
+        await invalidatePattern('cache:disease-trend*');
+        console.log('🧹 Startup: Auto-cleared disease-trend cache!');
+    } catch (e) {
+        console.error('🧹 Startup: Failed to clear cache', e.message);
+    }
 });
 
 // ── Graceful shutdown: tutup Redis sebelum process mati ───────
