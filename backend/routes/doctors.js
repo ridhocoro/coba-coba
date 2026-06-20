@@ -1224,7 +1224,9 @@ router.post('/my/ai-insight', auth, doctorAuth, async (req, res) => {
         const topKategori = Object.entries(diseaseData)
             .map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }))
             .sort((a, b) => b.total - a.total).slice(0, 8);
-        const totalKasus = topKategori.reduce((s, x) => s + x.total, 0);
+            
+        const allKategori = Object.entries(diseaseData).map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }));
+        const absoluteTotalKasus = allKategori.reduce((s, x) => s + x.total, 0);
 
         // ── Redis cache: key dari doctorId + period + gender + top kategori ──
         const doctorId = req.user?.doctorId || req.user?.id || 'unknown';
@@ -1237,20 +1239,53 @@ router.post('/my/ai-insight', auth, doctorAuth, async (req, res) => {
 
         const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
         const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
-        const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
+        
+        const actionTimeframe = {
+            '7 hari':   'dalam 7 hari ke depan',
+            '30 hari':  'dalam bulan ini',
+            '3 bulan':  'dalam kuartal ini',
+            '6 bulan':  'dalam semester ini',
+        };
+        const timeframeLabel = actionTimeframe[periodLabel] || 'ke depan';
+
+        const summary = topKategori.map((x, i) => {
+            const pct = absoluteTotalKasus > 0 ? Math.round((x.total / absoluteTotalKasus) * 100) : 0;
+            return `${i+1}. ${x.k}: ${x.total} kasus (${pct}%)`;
+        }).join('\n');
+        
+        let trendText = "";
+        const allDatesStr = [...new Set(Object.values(diseaseData).flat().map(r => r.tanggal))].sort();
+        if (allDatesStr.length > 1) {
+            const midIndex = Math.floor(allDatesStr.length / 2);
+            const pastHalfDates = allDatesStr.slice(0, midIndex);
+            const recentHalfDates = allDatesStr.slice(midIndex);
+            
+            const trendArr = [];
+            topKategori.slice(0, 3).forEach(kItem => {
+                const k = kItem.k;
+                const dataK = diseaseData[k] || [];
+                const pastSum = dataK.filter(d => pastHalfDates.includes(d.tanggal)).reduce((s, d) => s + d.jumlah, 0);
+                const recentSum = dataK.filter(d => recentHalfDates.includes(d.tanggal)).reduce((s, d) => s + d.jumlah, 0);
+                if (recentSum > pastSum) trendArr.push(`${k} NAIK dari ${pastSum} menjadi ${recentSum} kasus`);
+                else if (recentSum < pastSum) trendArr.push(`${k} TURUN dari ${pastSum} menjadi ${recentSum} kasus`);
+            });
+            if (trendArr.length > 0) {
+                trendText = `\nTren temporal paruh waktu awal vs paruh waktu akhir:\n- ${trendArr.join('\n- ')}\n`;
+            }
+        }
         
         const prompt = `Kamu adalah asisten klinis. Analisis data pasien dokter berikut.
 
-Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${totalKasus}
+Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${absoluteTotalKasus}
 
-Top kategori keluhan:
+Distribusi kategori penyakit:
 ${summary}
-
-Tulis TEPAT 3 kalimat dalam Bahasa Indonesia:
-1. Kalimat 1: Keluhan yang paling dominan dan polanya.
-2. Kalimat 2: Keluhan yang mungkin memerlukan perhatian lebih (kenaikan atau proporsi besar).
-3. Kalimat 3: Satu saran tindakan preventif atau persiapan praktis untuk dokter.
-Tanpa bullet, tanpa heading, tanpa pembuka.`;
+${trendText}
+Tulis TEPAT 3 kalimat PENDEK dalam Bahasa Indonesia (maksimal 25 kata per kalimat):
+1. Kalimat 1: Sebutkan 1 pola paling dominan dengan angka dan persentase spesifik.
+2. Kalimat 2: Sebutkan 1 anomali atau perbandingan yang paling perlu diperhatikan.
+3. Kalimat 3: Satu tindakan operasional yang bisa dilakukan ${timeframeLabel}, spesifik dan dapat dieksekusi oleh dokter.
+Tanpa bullet, tanpa heading, tanpa kalimat pembuka seperti "Berdasarkan data...".`;
 
         const completion = await _groqDoc.chat.completions.create({
             model: GROQ_MODEL, max_tokens: 300,

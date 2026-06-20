@@ -586,7 +586,8 @@ const SectionBeranda = () => {
                                 <>
                                     {/* ML Metrics Box */}
                                     <div style={{ marginBottom: 16 }}>
-                                        <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>📊 Evaluasi Performa Unified Pipeline (ML)</div>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>📊 Evaluasi Performa Unified Pipeline (ML)</div>
+                                        <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', marginBottom: 10 }}>*Metrik dihitung pada seluruh dataset training global model, bukan pada filter rentang waktu/gender yang sedang aktif.</div>
                                         {mlMetricsLoading ? (
                                             <div style={{ fontSize: 13, color: '#64748b' }}>⏳ Memuat metrik...</div>
                                         ) : mlMetrics ? (

@@ -2090,7 +2090,9 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
         const topKategori = Object.entries(diseaseData)
             .map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }))
             .sort((a, b) => b.total - a.total).slice(0, 8);
-        const totalKasus = topKategori.reduce((s, x) => s + x.total, 0);
+        
+        const allKategori = Object.entries(diseaseData).map(([k, arr]) => ({ k, total: arr.reduce((s, r) => s + r.jumlah, 0) }));
+        const absoluteTotalKasus = allKategori.reduce((s, x) => s + x.total, 0);
 
         // ── Redis cache: buat key dari kombinasi period + gender + top kategori ──
         const kategoriFP = topKategori.map(x => `${x.k}:${x.total}`).join('|');
@@ -2102,7 +2104,19 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
 
         const periodLabel = { '7d': '7 hari', '30d': '30 hari', '3m': '3 bulan', '6m': '6 bulan' }[period] || period;
         const genderLabel = gender === 'male' ? 'pasien laki-laki' : gender === 'female' ? 'pasien perempuan' : 'semua pasien';
-        const summary = topKategori.map((x, i) => `${i+1}. ${x.k}: ${x.total} kasus`).join('\n');
+        
+        const actionTimeframe = {
+            '7 hari':   'dalam 7 hari ke depan',
+            '30 hari':  'dalam bulan ini',
+            '3 bulan':  'dalam kuartal ini',
+            '6 bulan':  'dalam semester ini',
+        };
+        const timeframeLabel = actionTimeframe[periodLabel] || 'ke depan';
+
+        const summary = topKategori.map((x, i) => {
+            const pct = absoluteTotalKasus > 0 ? Math.round((x.total / absoluteTotalKasus) * 100) : 0;
+            return `${i+1}. ${x.k}: ${x.total} kasus (${pct}%)`;
+        }).join('\n');
         
         let trendText = "";
         const allDatesStr = [...new Set(Object.values(diseaseData).flat().map(r => r.tanggal))].sort();
@@ -2125,18 +2139,18 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
             }
         }
 
-        const prompt = `Kamu adalah analis kesehatan klinik. Analisis data berikut dan berikan insight untuk admin.
+        const prompt = `Kamu adalah analis kesehatan klinik. Analisis data berikut dan berikan insight untuk admin klinik.
 
-Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${totalKasus}
+Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${absoluteTotalKasus}
 
-Top kategori:
+Distribusi kategori penyakit:
 ${summary}
 ${trendText}
-Tulis TEPAT 3 kalimat dalam Bahasa Indonesia:
-1. Kalimat 1: Pola dominan yang terlihat dari data (sebutkan angka spesifik atau kenaikan/penurunan jika ada).
-2. Kalimat 2: Perbandingan atau anomali yang perlu diperhatikan.
-3. Kalimat 3: Satu rekomendasi operasional konkret untuk klinik.
-Tanpa bullet, tanpa heading, tanpa pembuka.`;
+Tulis TEPAT 3 kalimat PENDEK dalam Bahasa Indonesia (maksimal 25 kata per kalimat):
+1. Kalimat 1: Sebutkan 1 pola paling dominan dengan angka dan persentase spesifik.
+2. Kalimat 2: Sebutkan 1 anomali atau perbandingan yang paling perlu diperhatikan.
+3. Kalimat 3: Satu tindakan operasional yang bisa dilakukan ${timeframeLabel}, spesifik dan dapat dieksekusi.
+Tanpa bullet, tanpa heading, tanpa kalimat pembuka seperti "Berdasarkan data...".`;
 
         const completion = await _groqAdmin.chat.completions.create({
             model: GROQ_ADMIN_MODEL, max_tokens: 300,
