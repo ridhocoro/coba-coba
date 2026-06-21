@@ -835,7 +835,7 @@ router.post('/users/reset-quota-bonus', guard, async (req, res) => {
 
 router.get('/consultations', guard, async (req, res) => {
     try {
-        const { period, from, to, doctorId, status, page = 1, limit = 50 } = req.query;
+        const { period, from, to, doctorId, status, page = 1, limit = 50, search } = req.query;
         const { start, end } = dateRange(period, from, to);
 
         const filter = {
@@ -846,6 +846,38 @@ router.get('/consultations', guard, async (req, res) => {
         };
         if (doctorId) filter.doctorId = doctorId;
         if (status) filter.status = status;
+
+        if (search && search.trim()) {
+            const searchTerm = search.trim();
+            const users = await User.findAll({
+                where: {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${searchTerm}%` } },
+                        { email: { [Op.like]: `%${searchTerm}%` } },
+                        { phone: { [Op.like]: `%${searchTerm}%` } },
+                    ]
+                },
+                attributes: ['id']
+            });
+            const doctors = await Doctor.findAll({
+                where: {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${searchTerm}%` } }
+                    ]
+                },
+                attributes: ['id']
+            });
+            
+            const searchFilter = {
+                $or: [
+                    { symptoms: { $regex: searchTerm, $options: 'i' } }
+                ]
+            };
+            if (users.length > 0) searchFilter.$or.push({ userId: { $in: users.map(u => String(u.id)) } });
+            if (doctors.length > 0) searchFilter.$or.push({ doctorId: { $in: doctors.map(d => String(d.id)) } });
+
+            filter.$and = [searchFilter];
+        }
 
         const total = await Consultation.countDocuments(filter);
         let consultations = await Consultation.find(filter)
@@ -916,7 +948,7 @@ router.get('/consultations', guard, async (req, res) => {
 
 router.get('/appointments', guard, async (req, res) => {
     try {
-        const { period, from, to, doctorId, status, page = 1, limit = 50 } = req.query;
+        const { period, from, to, doctorId, status, page = 1, limit = 50, search } = req.query;
         const { start, end } = dateRange(period, from, to);
 
         const filter = {
@@ -927,6 +959,38 @@ router.get('/appointments', guard, async (req, res) => {
         };
         if (doctorId) filter.doctorId = doctorId;
         if (status) filter.status = status;
+
+        if (search && search.trim()) {
+            const searchTerm = search.trim();
+            const users = await User.findAll({
+                where: {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${searchTerm}%` } },
+                        { email: { [Op.like]: `%${searchTerm}%` } },
+                        { phone: { [Op.like]: `%${searchTerm}%` } },
+                    ]
+                },
+                attributes: ['id']
+            });
+            const doctors = await Doctor.findAll({
+                where: {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${searchTerm}%` } }
+                    ]
+                },
+                attributes: ['id']
+            });
+            
+            const searchFilter = {
+                $or: [
+                    { complaint: { $regex: searchTerm, $options: 'i' } }
+                ]
+            };
+            if (users.length > 0) searchFilter.$or.push({ userId: { $in: users.map(u => String(u.id)) } });
+            if (doctors.length > 0) searchFilter.$or.push({ doctorId: { $in: doctors.map(d => String(d.id)) } });
+
+            filter.$and = [searchFilter];
+        }
 
         const total = await Appointment.countDocuments(filter);
         let appointments = await Appointment.find(filter)

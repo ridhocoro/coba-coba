@@ -156,6 +156,7 @@ require('./utils/AppointmentCron').startCron(io);
 require('./utils/CleanupUnverifiedUsersCron').startCron();
 require('./utils/WeeklyScheduleReminderCron').startCron(io);
 require('./utils/VideoLogCleanupCron').startCron();
+require('./utils/MLRetrainCron').startCron();
 
 // ── Error handler global ──────────────────────────────────────
 app.use((err, req, res, next) => {

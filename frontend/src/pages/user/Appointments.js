@@ -425,6 +425,26 @@ const ApptCard = ({ appt, onCancel, onReschedule, onRate, onDownloadSickLetter, 
                     <div style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.5 }}>{appt.complaint || '—'}</div>
                 </div>
 
+                {/* Diagnosis Resmi dari Rekam Medis (menggantikan Triage AI) */}
+                <div style={{ marginBottom: 14 }}>
+                    <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        background: appt.medicalRecord?.isCompleted ? '#f0fdf4' : '#fffbeb',
+                        border: `1px solid ${appt.medicalRecord?.isCompleted ? '#bbf7d0' : '#fde68a'}`,
+                        borderRadius: 20, padding: '3px 12px',
+                    }}>
+                        <span style={{ fontSize: 11 }}>
+                            {appt.medicalRecord?.isCompleted ? '✅' : '⏳'}
+                        </span>
+                        <span style={{
+                            fontSize: 11, fontWeight: 700,
+                            color: appt.medicalRecord?.isCompleted ? '#166534' : '#92400e',
+                        }}>
+                            Diagnosis: {appt.medicalRecord?.isCompleted ? (appt.medicalRecord?.assessment || 'Selesai') : 'Menunggu evaluasi dokter'}
+                        </span>
+                    </div>
+                </div>
+
                 {/* Deadline cancel/reschedule */}
                 {showDeadline && (
                     <div style={{

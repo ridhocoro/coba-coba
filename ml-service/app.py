@@ -2,7 +2,7 @@
 app.py — FastAPI ML Service v2.0
 Cara menjalankan: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from classifier import classify, load_models_sync
@@ -108,3 +108,18 @@ def submit_feedback(body: FeedbackInput):
     else:
         print(f"Feedback received (No DB): {body.dict()}")
         return {"success": True, "message": "Feedback received but DB not configured"}
+
+import subprocess
+@app.post("/retrain")
+def trigger_retrain(background_tasks: BackgroundTasks):
+    def run_retrain():
+        try:
+            print("[Active Learning] Memulai retrain model...")
+            subprocess.run(["python", "retrain.py"], check=True)
+            print("[Active Learning] Retrain selesai, memuat model baru...")
+            load_models_sync() # Reload the model in memory
+        except Exception as e:
+            print(f"[Active Learning] Retrain gagal: {e}")
+            
+    background_tasks.add_task(run_retrain)
+    return {"success": True, "message": "Retrain dimulai di background"}

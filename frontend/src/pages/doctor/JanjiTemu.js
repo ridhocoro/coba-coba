@@ -18,6 +18,7 @@ const SectionJanjiTemu = ({ socketRef }) => {
     const [loading, setLoading]   = useState(() => !hasCache('doctor:appointments:data'));
     const [dateFilter, setDateFilter]   = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [search, setSearch]           = useState('');
     const [processing, setProcessing] = useState({});
     const [completeTarget, setCompleteTarget] = useState(null);
     const [completeNotes, setCompleteNotes]   = useState('');
@@ -52,23 +53,52 @@ const SectionJanjiTemu = ({ socketRef }) => {
     const [rlSaving,       setRlSaving]       = useState(false);
     const [rlIssuing,      setRlIssuing]      = useState(false);
 
+    // ── ML Feedback (Active Learning) ──────────────────────────────
+    const [mlTargetId, setMlTargetId] = useState(null);
+    const [mlFeedback, setMlFeedback] = useState('');
+    const [mlSaving, setMlSaving] = useState(false);
+
+    const handleSubmitMlFeedback = async (id, originalCategory, symptoms) => {
+        if (!mlFeedback) return toast.error('Pilih kategori koreksi yang benar');
+        setMlSaving(true);
+        try {
+            await api.post('/api/doctors/ml-feedback', {
+                type: 'appointment',
+                id,
+                keluhan: symptoms,
+                prediksi_sistem: originalCategory,
+                koreksi_dokter: mlFeedback
+            });
+            toast.success('Koreksi AI berhasil disubmit. Terima kasih!');
+            setAppointments(prev => prev.map(a => a._id === id ? { ...a, ml_corrected: true } : a));
+            setMlTargetId(null);
+            setMlFeedback('');
+        } catch (e) {
+            toast.error(e.response?.data?.message || 'Gagal submit koreksi');
+        } finally {
+            setMlSaving(false);
+        }
+    };
+
+
     const fetchData = useCallback(async (background = false) => {
         if (!background) setLoading(!hasCache('doctor:appointments:data'));
         try {
             const params = {};
             if (dateFilter) params.date = dateFilter;
             if (statusFilter !== 'all') params.status = statusFilter;
+            if (search) params.search = search;
             const r = await api.get('/api/appointments/doctor/list', { params });
             setAppointments(r.data.appointments || []);
-            if (!dateFilter && statusFilter === 'all') {
+            if (!dateFilter && statusFilter === 'all' && !search) {
                 setCache('doctor:appointments:data', r.data.appointments || []);
             }
         } catch { toast.error('Gagal memuat janji temu'); }
         finally { if (!background) setLoading(false); }
-    }, [dateFilter, statusFilter]);
+    }, [dateFilter, statusFilter, search]);
 
     useEffect(() => { 
-        const isBg = !dateFilter && statusFilter === 'all' && hasCache('doctor:appointments:data');
+        const isBg = !dateFilter && statusFilter === 'all' && !search && hasCache('doctor:appointments:data');
         fetchData(isBg); 
     }, [fetchData]);
 
@@ -268,8 +298,13 @@ const SectionJanjiTemu = ({ socketRef }) => {
                         {Object.entries(APPT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                     </select>
                 </div>
-                {(dateFilter || statusFilter !== 'all') && (
-                    <Btn size="sm" variant="ghost" onClick={() => { setDateFilter(''); setStatusFilter('all'); }}>✕ Reset</Btn>
+                <div>
+                    <label style={{ ...labelStyle, marginBottom: 4 }}>Cari Pasien/Keluhan</label>
+                    <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                        placeholder="Cari..." style={{ ...inputStyle, width: 200 }} />
+                </div>
+                {(dateFilter || statusFilter !== 'all' || search) && (
+                    <Btn size="sm" variant="ghost" onClick={() => { setDateFilter(''); setStatusFilter('all'); setSearch(''); }}>✕ Reset</Btn>
                 )}
             </Card>
 
@@ -302,7 +337,36 @@ const SectionJanjiTemu = ({ socketRef }) => {
                                             <td style={{ ...TD, fontWeight: 700, color: colors.text, whiteSpace: 'nowrap' }}>{a.appointmentTime}</td>
                                             <td style={{ ...TD, color: colors.muted, maxWidth: 140 }}>
                                                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.complaint || '—'}</div>
-                                                {a.cancelReason && <div style={{ fontSize: 11, color: colors.danger }}>Alasan: {a.cancelReason}</div>}
+                                                {a.disease_category && (
+                                                    <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                        <div style={{ fontSize: 10, background: a.ml_corrected ? '#f0fdf4' : '#eff6ff', color: a.ml_corrected ? '#166534' : '#1d4ed8', border: `1px solid ${a.ml_corrected ? '#bbf7d0' : '#bfdbfe'}`, borderRadius: 4, padding: '2px 4px', display: 'inline-block', width: 'fit-content' }}>
+                                                            {a.ml_corrected ? '✅ Terkoreksi' : `🤖 ${a.disease_category}`}
+                                                        </div>
+                                                        {!a.ml_corrected && mlTargetId !== a._id && (
+                                                            <button onClick={() => setMlTargetId(a._id)} style={{ fontSize: 9, color: colors.primary, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0, textAlign: 'left' }}>Koreksi AI</button>
+                                                        )}
+                                                        {mlTargetId === a._id && (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                                <select value={mlFeedback} onChange={e => setMlFeedback(e.target.value)} style={{ fontSize: 9, padding: '2px', maxWidth: '100px' }}>
+                                                                    <option value="">-- Kategori Benar --</option>
+                                                                    <option value="Demam">Demam</option>
+                                                                    <option value="Batuk/Pilek">Batuk/Pilek</option>
+                                                                    <option value="Pusing/Sakit Kepala">Pusing/Sakit Kepala</option>
+                                                                    <option value="Sakit Perut/Diare">Sakit Perut/Diare</option>
+                                                                    <option value="Gatal/Alergi">Gatal/Alergi</option>
+                                                                    <option value="Pegal/Nyeri Otot">Pegal/Nyeri Otot</option>
+                                                                    <option value="Sakit Gigi">Sakit Gigi</option>
+                                                                    <option value="Lainnya">Lainnya</option>
+                                                                </select>
+                                                                <div style={{ display: 'flex', gap: 4 }}>
+                                                                    <button disabled={mlSaving} onClick={() => handleSubmitMlFeedback(a._id, a.disease_category, a.complaint)} style={{ fontSize: 9, background: colors.primary, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Submit</button>
+                                                                    <button onClick={() => {setMlTargetId(null); setMlFeedback('');}} style={{ fontSize: 9, background: 'none', color: colors.muted, border: 'none', cursor: 'pointer' }}>Batal</button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {a.cancelReason && <div style={{ fontSize: 11, color: colors.danger, marginTop: 4 }}>Alasan: {a.cancelReason}</div>}
                                             </td>
                                             <td style={{ ...TD, whiteSpace: 'nowrap' }}>
                                                 <div style={{ display: 'flex', gap: 4, flexDirection: 'column' }}>

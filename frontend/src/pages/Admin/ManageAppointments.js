@@ -25,6 +25,7 @@ const ManageAppointments = () => {
   const [from, setFrom]       = useState('');
   const [to, setTo]           = useState('');
   const [status, setStatus]   = useState('');
+  const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
   const [cancelModal, setCancelModal] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -38,10 +39,11 @@ const ManageAppointments = () => {
       if (period !== 'custom') params.set('period', period);
       else { if (from) params.set('from', from); if (to) params.set('to', to); }
       if (status) params.set('status', status);
+      if (search) params.set('search', search);
       const r = await api.get(`/api/admin/appointments?${params}`);
       setItems(r.data.appointments || []);
       setTotal(r.data.total || 0);
-      if (page === 1 && period === '7d' && !status) {
+      if (page === 1 && period === '7d' && !status && !search) {
         setCache('admin:appointments:data', r.data.appointments || []);
         setCache('admin:appointments:total', r.data.total || 0);
       }
@@ -50,10 +52,10 @@ const ManageAppointments = () => {
       if (!background) toast.error('Gagal memuat data janji temu');
     }
     finally { if (!background) setLoading(false); }
-  }, [period, from, to, status, page]);
+  }, [period, from, to, status, page, search]);
 
   useEffect(() => { 
-    const isBg = page === 1 && period === '7d' && !status && hasCache('admin:appointments:data');
+    const isBg = page === 1 && period === '7d' && !status && !search && hasCache('admin:appointments:data');
     fetchData(isBg); 
   }, [fetchData]);
 
@@ -103,6 +105,7 @@ const ManageAppointments = () => {
           <span style={{ fontSize:12, color:'#64748b' }}>s/d</span>
           <input type="date" style={S.dateInput} value={to} onChange={e => setTo(e.target.value)} />
         </>}
+        <input type="text" style={{ ...S.dateInput, width: 180 }} placeholder="Cari Pasien, Dokter..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         <select style={S.select} value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}>
           <option value="">Semua Status</option>
           {Object.entries(STATUS_CFG).map(([k,v]) => <option key={k} value={k}>{v.l}</option>)}

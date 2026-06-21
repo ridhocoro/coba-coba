@@ -5,6 +5,7 @@ const fmtDoctorName = require('../utils/fmtDoctorName');
 
 const express  = require('express');
 const router   = express.Router();
+const { Op } = require('sequelize');
 const { classifyKeluhan } = require('../utils/mlService');
 
 const Appointment             = require('../models/Appointment');
@@ -861,7 +862,7 @@ router.get('/doctor/list', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ message: 'Profil dokter tidak ditemukan' });
 
-        const { date, status } = req.query;
+        const { date, status, search } = req.query;
         const query = { doctorId: doctor.id };
 
         if (status && status !== 'all') query.status = status;
@@ -869,6 +870,29 @@ router.get('/doctor/list', auth, doctorAuth, async (req, res) => {
             const [y, mo, d] = date.split('-').map(Number);
             const ds = new Date(Date.UTC(y, mo - 1, d));
             query.appointmentDate = { $gte: ds, $lt: new Date(ds.getTime() + 24*60*60*1000) };
+        }
+
+        if (search && search.trim()) {
+            const searchTerm = search.trim();
+            const users = await User.findAll({
+                where: {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${searchTerm}%` } },
+                        { email: { [Op.like]: `%${searchTerm}%` } },
+                        { phone: { [Op.like]: `%${searchTerm}%` } },
+                    ]
+                },
+                attributes: ['id']
+            });
+
+            const searchFilter = {
+                $or: [
+                    { complaint: { $regex: searchTerm, $options: 'i' } }
+                ]
+            };
+            if (users.length > 0) searchFilter.$or.push({ userId: { $in: users.map(u => String(u.id)) } });
+
+            query.$and = [searchFilter];
         }
 
         let appointments = await Appointment.find(query).sort({ scheduledAt: 1 })

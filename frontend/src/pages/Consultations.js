@@ -548,38 +548,31 @@ const ConsultationCard = ({
                     <div style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.5 }}>{cons.symptoms || '—'}</div>
                 </div>
 
-                {cons.disease_category && (
-                    <div style={{ marginTop: 8 }}>
-                        {cons.disease_category === 'Tidak Dikenali' ? (
-                            <div style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 6,
-                                background: '#fef9c3', border: '1px solid #fde68a',
-                                borderRadius: 20, padding: '3px 12px',
-                            }}>
-                                <span style={{ fontSize: 11 }}>⚠️</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: '#92400e' }}>
-                                    Keluhan belum teridentifikasi — dokter akan mendiagnosis saat konsultasi
-                                </span>
-                            </div>
-                        ) : (
-                            <div style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 6,
-                                background: '#f0fdf4', border: '1px solid #bbf7d0',
-                                borderRadius: 20, padding: '3px 12px',
-                            }}>
-                                <span style={{ fontSize: 11 }}>🤖</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: '#166534' }}>
-                                    Terdeteksi: {cons.disease_category}
-                                </span>
-                                {cons.category_confidence && (
-                                    <span style={{ fontSize: 10, color: '#64748b' }}>
-                                        ({Math.round(cons.category_confidence * 100)}% akurasi)
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
+                <div style={{ marginTop: 8 }}>
+                    {cons.medicalRecord?.assessment ? (
+                        <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            background: '#eff6ff', border: '1px solid #bfdbfe',
+                            borderRadius: 20, padding: '3px 12px',
+                        }}>
+                            <span style={{ fontSize: 11 }}>🩺</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>
+                                Diagnosis Resmi: {cons.medicalRecord.assessment}
+                            </span>
+                        </div>
+                    ) : (
+                        <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            background: '#f3f4f6', border: '1px solid #e5e7eb',
+                            borderRadius: 20, padding: '3px 12px',
+                        }}>
+                            <span style={{ fontSize: 11 }}>⏳</span>
+                            <span style={{ fontSize: 11, fontWeight: 500, color: '#6b7280' }}>
+                                Diagnosis: Menunggu evaluasi dokter
+                            </span>
+                        </div>
+                    )}
+                </div>
 
 
                 {needsPay && cons.paymentDeadline && (

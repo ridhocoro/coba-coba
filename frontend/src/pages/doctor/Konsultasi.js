@@ -37,13 +37,44 @@ const SectionKonsultasi = ({ socketRef }) => {
     const [rlSaving,    setRlSaving]    = useState(false);
     const [rlIssuing,   setRlIssuing]   = useState(false);
 
+    // ── ML Feedback (Active Learning) ──────────────────────────────
+    const [mlTargetId, setMlTargetId] = useState(null);
+    const [mlFeedback, setMlFeedback] = useState('');
+    const [mlSaving, setMlSaving] = useState(false);
+
+    const handleSubmitMlFeedback = async (id, originalCategory, symptoms) => {
+        if (!mlFeedback) return toast.error('Pilih kategori koreksi yang benar');
+        setMlSaving(true);
+        try {
+            await api.post('/api/doctors/ml-feedback', {
+                type: 'consultation',
+                id,
+                keluhan: symptoms,
+                prediksi_sistem: originalCategory,
+                koreksi_dokter: mlFeedback
+            });
+            toast.success('Koreksi AI berhasil disubmit. Terima kasih!');
+            setConsultations(prev => prev.map(c => c._id === id ? { ...c, ml_corrected: true } : c));
+            setMlTargetId(null);
+            setMlFeedback('');
+        } catch (e) {
+            toast.error(e.response?.data?.message || 'Gagal submit koreksi');
+        } finally {
+            setMlSaving(false);
+        }
+    };
+
+    const [search, setSearch] = useState('');
+
+
 
     const fetchAll = useCallback(async (background = false) => {
         if (!background) setLoading(!hasCache('doctor:consultations:data'));
         try {
+            const params = search ? `?search=${encodeURIComponent(search)}` : '';
             const [ar, hr] = await Promise.all([
-                api.get('/api/consultations/doctor/pending'),
-                api.get('/api/consultations/doctor/history'),
+                api.get(`/api/consultations/doctor/pending${params}`),
+                api.get(`/api/consultations/doctor/history${params}`),
             ]);
             // BUG-18 fix: spread history FIRST then pending so pending (authoritative for
             // active status) wins on duplicate _id — prevents active consultations disappearing
@@ -54,7 +85,7 @@ const SectionKonsultasi = ({ socketRef }) => {
             setCache('doctor:consultations:data', arr);
         } catch { toast.error('Gagal memuat konsultasi'); }
         finally { if (!background) setLoading(false); }
-    }, []);
+    }, [search]);
     // Socket realtime
     useEffect(() => {
     const socket = socketRef?.current;
@@ -222,6 +253,13 @@ const SectionKonsultasi = ({ socketRef }) => {
                 ))}
             </div>
 
+            {/* Filter */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+                <input type="text" placeholder="Cari Pasien, Keluhan..." value={search} onChange={e => setSearch(e.target.value)} 
+                    style={{ padding: '8px 12px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 13, width: 250, outline: 'none' }} />
+                {search && <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>✕ Reset</button>}
+            </div>
+
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', borderRadius: 10, padding: 4, marginBottom: 20, width: 'fit-content' }}>
                 {TABS.map(t => (
@@ -309,29 +347,69 @@ const SectionKonsultasi = ({ socketRef }) => {
 
                             {d.disease_category && (
                                 <div style={{ marginTop: 8 }}>
-                                    <div style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                                        background: d.disease_category === 'Tidak Dikenali' ? '#fef3c7' : '#eff6ff',
-                                        border: `1px solid ${d.disease_category === 'Tidak Dikenali' ? '#fde68a' : '#bfdbfe'}`,
-                                        borderRadius: 20, padding: '3px 12px',
-                                    }}>
-                                        <span style={{ fontSize: 11 }}>
-                                            {d.disease_category === 'Tidak Dikenali' ? '⚠️' : '🤖'}
-                                        </span>
-                                        <span style={{
-                                            fontSize: 11, fontWeight: 700,
-                                            color: d.disease_category === 'Tidak Dikenali' ? '#92400e' : '#1d4ed8',
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                                            background: d.ml_corrected ? '#f0fdf4' : (d.disease_category === 'Tidak Dikenali' ? '#fef3c7' : '#eff6ff'),
+                                            border: `1px solid ${d.ml_corrected ? '#bbf7d0' : (d.disease_category === 'Tidak Dikenali' ? '#fde68a' : '#bfdbfe')}`,
+                                            borderRadius: 20, padding: '3px 12px',
                                         }}>
-                                            {d.disease_category === 'Tidak Dikenali'
-                                                ? 'Keluhan tidak dikenali sistem'
-                                                : `Terdeteksi: ${d.disease_category}`}
-                                        </span>
-                                        {d.category_confidence && d.disease_category !== 'Tidak Dikenali' && (
-                                            <span style={{ fontSize: 10, color: '#64748b' }}>
-                                                ({Math.round(d.category_confidence * 100)}%)
+                                            <span style={{ fontSize: 11 }}>
+                                                {d.ml_corrected ? '✅' : (d.disease_category === 'Tidak Dikenali' ? '⚠️' : '🤖')}
                                             </span>
+                                            <span style={{
+                                                fontSize: 11, fontWeight: 700,
+                                                color: d.ml_corrected ? '#166534' : (d.disease_category === 'Tidak Dikenali' ? '#92400e' : '#1d4ed8'),
+                                            }}>
+                                                {d.ml_corrected ? `Terkoreksi` : (d.disease_category === 'Tidak Dikenali'
+                                                    ? 'Keluhan tidak dikenali sistem'
+                                                    : `Terdeteksi: ${d.disease_category}`)}
+                                            </span>
+                                            {d.category_confidence && d.disease_category !== 'Tidak Dikenali' && !d.ml_corrected && (
+                                                <span style={{ fontSize: 10, color: '#64748b' }}>
+                                                    ({Math.round(d.category_confidence * 100)}%)
+                                                </span>
+                                            )}
+                                        </div>
+                                        {!d.ml_corrected && mlTargetId !== d._id && (
+                                            <button onClick={() => setMlTargetId(d._id)} style={{ fontSize: 11, color: colors.primary, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Koreksi AI</button>
+                                        )}
+                                        {d.ml_corrected && (
+                                            <span style={{ fontSize: 11, color: '#16a34a' }}>✓ Feedback terkirim</span>
                                         )}
                                     </div>
+                                    {mlTargetId === d._id && (
+                                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                                            <select 
+                                                value={mlFeedback} 
+                                                onChange={e => setMlFeedback(e.target.value)}
+                                                style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }}
+                                            >
+                                                <option value="">-- Pilih Kategori Benar --</option>
+                                                <option value="Demam">Demam</option>
+                                                <option value="Batuk/Pilek">Batuk/Pilek</option>
+                                                <option value="Pusing/Sakit Kepala">Pusing/Sakit Kepala</option>
+                                                <option value="Sakit Perut/Diare">Sakit Perut/Diare</option>
+                                                <option value="Gatal/Alergi">Gatal/Alergi</option>
+                                                <option value="Pegal/Nyeri Otot">Pegal/Nyeri Otot</option>
+                                                <option value="Sakit Gigi">Sakit Gigi</option>
+                                                <option value="Lainnya">Lainnya</option>
+                                            </select>
+                                            <button 
+                                                disabled={mlSaving}
+                                                onClick={() => handleSubmitMlFeedback(d._id, d.disease_category, d.symptoms)} 
+                                                style={{ fontSize: 11, background: colors.primary, color: 'white', border: 'none', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}
+                                            >
+                                                {mlSaving ? 'Loading...' : 'Submit'}
+                                            </button>
+                                            <button 
+                                                onClick={() => {setMlTargetId(null); setMlFeedback('');}} 
+                                                style={{ fontSize: 11, background: 'none', color: colors.muted, border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                                            >
+                                                Batal
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

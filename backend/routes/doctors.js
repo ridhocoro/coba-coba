@@ -1306,4 +1306,49 @@ Tanpa bullet, tanpa heading, tanpa kalimat pembuka seperti "Berdasarkan data..."
     }
 });
 
+// ── ML FEEDBACK (Active Learning) ────────────────────────────────────────────────
+const axios = require('axios');
+router.post('/ml-feedback', auth, doctorAuth, async (req, res) => {
+    try {
+        const { type, id, keluhan, prediksi_sistem, koreksi_dokter } = req.body;
+        if (!type || !id || !koreksi_dokter) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        // 1. Simpan di DB lokal untuk riwayat/tandai
+        const Consultation = require('../models/Consultation');
+        const Appointment = require('../models/Appointment');
+        
+        let TargetModel = null;
+        if (type === 'consultation') TargetModel = Consultation;
+        if (type === 'appointment') TargetModel = Appointment;
+
+        if (TargetModel) {
+            await TargetModel.findByIdAndUpdate(id, {
+                $set: { 
+                    ml_corrected: true,
+                    ml_corrected_value: koreksi_dokter
+                }
+            });
+        }
+
+        // 2. Kirim ke ML-Service untuk Active Learning
+        const mlServiceUrl = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
+        try {
+            await axios.post(`${mlServiceUrl}/feedback`, {
+                keluhan: keluhan || '-',
+                prediksi_sistem: prediksi_sistem || '-',
+                koreksi_dokter
+            });
+        } catch (mlErr) {
+            console.error('[doctors] Gagal mengirim feedback ke ML-Service:', mlErr.message);
+        }
+
+        res.json({ success: true, message: 'Feedback ML berhasil dikirim' });
+    } catch (error) {
+        console.error('[doctors] POST /ml-feedback error:', error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
+    }
+});
+
 module.exports = router;

@@ -1,6 +1,7 @@
 const fmtDoctorName = require('../utils/fmtDoctorName');
 const express = require('express');
 const { Doctor, User } = require('../models/mysql');
+const { Op } = require('sequelize');
 const router = express.Router();
 const multer = require('multer');
 const { cloudinary, createCloudinaryUpload } = require('../config/cloudinary'); // masih dipakai untuk attachment
@@ -187,10 +188,36 @@ router.get('/doctor/pending', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
 
-        let consultations = await Consultation.find({
+        const { search } = req.query;
+        const query = {
             doctorId: doctor.id,
             status: { $in: ['confirmed', 'in_progress'] }
-        }).sort('scheduledAt').lean();
+        };
+
+        if (search && search.trim()) {
+            const searchTerm = search.trim();
+            const users = await User.findAll({
+                where: {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${searchTerm}%` } },
+                        { email: { [Op.like]: `%${searchTerm}%` } },
+                        { phone: { [Op.like]: `%${searchTerm}%` } },
+                    ]
+                },
+                attributes: ['id']
+            });
+
+            const searchFilter = {
+                $or: [
+                    { symptoms: { $regex: searchTerm, $options: 'i' } }
+                ]
+            };
+            if (users.length > 0) searchFilter.$or.push({ userId: { $in: users.map(u => String(u.id)) } });
+
+            query.$and = [searchFilter];
+        }
+
+        let consultations = await Consultation.find(query).sort('scheduledAt').lean();
 
         consultations = await populateFromMySQL(
             consultations, 'userId', 'User', 'id name email phone'
@@ -207,7 +234,33 @@ router.get('/doctor/history', auth, doctorAuth, async (req, res) => {
         const doctor = await Doctor.findOne({ where: { userId: req.userId } });
         if (!doctor) return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
 
-        let consultations = await Consultation.find({ doctorId: doctor.id }).sort('-createdAt').lean();
+        const { search } = req.query;
+        const query = { doctorId: doctor.id };
+
+        if (search && search.trim()) {
+            const searchTerm = search.trim();
+            const users = await User.findAll({
+                where: {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${searchTerm}%` } },
+                        { email: { [Op.like]: `%${searchTerm}%` } },
+                        { phone: { [Op.like]: `%${searchTerm}%` } },
+                    ]
+                },
+                attributes: ['id']
+            });
+
+            const searchFilter = {
+                $or: [
+                    { symptoms: { $regex: searchTerm, $options: 'i' } }
+                ]
+            };
+            if (users.length > 0) searchFilter.$or.push({ userId: { $in: users.map(u => String(u.id)) } });
+
+            query.$and = [searchFilter];
+        }
+
+        let consultations = await Consultation.find(query).sort('-createdAt').lean();
 
         consultations = await populateFromMySQL(
             consultations, 'userId', 'User', 'id name email phone'
