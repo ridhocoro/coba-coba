@@ -28,7 +28,7 @@ const CekPoli = () => {
             });
 
             if (response.data.success) {
-                setResult(response.data.data);
+                setResult(response.data);
             } else {
                 setError(response.data.message || 'Gagal memproses keluhan.');
             }
@@ -139,25 +139,27 @@ const CekPoli = () => {
                             <div style={S.chHead}>🤖 Hasil Rekomendasi AI</div>
                             <div style={S.body}>
                                 <div style={{ textAlign:'center', marginBottom:24 }}>
-                                    <div style={{ display:'inline-flex', width:64, height:64, borderRadius:'50%', background:getPoliInfo(result.kategori).bg, color:getPoliInfo(result.kategori).color, alignItems:'center', justifyContent:'center', marginBottom:16 }}>
-                                        {getPoliInfo(result.kategori).icon}
+                                    <div style={{ display:'inline-flex', width:64, height:64, borderRadius:'50%', background:getPoliInfo(result.recommendedPoli).bg, color:getPoliInfo(result.recommendedPoli).color, alignItems:'center', justifyContent:'center', marginBottom:16 }}>
+                                        {getPoliInfo(result.recommendedPoli).icon}
                                     </div>
                                     <div style={{ fontSize:13, color:'#6b7280', marginBottom:4 }}>Disarankan ke</div>
-                                    <div style={{ fontSize:22, fontWeight:700, color:'#0f172a' }}>{result.kategori}</div>
+                                    <div style={{ fontSize:22, fontWeight:700, color:'#0f172a' }}>{result.recommendedPoli}</div>
                                 </div>
 
                                 <div style={{ background:'#f8fafc', borderRadius:12, padding:'16px', marginBottom:24 }}>
                                     <div style={{ fontSize:12, fontWeight:600, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:0.5 }}>Analisis Rinci</div>
-                                    <div style={{ fontSize:14, color:'#334155', lineHeight:1.6 }}>{result.alasan}</div>
+                                    <div style={{ fontSize:14, color:'#334155', lineHeight:1.6 }}>
+                                        Berdasarkan analisis AI, keluhan Anda diprediksi masuk ke dalam kategori medis <strong>{result.kategori}</strong> dengan tingkat keyakinan <strong>{(result.confidence * 100).toFixed(1)}%</strong>.
+                                    </div>
                                 </div>
 
-                                {result.perluRujukan && (
+                                {result.referralNote && (
                                     <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:12, padding:'16px', marginBottom:24, display:'flex', gap:12 }}>
                                         <div style={{ color:'#d97706', paddingTop:2 }}><FaHospitalAlt size={16}/></div>
                                         <div>
-                                            <div style={{ fontSize:13, fontWeight:600, color:'#b45309', marginBottom:4 }}>Perlu Rujukan Eksternal</div>
+                                            <div style={{ fontSize:13, fontWeight:600, color:'#b45309', marginBottom:4 }}>Perhatian Khusus</div>
                                             <div style={{ fontSize:13, color:'#92400e', lineHeight:1.5 }}>
-                                                {result.pesanRujukan || "Kondisi Anda mungkin memerlukan penanganan dari rumah sakit atau spesialis tingkat lanjut. Silakan kunjungi Poli Umum kami untuk mendapatkan surat rujukan."}
+                                                {result.referralNote}
                                             </div>
                                         </div>
                                     </div>

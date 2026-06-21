@@ -420,8 +420,6 @@ const Home = () => {
                     <Row className="align-items-center bg-white rounded-4 shadow-sm p-4 p-lg-5" style={{ border: '1px solid #bfdbfe' }}>
                         <Col lg={8} className="mb-4 mb-lg-0">
                             <div className="d-flex align-items-center gap-3 mb-3">
-                                <div style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '12px' }}>
-                                </div>
                                 <h3 className="fw-bold mb-0" style={{ color: '#1e293b' }}>Bingung Harus ke Poli Mana?</h3>
                             </div>
                             <p className="text-secondary mb-0" style={{ fontSize: '1.1rem' }}>
