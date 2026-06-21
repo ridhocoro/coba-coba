@@ -78,7 +78,7 @@ const aiChatLimiter = createRateLimiter({
     windowSec: 60,
     max:       15,
     keyBy:     'ip+user',
-    message:   'Kamu sudah terlalu banyak bertanya ke Klinbot dalam 1 menit. Tunggu sebentar ya, Kak! 😊',
+    message:   'Kamu sudah terlalu banyak bertanya ke ASK IPB dalam 1 menit. Tunggu sebentar ya, Kak! 😊',
 });
 
 // AI Chatbot — maks 100 pesan / hari per user+IP
@@ -87,7 +87,7 @@ const aiChatDailyLimiter = createRateLimiter({
     windowSec: 86400,
     max:       100,
     keyBy:     'ip+user',
-    message:   'Kamu sudah mencapai batas 100 pertanyaan hari ini ke Klinbot. Coba lagi besok ya, Kak! 😊',
+    message:   'Kamu sudah mencapai batas 100 pertanyaan hari ini ke ASK IPB. Coba lagi besok ya, Kak! 😊',
 });
 
 // Login — mengganti loginLimitMap di auth.js
