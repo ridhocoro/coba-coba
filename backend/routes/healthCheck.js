@@ -175,4 +175,71 @@ router.post('/check-blood-pressure', (req, res) => {
     }
 });
 
+// Smart Triage / Rekomendasi Poli
+router.post('/recommend-poli', async (req, res) => {
+    try {
+        const { keluhan } = req.body;
+        if (!keluhan) {
+            return res.status(400).json({ success: false, message: 'Keluhan tidak boleh kosong' });
+        }
+
+        const { classifyKeluhan } = require('../utils/mlService');
+        const mlResult = await classifyKeluhan(keluhan, null);
+        if (!mlResult) {
+            return res.status(503).json({ success: false, message: 'Layanan ML sedang tidak tersedia' });
+        }
+
+        const { kategori, confidence } = mlResult;
+
+        let recommendedPoli = 'Poli Umum';
+        let referralNote = null;
+        let icon = '🩺';
+
+        switch (kategori) {
+            case 'Karies Gigi':
+            case 'Sakit Gusi':
+                recommendedPoli = 'Poli Gigi';
+                icon = '🦷';
+                break;
+            case 'Kehamilan':
+            case 'Gangguan Menstruasi':
+                recommendedPoli = 'Poli KIA';
+                icon = '🤱';
+                break;
+            case 'Anemia':
+                recommendedPoli = 'Poli Gizi';
+                icon = '🥗';
+                break;
+            case 'Gangguan Jantung':
+                recommendedPoli = 'Poli Umum';
+                referralNote = '⚠️ Peringatan: Keluhan yang mengarah ke gangguan jantung/dada akan diperiksa untuk pertolongan pertama di Poli Umum (seperti rekam jantung/EKG), namun kemungkinan besar Anda memerlukan rujukan segera ke Rumah Sakit/Dokter Spesialis.';
+                icon = '⚠️';
+                break;
+            case 'Lainnya':
+            case 'Tidak Dikenali':
+                recommendedPoli = 'Poli Umum';
+                referralNote = '💡 Gejala Anda tidak terlalu spesifik. Dokter di Poli Umum akan melakukan wawancara dan pemeriksaan menyeluruh untuk menentukan diagnosis.';
+                icon = '🩺';
+                break;
+            default:
+                recommendedPoli = 'Poli Umum';
+                icon = '🩺';
+                break;
+        }
+
+        res.json({
+            success: true,
+            kategori,
+            confidence,
+            recommendedPoli,
+            icon,
+            referralNote
+        });
+        
+    } catch (error) {
+        console.error('Recommend Poli Error:', error);
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
 module.exports = router;

@@ -19,6 +19,7 @@ import BMICalculator from './pages/HealthCheck/BMICalculator';
 import CalorieCalculator from './pages/HealthCheck/CalorieCalculator';
 import BloodPressureChecker from './pages/HealthCheck/BloodPressureChecker';
 import VitalScanPage from './pages/HealthCheck/VitalScanPage';
+import CekPoli from './pages/HealthCheck/CekPoli';
 import PoliUmum from './pages/services/PoliUmum';
 import PoliGigi from './pages/services/PoliGigi';
 import LayananKIA from './pages/services/LayananKIA';
@@ -104,6 +105,7 @@ function AppContent() {
                     <Route path="/health-check/calories"    element={<CalorieCalculator />} />
                     <Route path="/health-check/blood-pressure" element={<BloodPressureChecker />} />
                     <Route path="/health-check/vital-scan"     element={<VitalScanPage />} />
+                    <Route path="/health-check/cek-poli"       element={<CekPoli />} />
                     <Route path="/services/general"          element={<PoliUmum />} />
                     <Route path="/services/dental"           element={<PoliGigi />} />
                     <Route path="/services/mch"              element={<LayananKIA />} />

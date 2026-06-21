@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Container, Row, Col, Button, Card } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
     FaHeartbeat,
-    FaStethoscope, 
+    FaStethoscope,
+    FaRobot, 
     FaPills, 
     FaCalendarAlt, 
     FaArrowRight,
@@ -69,6 +70,7 @@ const getInfiniteSlides = (slides) => {
 };
 
 const Home = () => {
+    const navigate = useNavigate();
     const [currentSlide, setCurrentSlide] = useState(1);
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [carouselImages, setCarouselImages] = useState(getInfiniteSlides(originalCarouselImages));
@@ -407,6 +409,35 @@ const Home = () => {
                                     </div>
                                 )}
                             </div>
+                        </Col>
+                    </Row>
+                </Container>
+            </section>
+
+            {/* Smart Triage Banner Section */}
+            <section className="py-5" style={{ backgroundColor: '#eff6ff' }}>
+                <Container>
+                    <Row className="align-items-center bg-white rounded-4 shadow-sm p-4 p-lg-5" style={{ border: '1px solid #bfdbfe' }}>
+                        <Col lg={8} className="mb-4 mb-lg-0">
+                            <div className="d-flex align-items-center gap-3 mb-3">
+                                <div style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '12px' }}>
+                                    <FaRobot size={24} />
+                                </div>
+                                <h3 className="fw-bold mb-0" style={{ color: '#1e293b' }}>Bingung Harus ke Poli Mana?</h3>
+                            </div>
+                            <p className="text-secondary mb-0" style={{ fontSize: '1.1rem' }}>
+                                Jangan khawatir! Cukup ceritakan keluhan Anda secara bebas, dan teknologi AI kami (Smart Triage) akan memandu Anda ke Dokter/Poli yang paling tepat dengan standar medis.
+                            </p>
+                        </Col>
+                        <Col lg={4} className="text-lg-end">
+                            <Button 
+                                onClick={() => navigate('/health-check/cek-poli')}
+                                size="lg"
+                                className="fw-bold d-inline-flex align-items-center gap-2"
+                                style={{ backgroundColor: '#2563eb', border: 'none', borderRadius: '12px', padding: '14px 28px' }}
+                            >
+                                Cek Rekomendasi Poli <FaArrowRight />
+                            </Button>
                         </Col>
                     </Row>
                 </Container>
