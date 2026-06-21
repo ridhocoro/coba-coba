@@ -421,7 +421,6 @@ const Home = () => {
                         <Col lg={8} className="mb-4 mb-lg-0">
                             <div className="d-flex align-items-center gap-3 mb-3">
                                 <div style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '12px' }}>
-                                    <FaRobot size={24} />
                                 </div>
                                 <h3 className="fw-bold mb-0" style={{ color: '#1e293b' }}>Bingung Harus ke Poli Mana?</h3>
                             </div>

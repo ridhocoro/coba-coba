@@ -14,7 +14,10 @@ const Groq = require('groq-sdk');
 const jwt  = require('jsonwebtoken');
 const { aiChatLimiter, aiChatDailyLimiter } = require('../middleware/rateLimiter');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+let groq = null;
+if (process.env.GROQ_API_KEY) {
+    groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+}
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 // ── Optional auth: inject userId jika token valid, tidak block ─

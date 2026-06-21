@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner } from 'react-bootstrap';
-import { FaRobot, FaStethoscope, FaArrowRight, FaHospitalAlt, FaTooth, FaBabyCarriage, FaAppleAlt } from 'react-icons/fa';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { FaRobot, FaStethoscope, FaArrowLeft, FaHospitalAlt, FaTooth, FaBabyCarriage, FaAppleAlt } from 'react-icons/fa';
+import { Link, useNavigate } from 'react-router-dom';
+import api from '../../utils/api';
 
 const CekPoli = () => {
     const [keluhan, setKeluhan] = useState('');
@@ -23,152 +23,161 @@ const CekPoli = () => {
         setResult(null);
 
         try {
-            const response = await axios.post(`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/health-check/recommend-poli`, {
+            const response = await api.post('/api/health-check/recommend-poli', {
                 keluhan
             });
 
             if (response.data.success) {
-                setResult(response.data);
+                setResult(response.data.data);
             } else {
-                setError(response.data.message || 'Gagal memproses rekomendasi Poli.');
+                setError(response.data.message || 'Gagal memproses keluhan.');
             }
         } catch (err) {
             console.error(err);
-            setError('Gagal menghubungi AI Triage Klinik IPB. Silakan coba lagi.');
+            setError(err.response?.data?.message || 'Gagal menghubungi AI Triage Klinik IPB. Silakan coba lagi.');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleLanjutBooking = () => {
-        // Navigasi ke halaman buat janji temu
-        navigate('/consultations');
+    const S = {
+        page  : { background:'#fafafa', minHeight:'100vh', padding:'40px 0 80px', fontFamily:"'Poppins', sans-serif" },
+        wrap  : { maxWidth:880, margin:'0 auto', padding:'0 24px' },
+        label : { fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:6 },
+        input : { width:'100%', padding:'10px 14px', border:'1px solid #e5e7eb', borderRadius:10, fontSize:14, outline:'none', fontFamily:'inherit', transition:'border-color .15s', boxSizing:'border-box', resize:'vertical' },
+        card  : { background:'#fff', border:'1px solid #e5e7eb', borderRadius:16, overflow:'hidden' },
+        chHead: { padding:'16px 24px', borderBottom:'1px solid #f1f5f9', fontSize:14, fontWeight:700, color:'#0f172a' },
+        body  : { padding:'24px' },
+        btnPrimary: { width:'100%', padding:'12px', background:'#0284c7', color:'#fff', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer', transition:'background .15s', fontFamily:'inherit' },
     };
 
-    const getPoliTheme = (poliName) => {
-        switch(poliName) {
-            case 'Poli Gigi': return { bg: '#e0e7ff', color: '#4f46e5', icon: <FaTooth size={40} /> };
-            case 'Poli KIA': return { bg: '#fce7f3', color: '#db2777', icon: <FaBabyCarriage size={40} /> };
-            case 'Poli Gizi': return { bg: '#dcfce7', color: '#16a34a', icon: <FaAppleAlt size={40} /> };
-            default: return { bg: '#e0f2fe', color: '#0284c7', icon: <FaStethoscope size={40} /> };
+    const getPoliInfo = (poliName) => {
+        switch (poliName) {
+            case 'Poli Umum':
+                return { icon: <FaStethoscope size={24} />, bg: '#dcfce7', color: '#16a34a' }; // Green
+            case 'Poli Gigi':
+                return { icon: <FaTooth size={24} />, bg: '#e0f2fe', color: '#0284c7' }; // Blue
+            case 'Poli KIA':
+                return { icon: <FaBabyCarriage size={24} />, bg: '#fae8ff', color: '#c026d3' }; // Fuchsia
+            case 'Poli Gizi':
+                return { icon: <FaAppleAlt size={24} />, bg: '#fef9c3', color: '#ca8a04' }; // Yellow
+            default:
+                return { icon: <FaHospitalAlt size={24} />, bg: '#f3f4f6', color: '#6b7280' }; // Gray
         }
     };
 
     return (
-        <Container className="py-5" style={{ minHeight: '80vh' }}>
-            <Row className="justify-content-center mb-4">
-                <Col md={8} className="text-center">
-                    <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 60, height: 60,
-                        backgroundColor: '#eff6ff',
-                        color: '#3b82f6',
-                        borderRadius: '50%',
-                        marginBottom: 16
-                    }}>
-                        <FaRobot size={32} />
-                    </div>
-                    <h2 className="fw-bold" style={{ color: '#1e293b' }}>Smart Triage AI</h2>
-                    <p className="text-muted" style={{ fontSize: '1.1rem' }}>
-                        Bingung harus periksa ke poli mana? Ceritakan keluhan Anda secara bebas, dan biarkan AI kami mengarahkan Anda ke dokter yang tepat.
-                    </p>
-                </Col>
-            </Row>
+        <div style={S.page}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+                .poli-input:focus{border-color:#0284c7!important;box-shadow:0 0 0 3px rgba(2, 132, 199,.1)}
+                .poli-btn-primary:hover:not(:disabled){background:#0369a1!important}
+                .poli-btn-primary:disabled{opacity:.5;cursor:not-allowed}
+                @keyframes poliUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+                .poli-fade{animation:poliUp .35s ease both}
+            `}</style>
+            <div style={S.wrap}>
 
-            <Row className="justify-content-center">
-                <Col md={8} lg={6}>
-                    <Card className="border-0 shadow-sm" style={{ borderRadius: 16, overflow: 'hidden' }}>
-                        <Card.Body className="p-4 p-md-5">
-                            <Form onSubmit={handleSubmit}>
-                                <Form.Group className="mb-4">
-                                    <Form.Label className="fw-bold text-secondary">Apa yang Anda rasakan hari ini?</Form.Label>
-                                    <Form.Control 
-                                        as="textarea" 
-                                        rows={4}
-                                        placeholder="Contoh: Saya sudah batuk 3 hari dan badan terasa panas saat malam, kadang disertai pusing..."
+                {/* Back + Header */}
+                <div className="poli-fade" style={{ marginBottom:32 }}>
+                    <Link to="/health-check" style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:13, color:'#6b7280', textDecoration:'none', marginBottom:20 }}>
+                        <FaArrowLeft size={11}/> Kembali
+                    </Link>
+                    <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:6 }}>
+                        <div style={{ width:40, height:40, borderRadius:12, background:'#e0f2fe', color:'#0284c7', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                            <FaRobot size={18}/>
+                        </div>
+                        <div>
+                            <h1 style={{ fontFamily:"'Poppins',sans-serif", fontSize:28, fontWeight:400, color:'#0f172a', margin:0 }}>Smart Triage AI</h1>
+                            <p style={{ fontSize:13, color:'#6b7280', margin:0 }}>Prediksi poli berdasarkan keluhan via AI</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr)', gap:20, alignItems:'start' }}>
+
+                    {/* ── Form ── */}
+                    <div className="poli-fade" style={{ ...S.card, animationDelay:'.08s' }}>
+                        <div style={S.chHead}>💬 Ceritakan Keluhan Anda</div>
+                        <div style={S.body}>
+                            {error && (
+                                <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'10px 14px', marginBottom:20, fontSize:13, color:'#b91c1c' }}>
+                                    ⚠️ {error}
+                                </div>
+                            )}
+
+                            <form onSubmit={handleSubmit}>
+                                <div style={{ marginBottom:20 }}>
+                                    <label style={S.label}>Keluhan Medis</label>
+                                    <textarea 
+                                        className="poli-input"
+                                        style={{...S.input, minHeight:'120px'}}
+                                        placeholder="Contoh: Saya batuk berdahak dan dada terasa sesak sejak dua hari yang lalu."
                                         value={keluhan}
                                         onChange={(e) => setKeluhan(e.target.value)}
-                                        style={{ 
-                                            borderRadius: 12, 
-                                            padding: 16, 
-                                            backgroundColor: '#f8fafc',
-                                            border: '1px solid #cbd5e1',
-                                            resize: 'none'
-                                        }}
+                                        required
                                     />
-                                </Form.Group>
+                                    <p style={{ fontSize:12, color:'#94a3b8', marginTop:8, marginBottom:0 }}>
+                                        Jelaskan sedetail mungkin, misalnya sejak kapan keluhan muncul, bagian mana yang sakit, dll.
+                                    </p>
+                                </div>
 
-                                {error && <Alert variant="danger" className="border-0" style={{ borderRadius: 8 }}>{error}</Alert>}
-
-                                <Button 
-                                    type="submit" 
-                                    className="w-100 py-3 fw-bold d-flex align-items-center justify-content-center gap-2"
-                                    disabled={loading || !keluhan.trim()}
-                                    style={{ 
-                                        borderRadius: 12, 
-                                        backgroundColor: '#0f172a', 
-                                        border: 'none',
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                >
+                                <button type="submit" style={S.btnPrimary} className="poli-btn-primary" disabled={loading}>
                                     {loading ? (
-                                        <><Spinner size="sm" animation="border" /> Memproses Analisis...</>
+                                        <><Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" /> Menganalisis...</>
                                     ) : (
-                                        <>Cek Rekomendasi Poli <FaArrowRight /></>
+                                        <><FaRobot className="me-2"/> Cek Rekomendasi Poli</>
                                     )}
-                                </Button>
-                            </Form>
-                        </Card.Body>
-                    </Card>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
 
+                    {/* ── Result ── */}
                     {result && (
-                        <div className="mt-4 animate__animated animate__fadeInUp">
-                            <Card className="border-0 shadow-sm" style={{ borderRadius: 16 }}>
-                                <Card.Body className="p-4">
-                                    <h5 className="fw-bold text-center mb-4" style={{ color: '#475569' }}>Hasil Analisis AI</h5>
-                                    
-                                    <div className="text-center mb-4 p-4" style={{ 
-                                        backgroundColor: getPoliTheme(result.recommendedPoli).bg, 
-                                        borderRadius: 16 
-                                    }}>
-                                        <div style={{ color: getPoliTheme(result.recommendedPoli).color, marginBottom: 12 }}>
-                                            {getPoliTheme(result.recommendedPoli).icon}
-                                        </div>
-                                        <h3 className="fw-bold mb-1" style={{ color: getPoliTheme(result.recommendedPoli).color }}>
-                                            {result.recommendedPoli}
-                                        </h3>
-                                        <span className="badge bg-white text-secondary mt-2 shadow-sm" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
-                                            Prediksi Kategori: {result.kategori}
-                                        </span>
+                        <div className="poli-fade" style={{ ...S.card, animationDelay:'.15s' }}>
+                            <div style={S.chHead}>🤖 Hasil Rekomendasi AI</div>
+                            <div style={S.body}>
+                                <div style={{ textAlign:'center', marginBottom:24 }}>
+                                    <div style={{ display:'inline-flex', width:64, height:64, borderRadius:'50%', background:getPoliInfo(result.kategori).bg, color:getPoliInfo(result.kategori).color, alignItems:'center', justifyContent:'center', marginBottom:16 }}>
+                                        {getPoliInfo(result.kategori).icon}
                                     </div>
+                                    <div style={{ fontSize:13, color:'#6b7280', marginBottom:4 }}>Disarankan ke</div>
+                                    <div style={{ fontSize:22, fontWeight:700, color:'#0f172a' }}>{result.kategori}</div>
+                                </div>
 
-                                    {result.referralNote && (
-                                        <Alert variant="warning" className="border-0 d-flex gap-3" style={{ borderRadius: 12, backgroundColor: '#fffbeb', color: '#b45309' }}>
-                                            <div><FaHospitalAlt size={24} /></div>
-                                            <div>
-                                                <strong>Catatan Khusus:</strong><br />
-                                                <span style={{ fontSize: '0.9rem' }}>{result.referralNote}</span>
+                                <div style={{ background:'#f8fafc', borderRadius:12, padding:'16px', marginBottom:24 }}>
+                                    <div style={{ fontSize:12, fontWeight:600, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:0.5 }}>Analisis Rinci</div>
+                                    <div style={{ fontSize:14, color:'#334155', lineHeight:1.6 }}>{result.alasan}</div>
+                                </div>
+
+                                {result.perluRujukan && (
+                                    <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:12, padding:'16px', marginBottom:24, display:'flex', gap:12 }}>
+                                        <div style={{ color:'#d97706', paddingTop:2 }}><FaHospitalAlt size={16}/></div>
+                                        <div>
+                                            <div style={{ fontSize:13, fontWeight:600, color:'#b45309', marginBottom:4 }}>Perlu Rujukan Eksternal</div>
+                                            <div style={{ fontSize:13, color:'#92400e', lineHeight:1.5 }}>
+                                                {result.pesanRujukan || "Kondisi Anda mungkin memerlukan penanganan dari rumah sakit atau spesialis tingkat lanjut. Silakan kunjungi Poli Umum kami untuk mendapatkan surat rujukan."}
                                             </div>
-                                        </Alert>
-                                    )}
+                                        </div>
+                                    </div>
+                                )}
 
-                                    <Button 
-                                        onClick={handleLanjutBooking}
-                                        className="w-100 py-3 fw-bold mt-2"
-                                        variant="primary"
-                                        style={{ borderRadius: 12 }}
-                                    >
-                                        Lanjut Buat Janji Temu / Konsultasi
+                                <div style={{ display:'flex', gap:12 }}>
+                                    <Button variant="outline-secondary" className="w-100" onClick={() => { setKeluhan(''); setResult(null); setError(''); }} style={{ borderRadius:10, fontWeight:600, fontSize:14, padding:'10px' }}>
+                                        Cek Keluhan Lain
                                     </Button>
-                                </Card.Body>
-                            </Card>
+                                    <Button variant="primary" className="w-100" onClick={() => navigate('/appointments')} style={{ borderRadius:10, fontWeight:600, fontSize:14, padding:'10px', background:'#0f172a', borderColor:'#0f172a' }}>
+                                        Buat Janji Temu
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
                     )}
-                </Col>
-            </Row>
-        </Container>
+
+                </div>
+            </div>
+        </div>
     );
 };
 

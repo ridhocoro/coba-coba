@@ -8,6 +8,7 @@ import {
     FaUserMd,
     FaCalendarAlt,
     FaVideo,
+    FaRobot,
 } from 'react-icons/fa';
 
 const features = [
@@ -47,6 +48,16 @@ const features = [
         lightBg    : '#f5f3ff',
         time       : '30 detik',
         badge      : 'Baru 🆕',
+    },
+    {
+        icon       : <FaRobot size={22} />,
+        title      : 'Smart Triage AI',
+        description: 'Analisis keluhan Anda dengan AI untuk mengetahui poli yang tepat',
+        link       : '/health-check/cek-poli',
+        accent     : '#0284c7',
+        lightBg    : '#e0f2fe',
+        time       : 'Otomatis',
+        badge      : 'Cepat ⚡',
     },
 ];
 

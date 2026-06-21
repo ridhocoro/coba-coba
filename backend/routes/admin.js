@@ -11,7 +11,10 @@ const fs = require('fs');
 
 // Groq untuk AI Analytics
 const Groq = require('groq-sdk');
-const _groqAdmin = new Groq({ apiKey: process.env.GROQ_API_KEY });
+let _groqAdmin = null;
+if (process.env.GROQ_API_KEY) {
+    _groqAdmin = new Groq({ apiKey: process.env.GROQ_API_KEY });
+}
 const GROQ_ADMIN_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 // Redis cache helpers

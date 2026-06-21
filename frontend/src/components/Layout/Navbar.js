@@ -10,7 +10,7 @@ import {
     FaHeartbeat, FaSignInAlt, FaUserPlus, FaSignOutAlt,
     FaUser, FaShieldAlt, FaStethoscope,
     FaBox, FaUsers, FaMoneyBillWave, FaHistory,
-    FaWeight, FaFire,FaVideo
+    FaWeight, FaFire,FaVideo, FaRobot
 } from 'react-icons/fa';
 
 const Navigation = () => {
@@ -248,6 +248,9 @@ const Navigation = () => {
                                         </NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/health-check/vital-scan" className={location.pathname === '/health-check/vital-sign' ? 'active' : ''}>
                                             <FaVideo className="me-2 text-muted" /> Vital Sign Scanner
+                                        </NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/health-check/cek-poli" className={location.pathname === '/health-check/cek-poli' ? 'active' : ''}>
+                                            <FaRobot className="me-2 text-muted" /> Smart Triage (Cek Poli)
                                         </NavDropdown.Item>
                                     </NavDropdown>
                                 </>
