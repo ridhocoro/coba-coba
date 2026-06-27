@@ -198,6 +198,7 @@ router.post('/recommend-poli', async (req, res) => {
         switch (kategori) {
             case 'Karies Gigi':
             case 'Sakit Gusi':
+            case 'Gangguan gigi dan mulut':
                 recommendedPoli = 'Poli Gigi';
                 icon = '🦷';
                 break;
@@ -207,8 +208,10 @@ router.post('/recommend-poli', async (req, res) => {
                 icon = '🤱';
                 break;
             case 'Anemia':
-                recommendedPoli = 'Poli Gizi';
-                icon = '🥗';
+            case 'Malnutrisi':
+                recommendedPoli = 'Poli Umum';
+                referralNote = '💡 Dokter di Poli Umum akan melakukan skrining awal untuk memeriksa penyebab utama dari kondisi Anda sebelum merujuk ke layanan gizi atau spesialis jika diperlukan.';
+                icon = '🩺';
                 break;
             case 'Gangguan Jantung':
                 recommendedPoli = 'Poli Umum';

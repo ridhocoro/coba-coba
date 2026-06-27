@@ -2187,6 +2187,8 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
         
         let trendText = "";
         const allDatesStr = [...new Set(Object.values(diseaseData).flat().map(r => r.tanggal))].sort();
+        const dateRangeStr = allDatesStr.length > 1 ? ` (Tanggal ${allDatesStr[0]} sampai ${allDatesStr[allDatesStr.length - 1]})` : "";
+        
         if (allDatesStr.length > 1) {
             const midIndex = Math.floor(allDatesStr.length / 2);
             const pastHalfDates = allDatesStr.slice(0, midIndex);
@@ -2198,31 +2200,59 @@ router.post('/analytics/ai-insight', guard, async (req, res) => {
                 const dataK = diseaseData[k] || [];
                 const pastSum = dataK.filter(d => pastHalfDates.includes(d.tanggal)).reduce((s, d) => s + d.jumlah, 0);
                 const recentSum = dataK.filter(d => recentHalfDates.includes(d.tanggal)).reduce((s, d) => s + d.jumlah, 0);
-                if (recentSum > pastSum) trendArr.push(`${k} NAIK dari ${pastSum} menjadi ${recentSum} kasus`);
-                else if (recentSum < pastSum) trendArr.push(`${k} TURUN dari ${pastSum} menjadi ${recentSum} kasus`);
+                
+                if (recentSum > pastSum && pastSum > 0) {
+                    const pct = ((recentSum - pastSum) / pastSum * 100).toFixed(1);
+                    trendArr.push(`${k} NAIK ${pct}% dibandingkan paruh pertama periode yang dipilih (dari ${pastSum} menjadi ${recentSum} kasus)`);
+                } else if (recentSum < pastSum && pastSum > 0) {
+                    const pct = ((pastSum - recentSum) / pastSum * 100).toFixed(1);
+                    trendArr.push(`${k} TURUN ${pct}% dibandingkan paruh pertama periode yang dipilih (dari ${pastSum} menjadi ${recentSum} kasus)`);
+                } else if (recentSum > pastSum && pastSum === 0) {
+                    trendArr.push(`${k} NAIK dari 0 menjadi ${recentSum} kasus`);
+                }
             });
             if (trendArr.length > 0) {
-                trendText = `\nTren temporal paruh waktu awal vs paruh waktu akhir:\n- ${trendArr.join('\n- ')}\n`;
+                trendText = `\nPerbandingan dengan setengah periode sebelumnya:\n- ${trendArr.join('\n- ')}\n`;
             }
         }
 
-        const prompt = `Kamu adalah analis kesehatan klinik. Analisis data berikut dan berikan insight untuk admin klinik.
+        const prompt = `ATURAN:
+- Gunakan hanya data yang diberikan.
+- Jangan mengarang angka, persentase, atau tren.
+- Jangan memberikan diagnosis medis.
+- Jangan memberikan saran, rekomendasi, atau keputusan operasional.
+- Jangan membuat asumsi di luar data.
+- Fokus menjelaskan fakta, pola, tren, dan perubahan yang terlihat.
+- Jangan menyebutkan suatu kategori "stabil", "normal", atau "konsisten" secara sembarangan. Gunakan perbandingan berbasis angka, misalnya "perubahan pada kategori X lebih kecil dibandingkan perubahan kategori Y".
+- Hindari kalimat yang bersifat inferensi tanpa data pendukung (contoh: jangan menyimpulkan total kunjungan didominasi penyakit tertentu hanya karena kenaikan persentasenya tinggi, gunakan kata-kata yang aman seperti "Kategori X memiliki peningkatan persentase terbesar").
 
-Periode: ${periodLabel} | Filter: ${genderLabel} | Total kasus: ${absoluteTotalKasus}
+Prioritas analisis:
+1. Jelaskan penyakit dengan jumlah kasus tertinggi beserta jumlah dan persentasenya.
+2. Bandingkan dengan periode sebelumnya apabila tersedia.
+3. Soroti kenaikan atau penurunan terbesar beserta besar perubahannya.
+4. Jika filter gender digunakan, jelaskan pola yang terlihat pada gender tersebut.
+
+Gaya penulisan:
+- Bahasa Indonesia profesional.
+- Maksimal 4 kalimat.
+- Maksimal 30 kata per kalimat.
+- Langsung pada inti pembahasan.
+- Tanpa bullet, heading, atau kalimat pembuka seperti "Berdasarkan data...".
+- Jika menyebutkan kategori terbanyak, gunakan format: "[Kategori] menjadi kategori dengan jumlah kasus tertinggi, yaitu [Jumlah] kasus ([Persentase]% dari total kunjungan)."
+- Jika menyebutkan kenaikan terbesar, satukan kalimatnya, contoh: "[Kategori] mencatat peningkatan persentase terbesar pada periode ini, yaitu naik [Persentase]% dibandingkan paruh pertama periode yang dipilih ([Angka] menjadi [Angka] kasus)."
+- Gunakan kata "relatif lebih kecil" (bukan "jauh lebih kecil") saat membandingkan dengan penyakit lain.
+
+Data:
+Periode: ${periodLabel}${dateRangeStr} | Filter: ${genderLabel} | Total kasus: ${absoluteTotalKasus}
 
 Distribusi kategori penyakit:
 ${summary}
-${trendText}
-Tulis TEPAT 3 kalimat PENDEK dalam Bahasa Indonesia (maksimal 25 kata per kalimat):
-1. Kalimat 1: Sebutkan 1 pola paling dominan dengan angka dan persentase spesifik.
-2. Kalimat 2: Sebutkan 1 anomali atau perbandingan yang paling perlu diperhatikan.
-3. Kalimat 3: Satu tindakan operasional yang bisa dilakukan ${timeframeLabel}, spesifik dan dapat dieksekusi.
-Tanpa bullet, tanpa heading, tanpa kalimat pembuka seperti "Berdasarkan data...".`;
+${trendText}`;
 
         const completion = await _groqAdmin.chat.completions.create({
             model: GROQ_ADMIN_MODEL, max_tokens: 300,
             messages: [
-                { role: 'system', content: 'Kamu adalah analis kesehatan klinik yang ringkas dan faktual. Hanya berikan analisis berdasarkan data yang diberikan. Jangan mengarang data.' },
+                { role: 'system', content: 'Kamu adalah AI Clinical Analytics Assistant untuk dashboard admin klinik. Tugasmu adalah menganalisis statistik kunjungan pasien dan menjelaskan pola yang terlihat dari data. Jangan pernah memberikan saran medis atau operasional.' },
                 { role: 'user', content: prompt }
             ],
         });
