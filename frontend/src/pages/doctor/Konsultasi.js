@@ -43,7 +43,7 @@ const SectionKonsultasi = ({ socketRef }) => {
     const [mlSaving, setMlSaving] = useState(false);
 
     const handleSubmitMlFeedback = async (id, originalCategory, symptoms) => {
-        if (!mlFeedback) return toast.error('Pilih kategori koreksi yang benar');
+        if (!mlFeedback) return toast.error('Ketik kategori koreksi yang benar');
         setMlSaving(true);
         try {
             await api.post('/api/doctors/ml-feedback', {
@@ -380,21 +380,13 @@ const SectionKonsultasi = ({ socketRef }) => {
                                     </div>
                                     {mlTargetId === d._id && (
                                         <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                                            <select 
+                                            <input 
+                                                type="text"
+                                                placeholder="Ketik kategori penyakit..."
                                                 value={mlFeedback} 
                                                 onChange={e => setMlFeedback(e.target.value)}
                                                 style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }}
-                                            >
-                                                <option value="">-- Pilih Kategori Benar --</option>
-                                                <option value="Demam">Demam</option>
-                                                <option value="Batuk/Pilek">Batuk/Pilek</option>
-                                                <option value="Pusing/Sakit Kepala">Pusing/Sakit Kepala</option>
-                                                <option value="Sakit Perut/Diare">Sakit Perut/Diare</option>
-                                                <option value="Gatal/Alergi">Gatal/Alergi</option>
-                                                <option value="Pegal/Nyeri Otot">Pegal/Nyeri Otot</option>
-                                                <option value="Sakit Gigi">Sakit Gigi</option>
-                                                <option value="Lainnya">Lainnya</option>
-                                            </select>
+                                            />
                                             <button 
                                                 disabled={mlSaving}
                                                 onClick={() => handleSubmitMlFeedback(d._id, d.disease_category, d.symptoms)} 

@@ -59,7 +59,7 @@ const SectionJanjiTemu = ({ socketRef }) => {
     const [mlSaving, setMlSaving] = useState(false);
 
     const handleSubmitMlFeedback = async (id, originalCategory, symptoms) => {
-        if (!mlFeedback) return toast.error('Pilih kategori koreksi yang benar');
+        if (!mlFeedback) return toast.error('Ketik kategori koreksi yang benar');
         setMlSaving(true);
         try {
             await api.post('/api/doctors/ml-feedback', {
@@ -347,17 +347,7 @@ const SectionJanjiTemu = ({ socketRef }) => {
                                                         )}
                                                         {mlTargetId === a._id && (
                                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                                <select value={mlFeedback} onChange={e => setMlFeedback(e.target.value)} style={{ fontSize: 9, padding: '2px', maxWidth: '100px' }}>
-                                                                    <option value="">-- Kategori Benar --</option>
-                                                                    <option value="Demam">Demam</option>
-                                                                    <option value="Batuk/Pilek">Batuk/Pilek</option>
-                                                                    <option value="Pusing/Sakit Kepala">Pusing/Sakit Kepala</option>
-                                                                    <option value="Sakit Perut/Diare">Sakit Perut/Diare</option>
-                                                                    <option value="Gatal/Alergi">Gatal/Alergi</option>
-                                                                    <option value="Pegal/Nyeri Otot">Pegal/Nyeri Otot</option>
-                                                                    <option value="Sakit Gigi">Sakit Gigi</option>
-                                                                    <option value="Lainnya">Lainnya</option>
-                                                                </select>
+                                                                <input type="text" placeholder="Ketik kategori..." value={mlFeedback} onChange={e => setMlFeedback(e.target.value)} style={{ fontSize: 9, padding: '2px', maxWidth: '100px' }} />
                                                                 <div style={{ display: 'flex', gap: 4 }}>
                                                                     <button disabled={mlSaving} onClick={() => handleSubmitMlFeedback(a._id, a.disease_category, a.complaint)} style={{ fontSize: 9, background: colors.primary, color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Submit</button>
                                                                     <button onClick={() => {setMlTargetId(null); setMlFeedback('');}} style={{ fontSize: 9, background: 'none', color: colors.muted, border: 'none', cursor: 'pointer' }}>Batal</button>
